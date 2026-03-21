@@ -7,10 +7,13 @@ import zipfile
 from typing import Optional
 
 from lib.output import TranscriptionOutput
+from lib.commands import CommandMatcher
 
 import sounddevice as sd
 import requests
 from vosk import Model, KaldiRecognizer, SetLogLevel
+
+COMMANDS_FILE = os.path.join(os.path.dirname(__file__), "commands.json")
 
 # ---------- Configuration ----------
 DEFAULT_SR = 16000
@@ -85,6 +88,7 @@ class TranscriptionWorker:
         self._queue = queue.Queue()
         self._accumulated = []
         self._output = TranscriptionOutput()
+        self._matcher = CommandMatcher(COMMANDS_FILE)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Called by sounddevice for each audio chunk."""
@@ -119,7 +123,11 @@ class TranscriptionWorker:
                         text = res.get("text", "").strip()
                         if text:
                             self._accumulated.append(text)
-                            self._output.print_text(text)
+                            command = self._matcher.find(text)
+                            if command:
+                                self._output.print_text(command)
+                            else:
+                                self._output.print_text(text)
                     else:
                         pass
 
@@ -127,7 +135,11 @@ class TranscriptionWorker:
                 final_text = final.get("text", "").strip()
                 if final_text:
                     self._accumulated.append(final_text)
-                    self._output.print_text(final_text)
+                    command = self._matcher.find(final_text)
+                    if command:
+                        self._output.print_text(command)
+                    else:
+                        self._output.print_text(final_text)
 
         except Exception as e:
             self._output.print_error(f"STT error: {e}")
