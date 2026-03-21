@@ -125,6 +125,7 @@ class TranscriptionWorker:
                             self._accumulated.append(text)
                             command = self._matcher.find(text)
                             if command:
+                                self._matcher.execute(text)
                                 self._output.print_text(command)
                             else:
                                 self._output.print_text(text)
@@ -137,6 +138,7 @@ class TranscriptionWorker:
                     self._accumulated.append(final_text)
                     command = self._matcher.find(final_text)
                     if command:
+                        self._matcher.execute(final_text)
                         self._output.print_text(command)
                     else:
                         self._output.print_text(final_text)

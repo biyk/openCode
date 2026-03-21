@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from typing import Optional
 
 
@@ -24,3 +25,13 @@ class CommandMatcher:
                 if template in text_lower:
                     return commands.get(cmd_id, cmd_id)
         return None
+
+    def execute(self, text: str) -> bool:
+        command = self.find(text)
+        if command:
+            try:
+                subprocess.run(command, shell=True, check=True)
+                return True
+            except subprocess.CalledProcessError:
+                return False
+        return False
