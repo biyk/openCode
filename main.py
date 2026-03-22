@@ -19,6 +19,7 @@ COMMANDS_FILE = os.path.join(os.path.dirname(__file__), "commands.json")
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
 BLOCKSIZE = 2048         # Размер блока аудио
+LLM_TRIGGER = "пожалуйста"  # Кодовое слово для активации LLM
 
 # Модели Vosk (маленькие, ~50-60 МБ)
 VOSK_MODELS = {
@@ -122,13 +123,16 @@ class TranscriptionWorker:
                                 self._matcher.execute(text)
                                 self._output.print_text(command)
                             else:
-                                # Команда не найдена - отправляем в LLM
-                                self._output.print_info(f"[LLM] Запрос: {text}")
-                                answer = self._llm.ask(text)
-                                if answer:
-                                    self._output.print_text(answer)
+                                # Проверяем кодовое слово для активации LLM
+                                if LLM_TRIGGER in text.lower():
+                                    self._output.print_info(f"[LLM] Запрос: {text}")
+                                    answer = self._llm.ask(text)
+                                    if answer:
+                                        self._output.print_text(answer)
+                                    else:
+                                        self._output.print_error("[LLM] Ошибка ответа")
+                                        self._output.print_text(text)
                                 else:
-                                    self._output.print_error("[LLM] Ошибка ответа")
                                     self._output.print_text(text)
 
                 # Финальный результат при остановке
@@ -141,12 +145,15 @@ class TranscriptionWorker:
                         self._matcher.execute(final_text)
                         self._output.print_text(command)
                     else:
-                        self._output.print_info(f"[LLM] Запрос: {final_text}")
-                        answer = self._llm.ask(final_text)
-                        if answer:
-                            self._output.print_text(answer)
+                        if LLM_TRIGGER in final_text.lower():
+                            self._output.print_info(f"[LLM] Запрос: {final_text}")
+                            answer = self._llm.ask(final_text)
+                            if answer:
+                                self._output.print_text(answer)
+                            else:
+                                self._output.print_error("[LLM] Ошибка ответа")
+                                self._output.print_text(final_text)
                         else:
-                            self._output.print_error("[LLM] Ошибка ответа")
                             self._output.print_text(final_text)
 
         except Exception as e:

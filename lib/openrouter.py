@@ -45,7 +45,7 @@ class OpenRouterClient:
                 timeout=30
             )
             print(f"[OpenRouter] Статус: {response.status_code}")
-            print(f"[OpenRouter] Ответ: {response.text[:500]}")
+            #print(f"[OpenRouter] Ответ: {response.text[:500]}")
             response.raise_for_status()
             data = response.json()
             print(f"[OpenRouter] Ответ получен")
