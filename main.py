@@ -8,6 +8,7 @@ from typing import Optional
 
 from lib.output import TranscriptionOutput
 from lib.commands import CommandMatcher
+from lib.openrouter import OpenRouterClient
 
 import sounddevice as sd
 import requests
@@ -15,11 +16,11 @@ from vosk import Model, KaldiRecognizer, SetLogLevel
 
 COMMANDS_FILE = os.path.join(os.path.dirname(__file__), "commands.json")
 
-# ---------- Configuration ----------
-DEFAULT_SR = 16000
-BLOCKSIZE = 2048          # frames per audio callback
+# ---------- Конфигурация ----------
+DEFAULT_SR = 16000       # Частота дискретизации
+BLOCKSIZE = 2048         # Размер блока аудио
 
-# Vosk models (small, ~50–60 MB each)
+# Модели Vosk (маленькие, ~50-60 МБ)
 VOSK_MODELS = {
     "ru": {
         "name": "vosk-model-small-ru-0.22",
@@ -34,20 +35,16 @@ VOSK_MODELS = {
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-# ---------- Model download ----------
+# ---------- Загрузка модели ----------
 def ensure_vosk_model(lang_code: str) -> str:
-    """
-    Ensure Vosk model is present. If missing, download and unzip.
-    Returns path to the model directory.
-    """
+    """Проверяет наличие модели Vosk, скачивает при необходимости."""
     info = VOSK_MODELS[lang_code]
     model_dir = os.path.join(MODELS_DIR, info["name"])
 
-    # Check if model already exists
     if os.path.isdir(model_dir) and os.path.exists(os.path.join(model_dir, "am", "final.mdl")):
         return model_dir
 
-    print(f"Downloading Vosk model for {lang_code}...")
+    print(f"Загрузка модели Vosk для {lang_code}...")
     url = info["zip_url"]
     zip_path = os.path.join(MODELS_DIR, info["name"] + ".zip")
 
@@ -58,29 +55,24 @@ def ensure_vosk_model(lang_code: str) -> str:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
 
-        # Extract
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(MODELS_DIR)
 
-        # Remove zip
         os.remove(zip_path)
 
-        # Ensure model directory is returned correctly
         extracted_dirs = [d for d in os.listdir(MODELS_DIR) if d.startswith(info["name"])]
         if extracted_dirs:
             model_dir = os.path.join(MODELS_DIR, extracted_dirs[0])
 
-        print("Model ready.")
+        print("Модель готова.")
         return model_dir
 
     except Exception as e:
-        raise RuntimeError(f"Failed to download Vosk model for {lang_code}: {e}")
+        raise RuntimeError(f"Ошибка загрузки модели для {lang_code}: {e}")
 
-# ---------- STT worker (thread) ----------
+# ---------- Обработка аудио ----------
 class TranscriptionWorker:
-    """
-    Captures audio and prints final transcriptions to stdout.
-    """
+    """Захватывает аудио и распознаёт речь."""
     def __init__(self, lang_code: str = "ru"):
         self.lang_code = lang_code
         self._running = threading.Event()
@@ -89,15 +81,16 @@ class TranscriptionWorker:
         self._accumulated = []
         self._output = TranscriptionOutput()
         self._matcher = CommandMatcher(COMMANDS_FILE)
+        self._llm = OpenRouterClient()
 
     def audio_callback(self, indata, frames, time_info, status):
-        """Called by sounddevice for each audio chunk."""
+        """Обратный вызов sounddevice для каждого блока аудио."""
         if status:
             pass
         self._queue.put(bytes(indata))
 
     def run(self):
-        """Main loop – runs until stop() is called."""
+        """Основной цикл - работает до вызова stop()."""
         try:
             SetLogLevel(0)
             model_path = ensure_vosk_model(self.lang_code)
@@ -118,6 +111,7 @@ class TranscriptionWorker:
                     except queue.Empty:
                         continue
 
+                    # Распознанный текст
                     if recognizer.AcceptWaveform(data):
                         res = json.loads(recognizer.Result())
                         text = res.get("text", "").strip()
@@ -128,10 +122,16 @@ class TranscriptionWorker:
                                 self._matcher.execute(text)
                                 self._output.print_text(command)
                             else:
-                                self._output.print_text(text)
-                    else:
-                        pass
+                                # Команда не найдена - отправляем в LLM
+                                self._output.print_info(f"[LLM] Запрос: {text}")
+                                answer = self._llm.ask(text)
+                                if answer:
+                                    self._output.print_text(answer)
+                                else:
+                                    self._output.print_error("[LLM] Ошибка ответа")
+                                    self._output.print_text(text)
 
+                # Финальный результат при остановке
                 final = json.loads(recognizer.FinalResult())
                 final_text = final.get("text", "").strip()
                 if final_text:
@@ -141,17 +141,23 @@ class TranscriptionWorker:
                         self._matcher.execute(final_text)
                         self._output.print_text(command)
                     else:
-                        self._output.print_text(final_text)
+                        self._output.print_info(f"[LLM] Запрос: {final_text}")
+                        answer = self._llm.ask(final_text)
+                        if answer:
+                            self._output.print_text(answer)
+                        else:
+                            self._output.print_error("[LLM] Ошибка ответа")
+                            self._output.print_text(final_text)
 
         except Exception as e:
-            self._output.print_error(f"STT error: {e}")
+            self._output.print_error(f"Ошибка STT: {e}")
         finally:
             self._output.print_stopped()
 
     def stop(self):
         self._running.clear()
 
-# ---------- Main ----------
+# ---------- Главная функция ----------
 def main():
     lang = "ru"
 
@@ -161,13 +167,12 @@ def main():
     thread = threading.Thread(target=worker.run, daemon=True)
     thread.start()
 
-    output.print_info("\n🎙️  Recording... Press Enter to stop.\n")
+    output.print_info("\n🎙️  Запись... Нажмите Enter для остановки.\n")
     input()
 
     worker.stop()
     thread.join(timeout=2)
-    output.print_info("Exiting.")
+    output.print_info("Выход.")
 
 if __name__ == "__main__":
     main()
-

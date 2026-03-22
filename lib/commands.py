@@ -5,6 +5,8 @@ from typing import Optional
 
 
 class CommandMatcher:
+    """Сопоставление голосовых команд с shell-командами."""
+
     def __init__(self, commands_file: str):
         self._commands_file = commands_file
         self._data = self._load()
@@ -17,6 +19,7 @@ class CommandMatcher:
             return {}
 
     def find(self, text: str) -> Optional[str]:
+        """Находит команду по шаблону в тексте."""
         text_lower = text.lower()
         match = self._data.get("match", {})
         commands = self._data.get("commands", {})
@@ -27,6 +30,7 @@ class CommandMatcher:
         return None
 
     def execute(self, text: str) -> bool:
+        """Находит и выполняет команду через shell."""
         command = self.find(text)
         if command:
             try:
