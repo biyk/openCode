@@ -1,7 +1,8 @@
-import os
 import json
 import subprocess
 from typing import Optional
+
+from lib.tts import TextToSpeech
 
 
 class CommandMatcher:
@@ -10,6 +11,7 @@ class CommandMatcher:
     def __init__(self, commands_file: str):
         self._commands_file = commands_file
         self._data = self._load()
+        self._tts = TextToSpeech()
 
     def _load(self) -> dict:
         try:
@@ -35,6 +37,7 @@ class CommandMatcher:
         if command:
             try:
                 subprocess.run(command, shell=True, check=True)
+                self._tts.speak_and_play("Готово")
                 return True
             except subprocess.CalledProcessError:
                 return False
