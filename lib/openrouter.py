@@ -1,9 +1,12 @@
 import os
 import requests
 from typing import Optional
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text()
 
 
 class OpenRouterClient:
@@ -29,6 +32,10 @@ class OpenRouterClient:
         payload = {
             "model": "openrouter/free",
             "messages": [
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
                 {
                     "role": "user",
                     "content": text
