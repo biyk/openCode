@@ -5,12 +5,18 @@
 # Install dependencies
 pip install -r requirements.txt
 
+# Install pytest for testing
+pip install pytest
+
+# Run all unit tests
+pytest tests/ -v
+
+# Run a single test file
+pytest tests/test_commands.py -v
+
 # Run linting (flake8) and type checking (mypy)
 flake8 .
 mypy .
-
-# Run unit tests (if any) – single test example
-pytest tests/test_command_matcher.py -v
 
 # Run the application
 python main.py
@@ -84,6 +90,11 @@ voice/
 ├── commands.json        # Voice command templates & shell commands
 ├── requirements.txt     # Python dependencies
 ├── .env                 # OPENROUTER_API_KEY (not committed)
+├── tests/               # Unit tests
+│   ├── __init__.py
+│   ├── test_commands.py # Tests for CommandMatcher
+│   ├── test_openrouter.py # Tests for OpenRouterClient
+│   └── test_output.py   # Tests for TranscriptionOutput
 └── models/              # Vosk models (auto‑downloaded)
     └── ...
 └── lib/
