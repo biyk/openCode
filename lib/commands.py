@@ -39,3 +39,7 @@ class CommandMatcher:
             except subprocess.CalledProcessError:
                 return False
         return False
+
+    def get_llm_config(self) -> dict:
+        """Возвращает конфигурацию для LLM."""
+        return self._data.get("llm", {})

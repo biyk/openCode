@@ -9,6 +9,7 @@ from typing import Optional
 from lib.output import TranscriptionOutput
 from lib.commands import CommandMatcher
 from lib.openrouter import OpenRouterClient
+from lib.logger import Logger
 
 import sounddevice as sd
 import requests
@@ -82,7 +83,11 @@ class TranscriptionWorker:
         self._accumulated = []
         self._output = TranscriptionOutput()
         self._matcher = CommandMatcher(COMMANDS_FILE)
-        self._llm = OpenRouterClient()
+        self._logger = Logger()
+
+        llm_config = self._matcher.get_llm_config()
+        history_limit = llm_config.get("history_limit", 10)
+        self._llm = OpenRouterClient(history_limit=history_limit)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио."""
@@ -117,13 +122,13 @@ class TranscriptionWorker:
                         res = json.loads(recognizer.Result())
                         text = res.get("text", "").strip()
                         if text:
+                            self._logger.log_command(text)
                             self._accumulated.append(text)
                             command = self._matcher.find(text)
                             if command:
                                 self._matcher.execute(text)
                                 self._output.print_text(command)
                             else:
-                                # Проверяем кодовое слово для активации LLM
                                 if LLM_TRIGGER in text.lower():
                                     self._output.print_info(f"[LLM] Запрос: {text}")
                                     answer = self._llm.ask(text)
@@ -139,6 +144,7 @@ class TranscriptionWorker:
                 final = json.loads(recognizer.FinalResult())
                 final_text = final.get("text", "").strip()
                 if final_text:
+                    self._logger.log_command(final_text)
                     self._accumulated.append(final_text)
                     command = self._matcher.find(final_text)
                     if command:
