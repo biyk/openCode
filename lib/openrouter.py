@@ -40,7 +40,7 @@ class OpenRouterClient:
         }
 
         payload = {
-            "model": "openrouter/free",
+            "model": "stepfun/step-3.5-flash:free",
             "messages": messages
         }
 

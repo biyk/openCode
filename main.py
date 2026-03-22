@@ -10,6 +10,7 @@ from lib.output import TranscriptionOutput
 from lib.commands import CommandMatcher
 from lib.openrouter import OpenRouterClient
 from lib.logger import Logger
+from lib.tts import TextToSpeech
 
 import sounddevice as sd
 import requests
@@ -88,6 +89,7 @@ class TranscriptionWorker:
         llm_config = self._matcher.get_llm_config()
         history_limit = llm_config.get("history_limit", 10)
         self._llm = OpenRouterClient(history_limit=history_limit)
+        self._tts = TextToSpeech()
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио."""
@@ -134,6 +136,7 @@ class TranscriptionWorker:
                                     answer = self._llm.ask(text)
                                     if answer:
                                         self._output.print_text(answer)
+                                        self._tts.speak_and_play(answer)
                                     else:
                                         self._output.print_error("[LLM] Ошибка ответа")
                                         self._output.print_text(text)
@@ -156,6 +159,7 @@ class TranscriptionWorker:
                             answer = self._llm.ask(final_text)
                             if answer:
                                 self._output.print_text(answer)
+                                self._tts.speak_and_play(answer)
                             else:
                                 self._output.print_error("[LLM] Ошибка ответа")
                                 self._output.print_text(final_text)
