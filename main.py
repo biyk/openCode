@@ -4,6 +4,7 @@ import json
 import queue
 import threading
 import zipfile
+import socket
 from typing import Optional
 
 from lib.output import TranscriptionOutput
@@ -11,12 +12,11 @@ from lib.commands import CommandMatcher
 from lib.openrouter import OpenRouterClient
 from lib.logger import Logger
 from lib.tts import TextToSpeech
+from lib.config_loader import get_device_commands_path
 
 import sounddevice as sd
 import requests
 from vosk import Model, KaldiRecognizer, SetLogLevel
-
-COMMANDS_FILE = os.path.join(os.path.dirname(__file__), "commands.json")
 
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
@@ -76,14 +76,15 @@ def ensure_vosk_model(lang_code: str) -> str:
 # ---------- Обработка аудио ----------
 class TranscriptionWorker:
     """Захватывает аудио и распознаёт речь."""
-    def __init__(self, lang_code: str = "ru"):
+    def __init__(self, lang_code: str = "ru", device_name: str = "default"):
         self.lang_code = lang_code
         self._running = threading.Event()
         self._running.set()
         self._queue = queue.Queue()
         self._accumulated = []
         self._output = TranscriptionOutput()
-        self._matcher = CommandMatcher(COMMANDS_FILE)
+        commands_file = get_device_commands_path(device_name)
+        self._matcher = CommandMatcher(commands_file)
         self._logger = Logger()
 
         llm_config = self._matcher.get_llm_config()
@@ -177,9 +178,10 @@ class TranscriptionWorker:
 # ---------- Главная функция ----------
 def main():
     lang = "ru"
+    device_name = socket.gethostname()
 
     output = TranscriptionOutput()
-    worker = TranscriptionWorker(lang_code=lang)
+    worker = TranscriptionWorker(lang_code=lang, device_name=device_name)
 
     thread = threading.Thread(target=worker.run, daemon=True)
     thread.start()

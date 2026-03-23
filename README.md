@@ -25,7 +25,7 @@ sudo apt install mpg123  # для воспроизведения TTS
 OPENROUTER_API_KEY=your_api_key_here
 ```
 
-2. Настройте голосовые команды в `commands.json`
+2. Настройте голосовые команды в `targets/commands.json`
 
 ## Запуск
 
@@ -36,7 +36,7 @@ python main.py
 ## Команды
 
 - Активация по кодовому слову (по умолчанию: "Алиса")
-- Голосовые команды из `commands.json`
+- Голосовые команды из `targets/commands.json`
 - LLM вопросы (если настроен)
 
 ## Тесты
@@ -50,7 +50,8 @@ pytest tests/ -v
 ```
 voice/
 ├── main.py           # Точка входа
-├── commands.json     # Голосовые команды
+├── targets/          # Файлы конфигурации команд
+│   └── commands.json # Голосовые команды
 ├── .env              # API ключи
 ├── lib/
 │   ├── commands.py   # Сопоставление команд

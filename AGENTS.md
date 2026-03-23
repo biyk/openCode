@@ -91,7 +91,8 @@ from lib.openrouter import OpenRouterClient
 ```
 voice/
 ├── main.py              # Entry point, STT worker
-├── commands.json        # Voice command templates & shell commands
+├── targets/             # Файлы конфигурации команд
+│   └── commands.json    # Voice command templates & shell commands
 ├── requirements.txt     # Python dependencies
 ├── .env                 # API keys (OPENROUTER_API_KEY, GIGACHAT_API_KEY, etc.)
 ├── .gitignore           # Excludes: .env, __pycache__, models/, logs/
@@ -125,7 +126,7 @@ GIGACHAT_API_SCOPE=...      # GigaChat scope (e.g., GIGACHAT_API_PERS)
 ## 5. Adding New Features
 
 ### Add a new voice command
-1. Edit `commands.json` with shell command and match phrases
+1. Edit `targets/commands.json` with shell command and match phrases
 2. Restart the application
 
 ### Add a new LLM client
