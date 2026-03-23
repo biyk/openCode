@@ -61,11 +61,13 @@ from lib.openrouter import OpenRouterClient
 - Maximum line length: 100 characters (soft limit).
 - Trailing commas allowed in multi‑line structures.
 - Blank lines separate logical sections.
+- Use f-strings for string formatting, prefer inline formatting for simple cases.
 
 ### Type Hints
 - Use `Optional[T]` for possibly‑null values.
 - Annotate function parameters and return values.
 - Prefer `list[str]` over `List[str]` (Python 3.9+).
+- Use `dict[str, Any]` for JSON-like dictionaries.
 
 ### Naming Conventions
 | Element | Convention | Example |
@@ -81,20 +83,35 @@ from lib.openrouter import OpenRouterClient
 - Return empty collections (`[]`, `{}`) on failure rather than `None`.
 - Use `TranscriptionOutput.print_error()` for CLI error output.
 - Wrap I/O operations in `try/except` and raise `RuntimeError` for recoverable failures.
+- Never suppress exceptions silently; always log or handle them.
 
 ### Documentation
 - Module‑level docstrings describing purpose and public API.
 - Class and method docstrings in Russian, concise, with parameter descriptions.
 - Inline comments only where the code's intent is not obvious.
+- Use Google-style docstrings for consistency:
+```python
+def process_audio(data: bytes) -> Optional[dict]:
+    """Обрабатывает аудиоданные и возвращает результат распознавания.
+    
+    Args:
+        data: Raw audio bytes from the microphone.
+        
+    Returns:
+        Dict with recognized text or None if recognition failed.
+    """
+```
 
 ## 3. Project Structure
 ```
 voice/
 ├── main.py              # Entry point, STT worker
-├── targets/             # Файлы конфигурации команд
-│   └── commands.json    # Voice command templates & shell commands
+├── targets/             # Device-specific command configs
+│   └── commands.json     # Default voice commands
+├── targets/<hostname>/  # Device-specific overrides
+│   └── commands.json    # Per-device command config
 ├── requirements.txt     # Python dependencies
-├── .env                 # API keys (OPENROUTER_API_KEY, GIGACHAT_API_KEY, etc.)
+├── .env                 # API keys (never commit!)
 ├── .gitignore           # Excludes: .env, __pycache__, models/, logs/
 ├── TODO.md              # Task tracking
 ├── tests/               # Unit tests
@@ -104,7 +121,8 @@ voice/
 │   └── test_output.py   # Tests for TranscriptionOutput
 ├── lib/                 # Core modules
 │   ├── commands.py       # Voice command matching & execution
-│   ├── gigachat.py      # GigaChat API client (in development)
+│   ├── config_loader.py # Device-specific config loading
+│   ├── gigachat.py      # GigaChat API client
 │   ├── logger.py        # Logging and LLM conversation history
 │   ├── openrouter.py    # OpenRouter LLM client
 │   ├── output.py        # Console output helper
@@ -123,7 +141,24 @@ GIGACHAT_API_SCOPE=...      # GigaChat scope (e.g., GIGACHAT_API_PERS)
 ```
 **Important**: Never commit `.env` to version control.
 
-## 5. Adding New Features
+## 5. Key Patterns
+
+### Configuration Loading
+- Use `lib/config_loader.py` for device-specific config paths
+- Config priority: `targets/<hostname>/commands.json` → `targets/commands.json`
+- New device configs are auto-created from default on first run
+
+### Threading Patterns
+- Use `threading.Event()` for graceful shutdown signaling
+- Use `queue.Queue()` for thread-safe data passing between threads
+- Always use `daemon=True` for background threads
+
+### LLM Integration
+- All LLM clients inherit from base pattern in `lib/openrouter.py`
+- Implement `chat(messages: list) -> str` method for new clients
+- Use `lib/logger.py` for conversation history management
+
+## 6. Adding New Features
 
 ### Add a new voice command
 1. Edit `targets/commands.json` with shell command and match phrases
@@ -137,11 +172,39 @@ GIGACHAT_API_SCOPE=...      # GigaChat scope (e.g., GIGACHAT_API_PERS)
 ### Modify audio settings
 Adjust `DEFAULT_SR` and `BLOCKSIZE` constants in `main.py`.
 
-## 6. TODO Management
+## 7. Testing Guidelines
+
+### Test Structure
+- Place tests in `tests/` directory matching module structure
+- Use `pytest` as the test framework
+- Name test files as `test_<module>.py`
+- Use descriptive test function names: `test_<method>_<expected_behavior>`
+
+### Mocking
+- Mock external dependencies (API calls, file I/O, audio devices)
+- Use `unittest.mock` for patching
+- For sounddevice, mock the stream objects
+
+### Test Examples
+```python
+def test_find_command():
+    """Тест поиска команды по фразе."""
+    matcher = CommandMatcher("tests/fixtures/commands.json")
+    result = matcher.find("открой браузер")
+    assert result == "firefox"
+
+def test_command_not_found():
+    """Тест отсутствия команды."""
+    matcher = CommandMatcher("tests/fixtures/commands.json")
+    result = matcher.find("какая-то неизвестная команда")
+    assert result is None
+```
+
+## 8. TODO Management
 - После каждого коммита проверять `TODO.md` — реализует ли текущий функционал какую-либо задачу из списка.
 - Если да — отмечать соответствующий пункт галочкой (`[x]`).
 - Если после коммита функционал реализован полностью — удалять пункт из TODO.md.
 
-## 7. Cursor / Copilot Rules
+## 9. Cursor / Copilot Rules
 - No `.cursor/rules/` or `.github/copilot-instructions.md` files detected.
 - If such files are added later, they will be read automatically by the agent.
