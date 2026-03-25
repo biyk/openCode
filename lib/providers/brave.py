@@ -1,6 +1,8 @@
+import json
 import subprocess
 import requests
 import time
+import websocket
 from typing import Optional
 import pyautogui
 import pyperclip
@@ -24,8 +26,9 @@ class BraveClient(BaseLLMClient):
         """Открывает вкладку DeepSeek и отправляет текст."""
         if self.ensure_deepseek_tab():
             time.sleep(1)
-            return self.send_text_to_input(text)
-
+            success, response_text = self.send_text_to_input(text)
+            if success:
+                return response_text
         return None
 
     def _is_brave_running(self) -> bool:
@@ -107,7 +110,6 @@ class BraveClient(BaseLLMClient):
             print(f"[Brave] PUT /json/new status: {response.status_code}")
             print(f"[Brave] POST /json/new response: {response.text[:200]}")
             if response.status_code == 200:
-                #TODO ждем загрузки страницы документреди и наличие элемента 
                 print("[Brave] Открыта вкладка DeepSeek Chat")
                 return True
             return False
@@ -123,6 +125,7 @@ class BraveClient(BaseLLMClient):
             print("[Brave] Браузер не запущен, запускаю...")
             if not self._start_brave():
                 return False
+            time.sleep(5)
 
         tab = self._find_deepseek_tab()
         if tab:
@@ -160,18 +163,18 @@ class BraveClient(BaseLLMClient):
             print(f"[Brave] Ошибка фокусировки: {e}")
             return False
 
-    def send_text_to_input(self, text: str) -> bool:
+    def send_text_to_input(self, text: str) -> tuple[bool, str]:
         """Отправляет текст в поле ввода DeepSeek Chat через pyautogui."""
         print("[Brave] send_text_to_input: начало")
         tab = self._find_deepseek_tab()
         if not tab:
             print("[Brave] Вкладка DeepSeek не найдена")
-            return False
+            return False, ""
 
 
         time.sleep(1)
 
-        x, y = 100, 650
+        x, y = 100, 400
         pyautogui.click(x, y)
         time.sleep(0.5)
 
@@ -180,7 +183,76 @@ class BraveClient(BaseLLMClient):
         time.sleep(0.3)
 
         pyautogui.press('enter')
-         #TODO ждем когда [...document.querySelectorAll('.ds-markdown')].pop().parentElement.parentElement.querySelectorAll('.ds-flex .ds-flex .ds-icon-button').length > 0
-        #TODO отдаем содержимое [...document.querySelectorAll('.ds-markdown')].pop()
         print("[Brave] Текст отправлен")
-        return True
+        
+        return self._wait_for_response()
+    
+    def _get_ws_url(self) -> Optional[str]:
+        """Получает WebSocket URL для DeepSeek вкладки."""
+        tabs = self._get_tabs()
+        for tab in tabs:
+            if "chat.deepseek.com/" in tab.get("url", ""):
+                return tab.get("webSocketDebuggerUrl")
+        return None
+    
+    def _execute_js(self, ws: websocket.WebSocket, msg_id: int, script: str) -> Optional[dict]:
+        """Выполняет JavaScript через WebSocket и возвращает результат в виде словаря."""
+        try:
+            request_data = {
+                "id": msg_id,
+                "method": "Runtime.evaluate",
+                "params": {"expression": script, "returnByValue": True}
+            }
+            ws.send(json.dumps(request_data))
+            for _ in range(20):
+                response = ws.recv()
+                data = json.loads(response)
+                if data.get("id") == msg_id:
+                    result = data.get("result", {}).get("result", {})
+                    return result.get("value") if result.get("type") == "object" else result
+            return None
+        except Exception as e:
+            print(f"[Brave] Ошибка WebSocket: {e}")
+            return None
+
+    def _wait_for_response(self) -> tuple[bool, str]:
+        """Ожидает ответ от DeepSeek и возвращает кортеж (success, content)."""
+        ws_url = self._get_ws_url()
+        if not ws_url:
+            print("[Brave] Не удалось получить WebSocket URL")
+            return False, ""
+
+        try:
+            ws = websocket.create_connection(ws_url, timeout=30)
+            time.sleep(1)
+            check_script = """
+                (function() {
+                    const buttons = [...document.querySelectorAll('.ds-markdown')].pop().parentElement.parentElement.querySelectorAll('.ds-flex .ds-flex .ds-icon-button');
+                    const markdown = [...document.querySelectorAll('.ds-markdown')].pop();
+                    if (buttons.length > 0 && markdown) {
+                        return {
+                            ready: true,
+                            content: markdown.innerText
+                        };
+                    }
+                    return { ready: false };
+                })()
+            """
+            
+            for i in range(120):
+                time.sleep(1)
+                result = self._execute_js(ws, 1, check_script)
+                if result and isinstance(result, dict) and result.get("ready"):
+                    content = result.get("content", "")
+                    print(f"[Brave] Ответ получен: {content[:100]}...")
+                    ws.close()
+                    return True, content
+                if i % 10 == 0:
+                    print(f"[Brave] Ожидание ответа... ({i}c)")
+            
+            ws.close()
+            print("[Brave] Таймаут ожидания ответа")
+            return False, ""
+        except Exception as e:
+            print(f"[Brave] Ошибка ожидания ответа: {e}")
+            return False, ""
