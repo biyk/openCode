@@ -12,6 +12,18 @@
             "name": "GigaChat",
             "class": "GigaChatClient",
             "module": "lib.providers.gigachat"
+        },
+        {
+            "id": "gpt4free",
+            "name": "GPT4Free",
+            "class": "Gpt4FreeClient",
+            "module": "lib.providers.gpt4free"
+        },
+        {
+            "id": "deepseek",
+            "name": "DeepSeek",
+            "class": "DeepSeekClient",
+            "module": "lib.providers.deepseek"
         }
     ]
 }
