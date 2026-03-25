@@ -9,14 +9,16 @@ from typing import Optional
 
 from lib.output import TranscriptionOutput
 from lib.commands import CommandMatcher
-from lib.openrouter import OpenRouterClient
 from lib.logger import Logger
 from lib.tts import TextToSpeech
 from lib.config_loader import get_device_commands_path
+from lib.providers.manager import ProviderManager
 
 import sounddevice as sd
 import requests
 from vosk import Model, KaldiRecognizer, SetLogLevel
+
+_provider_manager = ProviderManager()
 
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
@@ -89,7 +91,7 @@ class TranscriptionWorker:
 
         llm_config = self._matcher.get_llm_config()
         history_limit = llm_config.get("history_limit", 10)
-        self._llm = OpenRouterClient(history_limit=history_limit)
+        self._llm = _provider_manager.get_client(history_limit=history_limit)
         self._tts = TextToSpeech()
 
     def audio_callback(self, indata, frames, time_info, status):

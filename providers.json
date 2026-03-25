@@ -1,0 +1,17 @@
+{
+    "active": "gigachat",
+    "providers": [
+        {
+            "id": "openrouter",
+            "name": "OpenRouter",
+            "class": "OpenRouterClient",
+            "module": "lib.providers.openrouter"
+        },
+        {
+            "id": "gigachat",
+            "name": "GigaChat",
+            "class": "GigaChatClient",
+            "module": "lib.providers.gigachat"
+        }
+    ]
+}

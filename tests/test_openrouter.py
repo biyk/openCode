@@ -1,15 +1,15 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from lib.openrouter import OpenRouterClient
+from lib.providers.openrouter import OpenRouterClient
 
 
 class TestOpenRouterClient:
     """Тесты для класса OpenRouterClient."""
 
     def test_init_without_api_key(self):
-        with patch('lib.openrouter.os.getenv', return_value=None):
-            with patch('lib.openrouter.load_dotenv'):
-                from lib.openrouter import OpenRouterClient
+        with patch('lib.providers.openrouter.os.getenv', return_value=None):
+            with patch('lib.providers.openrouter.load_dotenv'):
+                from lib.providers.openrouter import OpenRouterClient
                 client = OpenRouterClient(api_key=None)
                 assert client._api_key is None or client._api_key == ""
 
@@ -23,7 +23,7 @@ class TestOpenRouterClient:
             result = client.ask("test")
             assert result is None
 
-    @patch('lib.openrouter.requests.post')
+    @patch('lib.providers.openrouter.requests.post')
     def test_ask_success(self, mock_post):
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -40,7 +40,7 @@ class TestOpenRouterClient:
         assert result == "Привет! Как дела?"
         mock_post.assert_called_once()
 
-    @patch('lib.openrouter.requests.post')
+    @patch('lib.providers.openrouter.requests.post')
     def test_ask_api_error(self, mock_post):
         mock_response = MagicMock()
         mock_response.status_code = 400
