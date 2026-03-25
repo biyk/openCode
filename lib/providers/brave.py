@@ -98,6 +98,20 @@ class BraveClient(BaseLLMClient):
             print(f"[Brave] Ошибка переключения: {e}")
             return False
 
+    def _navigate_tab(self, tab_id: str, url: str) -> bool:
+        """Переходит по URL в указанной вкладке."""
+        try:
+            response = requests.post(
+                f"{self._base_url}/json/url/{tab_id}",
+                json={"url": url},
+                timeout=10
+            )
+            print(f"[Brave] Переход к {url}: {response.status_code}")
+            return response.status_code == 200
+        except requests.exceptions.RequestException as e:
+            print(f"[Brave] Ошибка навигации: {e}")
+            return False
+
     def _open_deepseek(self) -> bool:
         """Открывает новую вкладку с DeepSeek Chat."""
         try:
@@ -131,6 +145,10 @@ class BraveClient(BaseLLMClient):
         if tab:
             print(f"[Brave] Вкладка найдена: {tab.get('title', 'Unknown')}")
             self._switch_to_tab(tab.get("id", ""))
+            if "chat.deepseek.com/" not in tab.get("url", "") or tab.get("url", "") != "https://chat.deepseek.com/":
+                print("[Brave] Переход к chat.deepseek.com...")
+                self._navigate_tab(tab.get("id", ""), "https://chat.deepseek.com/")
+                time.sleep(1)
             return True
 
         print("[Brave] Вкладка не найдена, открываю...")
