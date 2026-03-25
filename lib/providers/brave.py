@@ -112,6 +112,17 @@ class BraveClient(BaseLLMClient):
             print(f"[Brave] Ошибка навигации: {e}")
             return False
 
+    def _close_page_tabs(self) -> None:
+        """Закрывает все вкладки типа 'page'."""
+        tabs = self._get_tabs()
+        for tab in tabs:
+            if tab.get("type") == "page":
+                try:
+                    requests.post(f"{self._base_url}/json/close/{tab.get('id')}", timeout=5)
+                    print(f"[Brave] Закрыта вкладка: {tab.get('title', 'No title')}")
+                except requests.exceptions.RequestException:
+                    pass
+
     def _open_deepseek(self) -> bool:
         """Открывает новую вкладку с DeepSeek Chat."""
         try:
@@ -141,20 +152,14 @@ class BraveClient(BaseLLMClient):
                 return False
             time.sleep(5)
 
-        tab = self._find_deepseek_tab()
-        if tab:
-            print(f"[Brave] Вкладка найдена: {tab.get('title', 'Unknown')}")
-            self._switch_to_tab(tab.get("id", ""))
-            if "chat.deepseek.com/" not in tab.get("url", "") or tab.get("url", "") != "https://chat.deepseek.com/":
-                print("[Brave] Переход к chat.deepseek.com...")
-                self._navigate_tab(tab.get("id", ""), "https://chat.deepseek.com/")
-                time.sleep(1)
-            return True
+        print("[Brave] Закрытие всех вкладок...")
+        self._close_page_tabs()
+        time.sleep(1)
 
-        print("[Brave] Вкладка не найдена, открываю...")
+        print("[Brave] Открытие DeepSeek Chat...")
         if not self._open_deepseek():
             return False
-        time.sleep(2)#ждем открытия вкладки
+        time.sleep(2)
         return True
 
     def _focus_brave_window(self) -> bool:
@@ -192,7 +197,7 @@ class BraveClient(BaseLLMClient):
 
         time.sleep(1)
 
-        x, y = 100, 400
+        x, y = 400, 400
         pyautogui.click(x, y)
         time.sleep(0.5)
 
