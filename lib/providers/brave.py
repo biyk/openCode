@@ -92,11 +92,6 @@ class BraveClient(BaseLLMClient):
                 f"{self._base_url}/json/activate/{tab_id}",
                 timeout=5
             )
-            response = requests.post(
-                f"{self._base_url}/json/url/{tab_id}",
-                json={"url": "https://chat.deepseek.com/"},
-                timeout=10
-            )
             print(f"[Brave] Переключено на вкладку {tab_id}")
             return True
         except requests.exceptions.RequestException as e:
@@ -120,13 +115,13 @@ class BraveClient(BaseLLMClient):
     def _open_deepseek(self) -> bool:
         """Открывает новую вкладку с DeepSeek Chat."""
         try:
-            print(f"[Brave] Открытие вкладки: POST {self._base_url}/json/new")
-            response = requests.post(
+            print(f"[Brave] Открытие вкладки: PUT {self._base_url}/json/new")
+            response = requests.get(
                 f"{self._base_url}/json/new",
-                json={"url": "https://chat.deepseek.com/"},
+                params={"url": "https://chat.deepseek.com/"},
                 timeout=5
             )
-            print(f"[Brave] POST /json/new status: {response.status_code}")
+            print(f"[Brave] PUT /json/new status: {response.status_code}")
             print(f"[Brave] POST /json/new response: {response.text[:200]}")
             if response.status_code == 200:
                 print("[Brave] Открыта вкладка DeepSeek Chat")
@@ -196,6 +191,10 @@ class BraveClient(BaseLLMClient):
 
 
         time.sleep(1)
+
+        pyautogui.click(113, 110)
+        time.sleep(1.5)
+
 
         x, y = 400, 400
         pyautogui.click(x, y)
