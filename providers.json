@@ -24,6 +24,12 @@
             "name": "DeepSeek",
             "class": "DeepSeekClient",
             "module": "lib.providers.deepseek"
+        },
+        {
+            "id": "rabbitmq",
+            "name": "RabbitMQ",
+            "class": "RabbitMQClient",
+            "module": "lib.providers.rabbit"
         }
     ]
 }
