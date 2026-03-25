@@ -1,5 +1,5 @@
 {
-    "active": "gigachat",
+    "active": "brave",
     "providers": [
         {
             "id": "openrouter",
@@ -26,10 +26,10 @@
             "module": "lib.providers.deepseek"
         },
         {
-            "id": "rabbitmq",
-            "name": "RabbitMQ",
-            "class": "RabbitMQClient",
-            "module": "lib.providers.rabbit"
+            "id": "brave",
+            "name": "Brave Browser",
+            "class": "BraveClient",
+            "module": "lib.providers.brave"
         }
     ]
 }
