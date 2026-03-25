@@ -92,6 +92,11 @@ class BraveClient(BaseLLMClient):
                 f"{self._base_url}/json/activate/{tab_id}",
                 timeout=5
             )
+            response = requests.post(
+                f"{self._base_url}/json/url/{tab_id}",
+                json={"url": "https://chat.deepseek.com/"},
+                timeout=10
+            )
             print(f"[Brave] Переключено на вкладку {tab_id}")
             return True
         except requests.exceptions.RequestException as e:
@@ -115,13 +120,13 @@ class BraveClient(BaseLLMClient):
     def _open_deepseek(self) -> bool:
         """Открывает новую вкладку с DeepSeek Chat."""
         try:
-            print(f"[Brave] Открытие вкладки: PUT {self._base_url}/json/new")
-            response = requests.put(
+            print(f"[Brave] Открытие вкладки: POST {self._base_url}/json/new")
+            response = requests.post(
                 f"{self._base_url}/json/new",
                 json={"url": "https://chat.deepseek.com/"},
                 timeout=5
             )
-            print(f"[Brave] PUT /json/new status: {response.status_code}")
+            print(f"[Brave] POST /json/new status: {response.status_code}")
             print(f"[Brave] POST /json/new response: {response.text[:200]}")
             if response.status_code == 200:
                 print("[Brave] Открыта вкладка DeepSeek Chat")
@@ -129,19 +134,6 @@ class BraveClient(BaseLLMClient):
             return False
         except requests.exceptions.RequestException as e:
             print(f"[Brave] Ошибка открытия вкладки: {e}")
-            return False
-
-    def _close_other_tabs(self, keep_tab_id: str) -> bool:
-        """Закрывает все вкладки кроме указанной."""
-        try:
-            tabs = self._get_tabs()
-            for tab in tabs:
-                if tab.get("id") != keep_tab_id and tab.get("type") == "page":
-                    requests.post(f"{self._base_url}/json/close/{tab.get('id')}", timeout=5)
-                    print(f"[Brave] Закрыта вкладка: {tab.get('title', 'Unknown')}")
-            return True
-        except requests.exceptions.RequestException as e:
-            print(f"[Brave] Ошибка закрытия вкладок: {e}")
             return False
 
     def ensure_deepseek_tab(self) -> bool:
@@ -154,19 +146,20 @@ class BraveClient(BaseLLMClient):
                 return False
             time.sleep(5)
 
-        print("[Brave] Открываю вкладку DeepSeek...")
+        tab = self._find_deepseek_tab()
+        if tab:
+            print(f"[Brave] Вкладка найдена: {tab.get('title', 'Unknown')}")
+            self._switch_to_tab(tab.get("id", ""))
+            if "chat.deepseek.com/" not in tab.get("url", "") or tab.get("url", "") != "https://chat.deepseek.com/":
+                print("[Brave] Переход к chat.deepseek.com...")
+                self._navigate_tab(tab.get("id", ""), "https://chat.deepseek.com/")
+                time.sleep(1)
+            return True
+
+        print("[Brave] Вкладка не найдена, открываю...")
         if not self._open_deepseek():
             return False
-        time.sleep(2)
-
-        tab = self._find_deepseek_tab()
-        if not tab:
-            print("[Brave] Не удалось открыть вкладку DeepSeek")
-            return False
-
-        self._switch_to_tab(tab.get("id", ""))
-        self._close_other_tabs(tab.get("id", ""))
-        time.sleep(1)
+        time.sleep(2)#ждем открытия вкладки
         return True
 
     def _focus_brave_window(self) -> bool:
