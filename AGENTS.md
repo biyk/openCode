@@ -3,8 +3,9 @@
 ## 1. Build / Lint / Test Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (including linting tools)
 pip install -r requirements.txt
+pip install flake8 mypy pytest-mock
 
 # Run all unit tests
 pytest tests/ -v
@@ -15,8 +16,10 @@ pytest tests/test_commands.py -v
 # Run a single test
 pytest tests/test_commands.py::test_find_command -v
 
-# Run linting and type checking
+# Run linting
 flake8 .
+
+# Run type checking
 mypy .
 
 # Run the application
@@ -25,6 +28,7 @@ python main.py
 # Audio playback requires mpg123 or ffplay
 # Ubuntu/Debian: sudo apt install mpg123
 # macOS: brew install mpg123
+# Alternative: ffplay (usually comes with ffmpeg)
 ```
 
 ## 2. Code Style Guidelines
@@ -103,12 +107,6 @@ voice/
 ├── .env                 # API keys (never commit!)
 ├── TODO.md              # Task tracking
 ├── tests/               # Unit tests
-│   ├── test_commands.py
-│   ├── test_openrouter.py
-│   ├── test_output.py
-│   ├── test_tts.py
-│   ├── test_config_loader.py
-│   └── test_logger.py
 ├── lib/                 # Core modules
 │   ├── commands.py      # Voice command matching
 │   ├── config_loader.py # Device-specific config loading
@@ -116,7 +114,16 @@ voice/
 │   ├── logger.py        # Logging and LLM conversation history
 │   ├── openrouter.py    # OpenRouter LLM client
 │   ├── output.py        # Console output helper
-│   └── tts.py           # Text-to-speech (gTTS)
+│   ├── tts.py           # Text-to-speech (gTTS)
+│   └── providers/       # LLM providers
+│       ├── __init__.py
+│       ├── base.py      # Base LLM client
+│       ├── manager.py   # Provider manager
+│       ├── openrouter.py
+│       ├── gigachat.py
+│       ├── deepseek.py
+│       ├── gpt4free.py
+│       └── brave.py
 ├── prompts/             # LLM prompt templates
 └── models/              # Vosk STT models (auto-downloaded)
 ```
@@ -133,9 +140,10 @@ voice/
 - Always use `daemon=True` for background threads
 
 ### LLM Integration
-- All LLM clients follow pattern in `lib/openrouter.py`
+- All LLM clients follow pattern in `lib/providers/base.py`
 - Implement `chat(messages: list) -> str` method
 - Use `lib/logger.py` for conversation history
+- Provider manager in `lib/providers/manager.py` handles dynamic loading
 
 ## 5. Testing Guidelines
 
@@ -153,7 +161,11 @@ def test_find_command():
     assert result == "firefox"
 ```
 
-## 6. TODO Management
-- После каждого коммита проверять `TODO.md`
-- Отмечать реализованные задачи галочкой (`[x]`)
-- Удалять полностью реализованные пункты
+## 6. Important Notes
+
+- Never commit `.env` or API keys - add to `.gitignore`
+- Voice commands are defined in `targets/commands.json`
+- Device-specific overrides go in `targets/<hostname>/commands.json`
+- After each commit, check `TODO.md` and mark completed items
+- The project uses Vosk for speech-to-text and various LLM providers (OpenRouter, GigaChat, etc.)
+- Text-to-speech uses gTTS (Google Translate TTS) with mpg123 or ffplay for playback
