@@ -84,6 +84,7 @@ class TranscriptionWorker:
         self._running.set()
         self._queue = queue.Queue()
         self._accumulated = []
+        self._speaking = False
         self._output = TranscriptionOutput()
         commands_file = get_device_commands_path(device_name)
         self._matcher = CommandMatcher(commands_file)
@@ -98,7 +99,12 @@ class TranscriptionWorker:
         """Обратный вызов sounddevice для каждого блока аудио."""
         if status:
             pass
+        if self._speaking:
+            return
         self._queue.put(bytes(indata))
+
+    def _on_speaking_finished(self):
+        self._speaking = False
 
     def run(self):
         """Основной цикл - работает до вызова stop()."""
@@ -138,8 +144,8 @@ class TranscriptionWorker:
                                     self._output.print_info(f"[LLM] Запрос: {text}")
                                     answer = self._llm.ask(text)
                                     if answer:
-                                        self._output.print_text(answer)
-                                        self._tts.speak_and_play(answer)
+                                        self._speaking = True
+                                        self._tts.speak_and_play(answer, self._on_speaking_finished)
                                     else:
                                         self._output.print_error("[LLM] Ошибка ответа")
                                         self._output.print_text(text)
@@ -161,8 +167,8 @@ class TranscriptionWorker:
                             self._output.print_info(f"[LLM] Запрос: {final_text}")
                             answer = self._llm.ask(final_text)
                             if answer:
-                                self._output.print_text(answer)
-                                self._tts.speak_and_play(answer)
+                                self._speaking = True
+                                self._tts.speak_and_play(answer, self._on_speaking_finished)
                             else:
                                 self._output.print_error("[LLM] Ошибка ответа")
                                 self._output.print_text(final_text)

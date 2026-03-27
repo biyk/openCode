@@ -6,8 +6,13 @@ import websocket
 from typing import Optional
 import pyautogui
 import pyperclip
-
+from pathlib import Path
 from lib.providers import BaseLLMClient
+
+
+SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text()
+
+FORMAT = '\n Напиши свой ответ на сообщение ниже: \n'
 
 
 class BraveClient(BaseLLMClient):
@@ -200,7 +205,7 @@ class BraveClient(BaseLLMClient):
         pyautogui.click(x, y)
         time.sleep(0.5)
 
-        pyperclip.copy(text)
+        pyperclip.copy(SYSTEM_PROMPT + FORMAT + text)
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(0.3)
 

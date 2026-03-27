@@ -1,5 +1,5 @@
 import tempfile
-from typing import Optional
+from typing import Optional, Callable
 
 from gtts import gTTS
 
@@ -34,11 +34,13 @@ class TextToSpeech:
             print(f"[TTS] Ошибка синтеза: {e}")
             return None
 
-    def speak_and_play(self, text: str) -> None:
+    def speak_and_play(self, text: str, on_finished: Optional[Callable[[], None]] = None) -> None:
         """Синтез речи и воспроизведение."""
         audio_path = self.speak(text)
         if not audio_path:
             print("[TTS] Воспроизведение отменено - файл не создан")
+            if on_finished:
+                on_finished()
             return
 
         import subprocess
@@ -60,3 +62,5 @@ class TextToSpeech:
             import os
             if os.path.exists(audio_path):
                 os.unlink(audio_path)
+            if on_finished:
+                on_finished()
