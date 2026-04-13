@@ -30,9 +30,10 @@ class TestLogger:
 
     def test_log_command_creates_entry(self, temp_log_dir):
         logger = Logger()
-        logger.log_command("тестовая команда")
+        test_text = "test command"
+        logger.log_command(test_text)
         content = logger._log_file.read_text()
-        assert "тестовая команда" in content
+        assert test_text in content
 
     def test_log_command_with_timestamp(self, temp_log_dir):
         logger = Logger()
@@ -43,17 +44,19 @@ class TestLogger:
 
     def test_log_llm_user_message(self, temp_log_dir):
         logger = Logger()
-        logger.log_llm("user", "Привет!")
+        test_msg = "Hello!"
+        logger.log_llm("user", test_msg)
         content = logger._llm_file.read_text()
         assert "[USER]" in content
-        assert "Привет!" in content
+        assert test_msg in content
 
     def test_log_llm_assistant_message(self, temp_log_dir):
         logger = Logger()
-        logger.log_llm("assistant", "Как дела?")
+        test_msg = "How are you?"
+        logger.log_llm("assistant", test_msg)
         content = logger._llm_file.read_text()
         assert "[ASSISTANT]" in content
-        assert "Как дела?" in content
+        assert test_msg in content
 
     def test_get_llm_history_empty(self, temp_log_dir):
         logger = Logger()

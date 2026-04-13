@@ -147,6 +147,7 @@ voice/
 
 ## 5. Testing Guidelines
 
+- **Все тесты запускать только в папке temp/** (создать её для временных файлов)
 - Place tests in `tests/` matching module structure
 - Use `pytest` as the test framework
 - Name test files as `test_<module>.py`

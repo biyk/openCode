@@ -1,8 +1,12 @@
 import json
+import os
+import platform
 import subprocess
 from typing import Optional
 
 from lib.tts import TextToSpeech
+
+CONFIRMATION_PHRASE = os.environ.get("VOICE_CONFIRMATION_PHRASE")
 
 
 class CommandMatcher:
@@ -20,6 +24,17 @@ class CommandMatcher:
         except Exception:
             return {}
 
+    def _get_command(self, cmd_id: str) -> Optional[str]:
+        """Возвращает команду с учётом платформы."""
+        commands = self._data.get("commands", {})
+        cmd = commands.get(cmd_id)
+        if cmd is None:
+            return None
+        if isinstance(cmd, dict):
+            system = platform.system().lower()
+            return cmd.get(system) or cmd.get("default")
+        return cmd
+
     def find(self, text: str) -> Optional[str]:
         """Находит команду по шаблону в тексте."""
         text_lower = text.lower()
@@ -28,7 +43,7 @@ class CommandMatcher:
         for cmd_id, templates in match.items():
             for template in templates:
                 if template in text_lower:
-                    return commands.get(cmd_id, cmd_id)
+                    return self._get_command(cmd_id) or cmd_id
         return None
 
     def execute(self, text: str) -> bool:
@@ -37,7 +52,8 @@ class CommandMatcher:
         if command:
             try:
                 subprocess.run(command, shell=True, check=True)
-                self._tts.speak_and_play("Готово")
+                if os.environ.get("VOICE_CONFIRMATION_PHRASE"):
+                    self._tts.speak_and_play(os.environ["VOICE_CONFIRMATION_PHRASE"])
                 return True
             except subprocess.CalledProcessError:
                 return False

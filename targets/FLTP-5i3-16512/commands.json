@@ -1,0 +1,33 @@
+{
+    "commands": {
+        "volumeup": {
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
+            "windows": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAF)\"",
+            "default": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAF)\""
+        },
+        "volumedown": {
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
+            "windows": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAE)\"",
+            "default": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAE)\""
+        },
+        "playpause": {
+            "linux": "playerctl play-pause",
+            "windows": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB3)\"",
+            "default": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB3)\""
+        },
+        "stop": {
+            "linux": "playerctl stop",
+            "windows": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\"",
+            "default": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\""
+        }
+    },
+    "match": {
+        "volumeup": ["громче", "сделай громче", "увеличь громкость", "громкость вверх"],
+        "volumedown": ["тише", "сделай тише", "уменьши громкость", "громкость вниз"],
+        "playpause": ["пауза", "плей", "играй", "включи", "play", "pause"],
+        "stop": ["стоп", "остановить", "выключи", "stop"]
+    },
+    "llm": {
+        "history_limit": 10
+    }
+}

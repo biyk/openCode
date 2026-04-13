@@ -7,3 +7,7 @@ venv/
 models/
 logs/
 **/node_modules/
+temp/
+temp*.txt
+*.log
+bin/

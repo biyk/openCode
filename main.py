@@ -7,6 +7,11 @@ import zipfile
 import socket
 from typing import Optional
 
+# Добавить mpg123 в PATH (Windows)
+mpg_path = os.path.join(os.path.dirname(__file__), "bin", "mpg")
+if os.path.isdir(mpg_path):
+    os.environ["PATH"] = mpg_path + os.pathsep + os.environ.get("PATH", "")
+
 from lib.output import TranscriptionOutput
 from lib.commands import CommandMatcher
 from lib.logger import Logger
