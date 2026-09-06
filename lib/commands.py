@@ -8,6 +8,8 @@ from lib.tts import TextToSpeech
 
 CONFIRMATION_PHRASE = os.environ.get("VOICE_CONFIRMATION_PHRASE")
 
+DEFAULT_TRIGGERS = ["пожалуйста", "алиса"]
+
 
 class CommandMatcher:
     """Сопоставление голосовых команд с shell-командами."""
@@ -37,6 +39,16 @@ class CommandMatcher:
             return
         self._load()
 
+    @property
+    def triggers(self) -> list[str]:
+        """Список триггеров для активации команд/LLM."""
+        return self._data.get("triggers", DEFAULT_TRIGGERS)
+
+    def has_trigger(self, text: str) -> bool:
+        """Проверяет наличие любого триггера в тексте (case-insensitive)."""
+        text_lower = text.lower()
+        return any(t in text_lower for t in self.triggers)
+
     def _get_command(self, cmd_id: str) -> Optional[str]:
         """Возвращает команду с учётом платформы."""
         commands = self._data.get("commands", {})
@@ -49,11 +61,12 @@ class CommandMatcher:
         return cmd
 
     def find(self, text: str) -> Optional[str]:
-        """Находит команду по шаблону в тексте."""
+        """Находит команду по шаблону в тексте (только если есть триггер)."""
         self.reload()
+        if not self.has_trigger(text):
+            return None
         text_lower = text.lower()
         match = self._data.get("match", {})
-        commands = self._data.get("commands", {})
         for cmd_id, templates in match.items():
             for template in templates:
                 if template in text_lower:

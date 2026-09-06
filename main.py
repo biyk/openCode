@@ -28,7 +28,6 @@ _provider_manager = ProviderManager()
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
 BLOCKSIZE = 2048         # Размер блока аудио
-LLM_TRIGGER = "пожалуйста"  # Кодовое слово для активации LLM
 
 # Модели Vosk (маленькие, ~50-60 МБ)
 VOSK_MODELS = {
@@ -140,22 +139,7 @@ class TranscriptionWorker:
                         if text:
                             self._logger.log_command(text)
                             self._accumulated.append(text)
-                            command = self._matcher.find(text)
-                            if command:
-                                self._matcher.execute(text)
-                                self._output.print_text(command)
-                            else:
-                                if LLM_TRIGGER in text.lower():
-                                    self._output.print_info(f"[LLM] Запрос: {text}")
-                                    answer = self._llm.ask(text)
-                                    if answer:
-                                        self._speaking = True
-                                        self._tts.speak_and_play(answer, self._on_speaking_finished)
-                                    else:
-                                        self._output.print_error("[LLM] Ошибка ответа")
-                                        self._output.print_text(text)
-                                else:
-                                    self._output.print_text(text)
+                            self._process_text(text)
 
                 # Финальный результат при остановке
                 final = json.loads(recognizer.FinalResult())
@@ -163,27 +147,29 @@ class TranscriptionWorker:
                 if final_text:
                     self._logger.log_command(final_text)
                     self._accumulated.append(final_text)
-                    command = self._matcher.find(final_text)
-                    if command:
-                        self._matcher.execute(final_text)
-                        self._output.print_text(command)
-                    else:
-                        if LLM_TRIGGER in final_text.lower():
-                            self._output.print_info(f"[LLM] Запрос: {final_text}")
-                            answer = self._llm.ask(final_text)
-                            if answer:
-                                self._speaking = True
-                                self._tts.speak_and_play(answer, self._on_speaking_finished)
-                            else:
-                                self._output.print_error("[LLM] Ошибка ответа")
-                                self._output.print_text(final_text)
-                        else:
-                            self._output.print_text(final_text)
+                    self._process_text(final_text)
 
         except Exception as e:
             self._output.print_error(f"Ошибка STT: {e}")
         finally:
             self._output.print_stopped()
+
+    def _process_text(self, text: str) -> None:
+        """Обрабатывает распознанный текст: команда или LLM."""
+        if not self._matcher.has_trigger(text):
+            return
+        command = self._matcher.find(text)
+        if command:
+            self._matcher.execute(text)
+            self._output.print_text(command)
+        else:
+            self._output.print_info(f"[LLM] Запрос: {text}")
+            answer = self._llm.ask(text)
+            if answer:
+                self._speaking = True
+                self._tts.speak_and_play(answer, self._on_speaking_finished)
+            else:
+                self._output.print_error("[LLM] Ошибка ответа")
 
     def stop(self):
         self._running.clear()

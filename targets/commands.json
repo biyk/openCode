@@ -1,4 +1,5 @@
 {
+    "triggers": ["пожалуйста", "алиса"],
     "commands": {
         "volumeup": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
         "volumedown": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
