@@ -1,5 +1,5 @@
 {
-    "active": "brave",
+    "active": "omni",
     "providers": [
         {
             "id": "openrouter",
@@ -30,6 +30,12 @@
             "name": "Brave Browser",
             "class": "BraveClient",
             "module": "lib.providers.brave"
+        },
+        {
+            "id": "omni",
+            "name": "OmniRouter",
+            "class": "OmniRouterClient",
+            "module": "lib.providers.omni"
         }
     ]
 }

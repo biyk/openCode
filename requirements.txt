@@ -9,7 +9,8 @@ websocket-client>=1.7.0
 pyautogui>=0.9.54
 pyperclip>=1.8.0
 g4f>=0.0.0
+piper-tts>=1.8.0
 
 # Системные зависимости (установить отдельно)
-# mpg123 - для воспроизведения TTS
-# ffplay - альтернативный вариант воспроизведения TTS
+# mpg123 - для воспроизведения MP3 TTS
+# Модель Piper (офлайн-озвучка): python -m piper.download_voices ru_RU-irina-medium --download-dir models/piper

@@ -3,7 +3,7 @@
 ## 1. Build / Lint / Test Commands
 
 ```bash
-# Install dependencies (including linting tools)
+# Install dependencies
 pip install -r requirements.txt
 pip install flake8 mypy pytest-mock
 
@@ -25,148 +25,50 @@ mypy .
 # Run the application
 python main.py
 
-# Audio playback requires mpg123 or ffplay
-# Ubuntu/Debian: sudo apt install mpg123
-# macOS: brew install mpg123
-# Alternative: ffplay (usually comes with ffmpeg)
+# Audio playback requires mpg123 (installed) or ffplay
+# main.py auto-adds bin/mpg to PATH on Windows if it exists
 ```
 
-## 2. Code Style Guidelines
+## 2. Architecture
 
-### Imports
-Standard library → third‑party → local modules. One import per line, alphabetical within groups. No `from module import *`.
-```python
-import os
-import sys
-import json
-import queue
-import threading
-from typing import Optional
+- `main.py` — entry point. `TranscriptionWorker` (main.py:84) captures mic → Vosk STT → `CommandMatcher` (created at main.py:95) → executes matched command; otherwise text with `LLM_TRIGGER` ("пожалуйста", hardcoded at main.py:31) goes to LLM and is spoken via TTS. `LLM_TRIGGER` is NOT read from commands.json — only `history_limit` is (main.py:99).
+- `lib/config_loader.py` — device config path resolution: `targets/<hostname>/commands.json` → `targets/commands.json`.
+- `lib/providers/manager.py` — `ProviderManager` loads `providers.json`, `get_client(**kwargs)` imports the active provider's module and instantiates it with kwargs.
+- **Active provider is `omni` (OmniRouter)** in `providers.json`. This is a local OpenAI-compatible gateway at `http://localhost:20128/v1` — server must be running separately. Model: `ds-web/deepseek-v4-flash-search` (default in `lib/providers/omni.py`). It requires no auth for `/v1/chat/completions`.
 
-import sounddevice as sd
-import requests
-from vosk import Model
+## 3. LLM Provider Contract
 
-from lib.output import TranscriptionOutput
-from lib.commands import CommandMatcher
-from lib.openrouter import OpenRouterClient
-```
+- **`BaseLLMClient` is defined in `lib/providers/__init__.py` — there is no `base.py`.** New providers go in `lib/providers/` and implement:
+  - `ask(self, text: str) -> Optional[str]`
+  - `name` property
+- Providers are registered in `providers.json` (`{"id","name","class","module"}`); switch via `"active"` field.
+- OmniRouterClient: timeout default 300s (`lib/providers/omni.py:18`), passed to `requests.post`; configurable via `get_client(..., timeout=N)`.
 
-### Formatting
-- 4 spaces indentation, no tabs
-- Max line length: 100 characters (soft limit)
-- Trailing commas allowed in multi-line structures
-- Use f-strings for string formatting
+## 4. Commands
 
-### Type Hints
-- Use `Optional[T]` for possibly-null values
-- Annotate all function parameters and return values
-- Prefer `list[str]` over `List[str]` (Python 3.9+)
-- Use `dict[str, Any]` for JSON-like dictionaries
+- Commands in `targets/commands.json`: `match` maps spoken templates → command ids; `commands` maps ids → shell strings (or per-OS dict with `windows`/`linux`/`default` keys).
+- `CommandMatcher` auto-reloads on file mtime change (`reload()` at commands.py:30) — no app restart needed.
+- Media play/pause for this machine is configured in `targets/FLTP-5i3-16512/commands.json`.
+- Command config is EXPLICITLY device-specific — edit `targets/<hostname>/commands.json`, not the default, when targeting this machine.
 
-### Naming Conventions
-| Element | Convention | Example |
-|---------|------------|---------|
-| Modules | `snake_case` | `command_matcher.py` |
-| Classes | `PascalCase` | `TranscriptionWorker` |
-| Functions / Variables | `snake_case` | `ensure_vosk_model()` |
-| Constants | `UPPER_SNAKE` | `DEFAULT_SR` |
-| Private members | leading underscore | `_running` |
+## 5. Windows-Specific Gotchas
 
-### Error Handling
-- Prefer specific exception types; catch `Exception` only for logging
-- Return empty collections (`[]`, `{}`) on failure rather than `None`
-- Use `TranscriptionOutput.print_error()` for CLI output
-- Wrap I/O in `try/except`, raise `RuntimeError` for recoverable failures
-- Never suppress exceptions silently
+- Console shows mojibake for Russian on Windows (cp866) — this is normal console encoding, NOT a code bug.
+- `VOICE_CONFIRMATION_PHRASE` env var (optional): when set, TTS says it after each executed command.
+- TTS fallback chain (per block, `lib/tts.py`): gTTS (online, `timeout=8` in ctor) → local neural `Piper` (`models/piper/ru_RU-irina-medium.onnx`) → Windows `System.Speech` (SAPI5 via `bin/tts_sapi.ps1`). After the first network failure `TextToSpeech._offline` is set and the rest of the batch is synthesized offline. `pyttsx3` is NOT used — unreliable (`runAndWait` deadlock on 2nd `save_to_file`). Piper load is lazy (~3.6 s once, thread-safe).
+- `_play_file` picks the player by extension: `.wav` → `PowerShell (New-Object Media.SoundPlayer 'path').PlaySync()` (mpg123 cannot decode WAV), `.mp3` → mpg123 → ffplay fallback. Temp audio files are unlinked after playback.
+- `TextToSpeech.speak_and_play` splits text on `. ! ? … , ; : — – -` (`_SENTENCE_RE` at `lib/tts.py:22`), synthesizes blocks in parallel (`max_workers=4` default) and plays them strictly in order to cut time-to-first-audio.
 
-### Documentation
-- Module-level docstrings describing purpose and public API
-- Class/method docstrings in Russian, concise, with parameter descriptions
-- Google-style docstrings:
-```python
-def process_audio(data: bytes) -> Optional[dict]:
-    """Обрабатывает аудиоданные и возвращает результат распознавания.
-    
-    Args:
-        data: Raw audio bytes from the microphone.
-        
-    Returns:
-        Dict with recognized text or None if recognition failed.
-    """
-```
+## 6. Resurrector (Windows process supervisor)
 
-## 3. Project Structure
-```
-voice/
-├── main.py              # Entry point, STT worker
-├── targets/             # Device-specific command configs
-│   └── commands.json    # Default voice commands
-├── targets/<hostname>/  # Device-specific overrides
-├── requirements.txt     # Python dependencies
-├── .env                 # API keys (never commit!)
-├── TODO.md              # Task tracking
-├── tests/               # Unit tests
-├── lib/                 # Core modules
-│   ├── commands.py      # Voice command matching
-│   ├── config_loader.py # Device-specific config loading
-│   ├── gigachat.py      # GigaChat API client
-│   ├── logger.py        # Logging and LLM conversation history
-│   ├── openrouter.py    # OpenRouter LLM client
-│   ├── output.py        # Console output helper
-│   ├── tts.py           # Text-to-speech (gTTS)
-│   └── providers/       # LLM providers
-│       ├── __init__.py
-│       ├── base.py      # Base LLM client
-│       ├── manager.py   # Provider manager
-│       ├── openrouter.py
-│       ├── gigachat.py
-│       ├── deepseek.py
-│       ├── gpt4free.py
-│       └── brave.py
-├── prompts/             # LLM prompt templates
-└── models/              # Vosk STT models (auto-downloaded)
-```
+- Config: `C:\Users\b5\.config\resurrector\config.toml`. Runs `python main.py`.
+- The `[omniroute]` entry (command='omniroute') MUST stay `enabled=false`: OmniRoute has its own supervisor (its launcher auto-respawns the server), and Resurrector launching a second instance crashes with `EADDRINUSE` on port 20128 → infinite restart loop.
+- Resurrector logs to stderr only (needs `-log-file` to persist); no log history by default.
 
-## 4. Key Patterns
+## 7. Style & Testing
 
-### Configuration Loading
-- Use `lib/config_loader.py` for device-specific config paths
-- Config priority: `targets/<hostname>/commands.json` → `targets/commands.json`
-
-### Threading
-- Use `threading.Event()` for graceful shutdown signaling
-- Use `queue.Queue()` for thread-safe data passing
-- Always use `daemon=True` for background threads
-
-### LLM Integration
-- All LLM clients follow pattern in `lib/providers/base.py`
-- Implement `chat(messages: list) -> str` method
-- Use `lib/logger.py` for conversation history
-- Provider manager in `lib/providers/manager.py` handles dynamic loading
-
-## 5. Testing Guidelines
-
-- **Все тесты запускать только в папке temp/** (создать её для временных файлов)
-- Place tests in `tests/` matching module structure
-- Use `pytest` as the test framework
-- Name test files as `test_<module>.py`
-- Use descriptive test function names: `test_<method>_<expected_behavior>`
-- Mock external dependencies (API calls, file I/O, audio devices)
-- Use `unittest.mock` for patching
-
-```python
-def test_find_command():
-    matcher = CommandMatcher("tests/fixtures/commands.json")
-    result = matcher.find("открой браузер")
-    assert result == "firefox"
-```
-
-## 6. Important Notes
-
-- Never commit `.env` or API keys - add to `.gitignore`
-- Voice commands are defined in `targets/commands.json`
-- Device-specific overrides go in `targets/<hostname>/commands.json`
-- After each commit, check `TODO.md` and mark completed items
-- The project uses Vosk for speech-to-text and various LLM providers (OpenRouter, GigaChat, etc.)
-- Text-to-speech uses gTTS (Google Translate TTS) with mpg123 or ffplay for playback
+- Imports: stdlib → third-party → local; one per line, alphabetical. No `from module import *`.
+- 4-space indent, max line length 100. Type hints on all params/returns (`Optional[T]`, `list[str]`, `dict[str, Any]`).
+- Docstrings in Russian, Google style. Module-level docstring for each module.
+- Tests in `tests/`, named `test_<module>.py`, `test_<method>_<expected_behavior>` naming. Mock external deps (API, I/O, audio). Run tests only inside a `temp/` folder for temp files.
+- Never commit `.env` or API keys. After commits, check `TODO.md`.

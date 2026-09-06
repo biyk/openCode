@@ -2,13 +2,13 @@
     "commands": {
         "volumeup": {
             "linux": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
-            "windows": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAF)\"",
-            "default": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAF)\""
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\"",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\""
         },
         "volumedown": {
             "linux": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
-            "windows": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAE)\"",
-            "default": "powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]0xAE)\""
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\"",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\""
         },
         "playpause": {
             "linux": "playerctl play-pause",
@@ -24,7 +24,7 @@
     "match": {
         "volumeup": ["громче", "сделай громче", "увеличь громкость", "громкость вверх"],
         "volumedown": ["тише", "сделай тише", "уменьши громкость", "громкость вниз"],
-        "playpause": ["пауза", "плей", "играй", "включи", "play", "pause"],
+        "playpause": ["пауза", "плей", "играй", "включи", "play", "pause", "дальше"],
         "stop": ["стоп", "остановить", "выключи", "stop"]
     },
     "llm": {
