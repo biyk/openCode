@@ -157,6 +157,7 @@ class TranscriptionWorker:
     def _process_text(self, text: str) -> None:
         """Обрабатывает распознанный текст: команда или LLM."""
         if not self._matcher.has_trigger(text):
+            self._output.print_text(text)
             return
         command = self._matcher.find(text)
         if command:
@@ -170,6 +171,7 @@ class TranscriptionWorker:
                 self._tts.speak_and_play(answer, self._on_speaking_finished)
             else:
                 self._output.print_error("[LLM] Ошибка ответа")
+                self._output.print_text(text)
 
     def stop(self):
         self._running.clear()
