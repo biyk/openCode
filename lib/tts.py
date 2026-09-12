@@ -48,8 +48,12 @@ class TextToSpeech:
         parts = [p.strip() for p in self._SENTENCE_RE.split(text)]
         return [p for p in parts if p] or [text.strip()]
 
-    def speak(self, text: str) -> Optional[str]:
+    def speak(self, text: str,
+              abort_event: Optional[threading.Event] = None) -> Optional[str]:
         """Синтез речи блока в файл (mp3/wav) с офлайн-фолбэком."""
+        if abort_event is not None and abort_event.is_set():
+            print("[TTS] Синтез прерван")
+            return None
         if not text:
             print("[TTS] Пустой текст")
             return None
@@ -247,7 +251,7 @@ class TextToSpeech:
             if on_finished:
                 on_finished()
             return
-        audio_path = self.speak(text)
+        audio_path = self.speak(text, abort_event)
         if not audio_path:
             print("[TTS] Воспроизведение отменено - файл не создан")
             if on_finished:
@@ -265,16 +269,23 @@ class TextToSpeech:
     def _speak_and_play_pipeline(self, text: str,
                                  on_finished: Optional[Callable[[], None]],
                                  abort_event: Optional[threading.Event] = None) -> None:
-        """Параллельный синтез блоков и последовательное проигрывание."""
+        """Параллельный синтез блоков и последовательное проигрывание.
+
+        При срабатывании abort_event синтез оставшихся блоков отменяется
+        (ожидающие задачи отменяются, активная продолжается в фоне без блокировки).
+        """
         sentences = self._split_sentences(text)
-        with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-            futures = [pool.submit(self.speak, s) for s in sentences]
+        pool = ThreadPoolExecutor(max_workers=self._max_workers)
+        try:
+            futures = [pool.submit(self.speak, s, abort_event) for s in sentences]
             for future in futures:
                 if abort_event is not None and abort_event.is_set():
                     break
                 audio_path = future.result()
                 if audio_path:
                     self._play_file(audio_path, abort_event)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
         if on_finished:
             on_finished()
 

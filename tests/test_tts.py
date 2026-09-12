@@ -31,6 +31,16 @@ class TestTextToSpeech:
         result = tts.speak(None)
         assert result is None
 
+    def test_speak_abort_returns_none(self, capsys):
+        """При установленном abort_event синтез пропускается."""
+        tts = TextToSpeech()
+        abort = threading.Event()
+        abort.set()
+        with patch.object(tts, "_speak_gtts") as mock_gtts:
+            result = tts.speak("Привет", abort_event=abort)
+        assert result is None
+        mock_gtts.assert_not_called()
+
     @patch("lib.tts.gTTS")
     def test_speak_success(self, mock_gtts, capsys):
         mock_tts = MagicMock()
@@ -212,7 +222,7 @@ class TestTextToSpeech:
         sentences = ["Первое предложение.", "Второе предложение.", "Третье предложение."]
         paths = [f"/tmp/{i}.mp3" for i in range(3)]
 
-        def fake_speak(text):
+        def fake_speak(text, abort_event=None):
             idx = sentences.index(text)
             if idx == 0:
                 time.sleep(0.2)
@@ -484,7 +494,7 @@ class TestTextToSpeech:
         tts = TextToSpeech()
         abort = threading.Event()
 
-        def fake_speak(text: str) -> str:
+        def fake_speak(text: str, abort_event=None) -> str:
             abort.set()
             return "/tmp/a.mp3"
 
