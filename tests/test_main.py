@@ -193,12 +193,46 @@ class TestTranscriptionWorker:
         worker._queue.get.return_value = b"audio"
         recognizer = self._patch_run_deps(mocker)
         recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": ""}'
         recognizer.FinalResult.return_value = '{"text": "финал"}'
         worker._matcher.has_trigger.return_value = False
 
         worker.run()
 
         assert worker._accumulated == ["финал"]
+        worker._output.print_stopped.assert_called_once()
+
+    def test_run_aborts_on_partial_stop_word(self, mocker):
+        """Стоп-слово в частичном результате прерывает озвучку и сбрасывает Vosk."""
+        worker = self._make_worker(mocker)
+        worker._running.is_set.side_effect = [True, False]
+        worker._queue.get.return_value = b"audio"
+        recognizer = self._patch_run_deps(mocker)
+        recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": "сделай стоп"}'
+        worker._orchestrator.maybe_abort.return_value = True
+
+        worker.run()
+
+        worker._orchestrator.maybe_abort.assert_called_once_with(
+            "сделай стоп")
+        recognizer.Reset.assert_called_once()
+
+    def test_run_partial_result_without_stop_word(self, mocker):
+        """Частичный результат без стоп-слова не прерывает озвучку."""
+        worker = self._make_worker(mocker)
+        worker._running.is_set.side_effect = [True, False]
+        worker._queue.get.return_value = b"audio"
+        recognizer = self._patch_run_deps(mocker)
+        recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": "проверка"}'
+        worker._orchestrator.maybe_abort.return_value = False
+
+        worker.run()
+
+        worker._orchestrator.maybe_abort.assert_called_once_with(
+            "проверка")
+        recognizer.Reset.assert_not_called()
         worker._output.print_stopped.assert_called_once()
 
     def test_run_queue_empty_continues(self, mocker):

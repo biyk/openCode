@@ -60,9 +60,7 @@ class Orchestrator:
         if time.monotonic() < self._suppress_until:
             return
         if self._speaking:
-            if text in self._stop_words:
-                self._abort_playback.set()
-                self._output.print_info("[TTS] Озвучка прервана")
+            self.maybe_abort(text)
             return
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
@@ -81,6 +79,21 @@ class Orchestrator:
             else:
                 self._output.print_error("[LLM] Ошибка ответа")
                 self._output.print_text(text)
+
+    def maybe_abort(self, text: str) -> bool:
+        """Прерывает озвучку, если в тексте есть стоп-слово (целое слово).
+
+        Возвращает True, если озвучка была прервана. Используется для
+        финальных и частичных результатов распознавания.
+        """
+        if not self._speaking:
+            return False
+        tokens = text.lower().split()
+        if not any(token in self._stop_words for token in tokens):
+            return False
+        self._abort_playback.set()
+        self._output.print_info("[TTS] Озвучка прервана")
+        return True
 
     def _speak_async(self, answer: str) -> None:
         """Запускает озвучку в фоне, оставляя цикл распознавания активным."""

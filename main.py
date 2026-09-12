@@ -149,6 +149,14 @@ class TranscriptionWorker:
                             self._logger.log_command(text)
                             self._accumulated.append(text)
                             self._process_text(text)
+                    else:
+                        # Стоп-слово может не дождаться финального результата —
+                        # буфер распознавания забит аудио озвучки, поэтому ловим
+                        # его тоже в частичных результатах.
+                        partial = json.loads(
+                            recognizer.PartialResult()).get("partial", "").strip()
+                        if partial and self._orchestrator.maybe_abort(partial):
+                            recognizer.Reset()
 
                 # Финальный результат при остановке
                 final = json.loads(recognizer.FinalResult())

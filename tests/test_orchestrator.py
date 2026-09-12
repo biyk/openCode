@@ -156,6 +156,36 @@ class TestOrchestrator:
         orch._output.print_error.assert_called_once_with("Ошибка озвучки: boom")
         assert orch.speaking is False
 
+    def test_maybe_abort_aborts_on_stop_word_token(self, mocker):
+        """Стоп-слово внутри фразы прерывает озвучку."""
+        orch = self._make(mocker)
+        orch._speaking = True
+        assert orch.maybe_abort("сделай стоп") is True
+        assert orch._abort_playback.is_set()
+        orch._output.print_info.assert_called_once_with(
+            "[TTS] Озвучка прервана")
+
+    def test_maybe_abort_whole_word_required(self, mocker):
+        """Стоп-слово распознаётся только как целое слово."""
+        orch = self._make(mocker)
+        orch._speaking = True
+        assert orch.maybe_abort("стоптанция") is False
+        assert not orch._abort_playback.is_set()
+
+    def test_maybe_abort_no_stop_word(self, mocker):
+        """Без стоп-слова озвучка не прерывается."""
+        orch = self._make(mocker)
+        orch._speaking = True
+        assert orch.maybe_abort("играет музыка") is False
+        assert not orch._abort_playback.is_set()
+
+    def test_maybe_abort_not_speaking(self, mocker):
+        """Вне озвучки стоп-слово не считается командой прерывания."""
+        orch = self._make(mocker)
+        assert orch.maybe_abort("стоп") is False
+        assert not orch._abort_playback.is_set()
+        orch._output.print_info.assert_not_called()
+
     def test_on_speaking_finished(self, mocker):
         """Завершение озвучки сбрасывает флаг и ставит окно эха."""
         orch = self._make(mocker)
