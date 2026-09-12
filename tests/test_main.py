@@ -1,7 +1,6 @@
 import builtins
 import queue
 import sys
-import time
 import types
 import zipfile
 from io import BytesIO
@@ -11,6 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 
 import main
+
+from lib.orchestrator import Orchestrator
 
 
 class TestEnsureVoskModel:
@@ -72,14 +73,12 @@ class TestTranscriptionWorker:
         worker._running = mocker.MagicMock()
         worker._queue = mocker.MagicMock()
         worker._accumulated = []
-        worker._speaking = False
-        worker._suppress_until = 0.0
-        worker._abort_playback = mocker.MagicMock()
         worker._output = mocker.MagicMock()
         worker._logger = mocker.MagicMock()
         worker._matcher = mocker.MagicMock()
         worker._llm = mocker.MagicMock()
         worker._tts = mocker.MagicMock()
+        worker._orchestrator = mocker.MagicMock()
         return worker
 
     def test_init_sets_up_components(self, mocker):
@@ -97,6 +96,7 @@ class TestTranscriptionWorker:
 
         assert worker.lang_code == "ru"
         assert worker._llm == "LLM"
+        assert isinstance(worker._orchestrator, Orchestrator)
         mock_provider.get_client.assert_called_once_with(history_limit=5)
 
     def test_init_default_history_limit(self, mocker):
@@ -121,147 +121,25 @@ class TestTranscriptionWorker:
         worker.audio_callback(b"data", 0, None, "error")
         worker._queue.put.assert_called_once_with(b"data")
 
-    def test_audio_callback_queues_data_while_speaking(self, mocker):
-        """Во время TTS данные продолжают записываться (для слова «стоп»)."""
-        worker = self._make_worker(mocker)
-        worker._speaking = True
-        worker.audio_callback(b"data", 0, None, "error")
-        worker._queue.put.assert_called_once_with(b"data")
-
     def test_audio_callback_queues_data(self, mocker):
         """Обычный блок аудио кладётся в очередь."""
         worker = self._make_worker(mocker)
         worker.audio_callback(b"data", 0, None, None)
         worker._queue.put.assert_called_once_with(b"data")
 
-    def test_on_speaking_finished(self, mocker):
-        """Завершение TTS сбрасывает флаг и ставит эхо-окно."""
-        worker = self._make_worker(mocker)
-        worker._speaking = True
-        worker._on_speaking_finished()
-        assert worker._speaking is False
-        assert worker._suppress_until >= time.monotonic()
-
-    def test_on_speaking_finished_given_abort(self, mocker):
-        """После прерывания озвучки эхо-окно всё равно ставится."""
-        worker = self._make_worker(mocker)
-        worker._speaking = True
-        worker._abort_playback.is_set.return_value = True
-        worker._on_speaking_finished()
-        assert worker._speaking is False
-        assert worker._suppress_until > 0
-
-    def test_stop_clears_running(self, mocker):
+    def test_stop_clears_running_and_aborts(self, mocker):
         """stop() сбрасывает флаг _running и прерывает озвучку."""
         worker = self._make_worker(mocker)
         worker.stop()
         worker._running.clear.assert_called_once()
-        worker._abort_playback.set.assert_called_once()
+        worker._orchestrator.stop.assert_called_once()
 
-    def test_process_text_without_trigger(self, mocker):
-        """Без триггера текст печатается, LLM не вызывается."""
+    def test_process_text_delegates_to_orchestrator(self, mocker):
+        """_process_text передоверяет текст оркестратору."""
         worker = self._make_worker(mocker)
-        worker._matcher.has_trigger.return_value = False
-        worker._process_text("привет мир")
-        worker._output.print_text.assert_called_once_with("привет мир")
-        worker._llm.ask.assert_not_called()
-
-    def test_process_text_command_found(self, mocker):
-        """Команда с триггером выполняется."""
-        worker = self._make_worker(mocker)
-        worker._matcher.has_trigger.return_value = True
-        worker._matcher.find.return_value = "play"
-        worker._process_text("пожалуйста вкл")
-        worker._matcher.execute.assert_called_once_with("пожалуйста вкл")
-        worker._output.print_text.assert_called_once_with("play")
-        worker._llm.ask.assert_not_called()
-
-    def test_process_text_llm_answer(self, mocker):
-        """Без команды ответ LLM озвучивается в фоне."""
-        worker = self._make_worker(mocker)
-        worker._matcher.has_trigger.return_value = True
-        worker._matcher.find.return_value = None
-        worker._llm.ask.return_value = "Ответ"
-        spy = mocker.patch.object(worker, "_speak_async")
-        worker._process_text("пожалуйста расскажи")
-        worker._output.print_info.assert_called_once_with("[LLM] Запрос: пожалуйста расскажи")
-        assert worker._speaking is True
-        worker._abort_playback.clear.assert_called_once()
-        spy.assert_called_once_with("Ответ")
-
-    def test_process_text_llm_error(self, mocker):
-        """Ошибка LLM печатается как текст."""
-        worker = self._make_worker(mocker)
-        worker._matcher.has_trigger.return_value = True
-        worker._matcher.find.return_value = None
-        worker._llm.ask.return_value = None
         worker._process_text("пожалуйста что-то")
-        worker._output.print_error.assert_called_once_with("[LLM] Ошибка ответа")
-        worker._output.print_text.assert_called_once_with("пожалуйста что-то")
-
-    @pytest.mark.parametrize("word", ["стоп", "останови", "stop", "хватит",
-                                      "прекрати"])
-    def test_process_text_stop_word_aborts_playback(self, mocker, word):
-        """Стоп-слово во время озвучки прерывает её."""
-        worker = self._make_worker(mocker)
-        worker._speaking = True
-        worker._process_text(word)
-        worker._abort_playback.set.assert_called_once()
-        worker._output.print_info.assert_called_once_with("[TTS] Озвучка прервана")
-        worker._matcher.has_trigger.assert_not_called()
-
-    def test_process_text_ignores_non_stop_word_while_speaking(self, mocker):
-        """Во время озвучки игнорируются все слова кроме стоп-слов."""
-        worker = self._make_worker(mocker)
-        worker._speaking = True
-        worker._process_text("пожалуйста что-то")
-        worker._matcher.has_trigger.assert_not_called()
-        worker._abort_playback.set.assert_not_called()
-        worker._output.print_text.assert_not_called()
-        worker._llm.ask.assert_not_called()
-
-    def test_process_text_ignored_within_suppress_window(self, mocker):
-        """В окне эхо-затишья текст не обрабатывается."""
-        worker = self._make_worker(mocker)
-        worker._suppress_until = time.monotonic() + 60
-        worker._process_text("пожалуйста что-то")
-        worker._matcher.has_trigger.assert_not_called()
-        worker._output.print_text.assert_not_called()
-        worker._llm.ask.assert_not_called()
-
-    def test_speak_async_plays_in_background(self, mocker):
-        """_speak_async запускает озвучку и сбрасывает состояние."""
-        worker = self._make_worker(mocker)
-        captured = {}
-
-        def _factory(target=None, **kwargs):
-            captured["target"] = target
-            return mocker.MagicMock()
-
-        mocker.patch("main.threading.Thread", side_effect=_factory)
-        worker._speaking = True
-        worker._speak_async("Ответ")
-        captured["target"]()
-        worker._tts.speak_and_play.assert_called_once_with(
-            "Ответ", abort_event=worker._abort_playback)
-        assert worker._speaking is False
-        assert worker._suppress_until > 0
-
-    def test_speak_async_handles_playback_error(self, mocker):
-        """Ошибка озвучки печатается, но состояние сбрасывается."""
-        worker = self._make_worker(mocker)
-        captured = {}
-
-        def _factory(target=None, **kwargs):
-            captured["target"] = target
-            return mocker.MagicMock()
-
-        mocker.patch("main.threading.Thread", side_effect=_factory)
-        worker._tts.speak_and_play.side_effect = RuntimeError("boom")
-        worker._speak_async("Ответ")
-        captured["target"]()
-        worker._output.print_error.assert_called_once_with("Ошибка озвучки: boom")
-        assert worker._speaking is False
+        worker._orchestrator.process_text.assert_called_once_with(
+            "пожалуйста что-то")
 
     def _patch_run_deps(self, mocker, recognizer=None):
         """Патчит зависимости run() и возвращает recognizer."""

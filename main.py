@@ -3,10 +3,8 @@ import sys
 import json
 import queue
 import threading
-import time
 import zipfile
 import socket
-from typing import Optional
 
 # Добавить mpg123 в PATH (Windows)
 mpg_path = os.path.join(os.path.dirname(__file__), "bin", "mpg")
@@ -18,6 +16,7 @@ from lib.commands import CommandMatcher
 from lib.logger import Logger
 from lib.tts import TextToSpeech
 from lib.config_loader import get_device_commands_path
+from lib.orchestrator import Orchestrator
 from lib.providers.manager import ProviderManager
 
 import sounddevice as sd
@@ -94,9 +93,6 @@ class TranscriptionWorker:
         self._running.set()
         self._queue = queue.Queue()
         self._accumulated = []
-        self._speaking = False
-        self._suppress_until = 0.0
-        self._abort_playback = threading.Event()
         self._output = TranscriptionOutput()
         commands_file = get_device_commands_path(device_name)
         self._matcher = CommandMatcher(commands_file)
@@ -106,6 +102,14 @@ class TranscriptionWorker:
         history_limit = llm_config.get("history_limit", 10)
         self._llm = _provider_manager.get_client(history_limit=history_limit)
         self._tts = TextToSpeech()
+        self._orchestrator = Orchestrator(
+            matcher=self._matcher,
+            output=self._output,
+            llm=self._llm,
+            tts=self._tts,
+            stop_words=STOP_WORDS,
+            suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
+        )
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.
@@ -114,22 +118,6 @@ class TranscriptionWorker:
         было прервать её словом из STOP_WORDS.
         """
         self._queue.put(bytes(indata))
-
-    def _on_speaking_finished(self):
-        self._speaking = False
-        self._suppress_until = time.monotonic() + AUDIO_SUPPRESS_AFTER_TTS
-
-    def _speak_async(self, answer: str) -> None:
-        """Запускает озвучку в фоне, оставляя цикл распознавания активным."""
-        def _play() -> None:
-            try:
-                self._tts.speak_and_play(answer, abort_event=self._abort_playback)
-            except Exception as e:
-                self._output.print_error(f"Ошибка озвучки: {e}")
-            finally:
-                self._on_speaking_finished()
-
-        threading.Thread(target=_play, daemon=True).start()
 
     def run(self):
         """Основной цикл - работает до вызова stop()."""
@@ -176,35 +164,12 @@ class TranscriptionWorker:
             self._output.print_stopped()
 
     def _process_text(self, text: str) -> None:
-        """Обрабатывает распознанный текст: команда или LLM."""
-        if time.monotonic() < self._suppress_until:
-            return
-        if self._speaking:
-            if text in STOP_WORDS:
-                self._abort_playback.set()
-                self._output.print_info("[TTS] Озвучка прервана")
-            return
-        if not self._matcher.has_trigger(text):
-            self._output.print_text(text)
-            return
-        command = self._matcher.find(text)
-        if command:
-            self._matcher.execute(text)
-            self._output.print_text(command)
-        else:
-            self._output.print_info(f"[LLM] Запрос: {text}")
-            answer = self._llm.ask(text)
-            if answer:
-                self._speaking = True
-                self._abort_playback.clear()
-                self._speak_async(answer)
-            else:
-                self._output.print_error("[LLM] Ошибка ответа")
-                self._output.print_text(text)
+        """Обрабатывает распознанный текст через оркестратор."""
+        self._orchestrator.process_text(text)
 
     def stop(self):
         self._running.clear()
-        self._abort_playback.set()
+        self._orchestrator.stop()
 
 # ---------- Главная функция ----------
 def main():
