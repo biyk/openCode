@@ -92,7 +92,10 @@ class TestOrchestrator:
         orch._matcher.find.return_value = "play"
         orch.process_text("пожалуйста вкл")
         orch._matcher.execute.assert_called_once_with("пожалуйста вкл")
-        orch._output.print_text.assert_called_once_with("play")
+        # print_text вызывается 2 раза: распознанный текст + команда
+        assert orch._output.print_text.call_count == 2
+        orch._output.print_text.assert_any_call("пожалуйста вкл")
+        orch._output.print_text.assert_any_call("play")
         orch._llm.ask.assert_not_called()
 
     def test_process_text_llm_answer(self, mocker):
@@ -106,7 +109,14 @@ class TestOrchestrator:
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста расскажи")
         orch._output.print_info.assert_called_once_with(
-            "[LLM] Запрос: пожалуйста расскажи")
+            "... отправка запроса LLM")
+        # print_debug вызывается 2 раза: решение + ответ LLM
+        assert orch._output.print_debug.call_count == 2
+        decision_call = orch._output.print_debug.call_args_list[0][0][0]
+        assert "[LLM Decision]" in decision_call
+        assert "пожалуйста расскажи" in decision_call
+        response_call = orch._output.print_debug.call_args_list[1][0][0]
+        assert "[LLM] Ответ: Ответ" in response_call
         assert orch.speaking is True
         assert not orch._abort_playback.is_set()
         orch._abort_playback.clear.assert_called_once()
@@ -120,7 +130,67 @@ class TestOrchestrator:
         orch._llm.ask.return_value = None
         orch.process_text("пожалуйста что-то")
         orch._output.print_error.assert_called_once_with("[LLM] Ошибка ответа")
-        orch._output.print_text.assert_called_once_with("пожалуйста что-то")
+        # print_text вызывается 2 раза: распознанный текст + текст ошибки
+        assert orch._output.print_text.call_count == 2
+        orch._output.print_text.assert_any_call("пожалуйста что-то")
+
+    def test_process_text_intent_disabled_no_log(self, mocker):
+        """Без intent-слоя текст уходит в LLM, логов [Mini] нет."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find.return_value = None
+        orch._llm.ask.return_value = "Ответ"
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста сделай кромку")
+        spy.assert_called_once_with("Ответ")
+        for call in orch._output.print_info.call_args_list:
+            assert "[Mini]" not in call.args[0]
+
+    def test_process_text_intent_executes_detected_command(self, mocker):
+        """Intent-слой исполняет распознанную команду и НЕ шлёт в LLM."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = "volumeup"
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find.return_value = None
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("пожалуйста сделай кромку")
+        intent.detect.assert_called_once_with("пожалуйста сделай кромку")
+        orch._matcher.execute_by_id.assert_called_once_with("volumeup")
+        # print_text вызывается 2 раза: распознанный текст + команда
+        assert orch._output.print_text.call_count == 2
+        orch._output.print_text.assert_any_call("пожалуйста сделай кромку")
+        orch._output.print_text.assert_any_call("volumeup")
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_intent_execution_fails_no_llm(self, mocker):
+        """Если intent-команда не выполнена — ошибка, LLM не вызывается."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = "volumeup"
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find.return_value = None
+        orch._matcher.execute_by_id.return_value = False
+        orch.process_text("пожалуйста сделай кромку")
+        orch._matcher.execute_by_id.assert_called_once_with("volumeup")
+        calls = [c.args[0] for c in orch._output.print_error.call_args_list]
+        assert any("[Mini] Команда «volumeup» не найдена" in call for call in calls)
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_intent_no_detection(self, mocker):
+        """Intent вернул None — текст уходит в обычный запрос LLM."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = None
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find.return_value = None
+        orch._llm.ask.return_value = None
+        orch.process_text("пожалуйста неизвестный запрос")
+        calls = [c.args[0] for c in orch._output.print_info.call_args_list]
+        assert not any("[Mini]" in call for call in calls)
+        intent.detect.assert_called_once_with("пожалуйста неизвестный запрос")
 
     def test_speak_async_plays_in_background(self, mocker):
         """_speak_async запускает озвучку и сбрасывает состояние."""

@@ -175,8 +175,13 @@ class TextToSpeech:
             else:
                 self._play_mp3(audio_path, abort_event)
         finally:
-            if os.path.exists(audio_path):
-                os.unlink(audio_path)
+            # Плеер может быть ещё живым после abort и держать файл —
+            # WinError 32 (файл занят) не должен ронять поток озвучки.
+            try:
+                if os.path.exists(audio_path):
+                    os.unlink(audio_path)
+            except OSError:
+                pass
 
     def _play_wav(self, audio_path: str,
                   abort_event: Optional[threading.Event] = None) -> None:

@@ -28,6 +28,7 @@ class Orchestrator:
         ),
         suppress_after: float = 0.5,
         clear_speech_buffer: Optional[Callable[[], None]] = None,
+        intent: Any = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
@@ -36,6 +37,7 @@ class Orchestrator:
         self._stop_words = stop_words
         self._suppress_after = suppress_after
         self._clear_speech_buffer = clear_speech_buffer or (lambda: None)
+        self._intent = intent or None
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
@@ -65,14 +67,34 @@ class Orchestrator:
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
             return
+        # Сначала выводим распознанный текст (с триггером) в консоль и лог
+        self._output.print_text(text)
         command = self._matcher.find(text)
         if command:
             self._matcher.execute(text)
             self._output.print_text(command)
         else:
-            self._output.print_info(f"[LLM] Запрос: {text}")
+            if self._intent is not None:
+                detected = self._intent.detect(text)
+                if detected is not None:
+                    self._output.print_info(
+                        f"[Mini] Распознана команда «{detected}»"
+                    )
+                    if self._matcher.execute_by_id(detected):
+                        self._output.print_text(detected)
+                        return
+                    self._output.print_error(
+                        f"[Mini] Команда «{detected}» не найдена"
+                    )
+                    return
+            self._output.print_debug(
+                f"[LLM Decision] Trigger found, no command match, no intent match. "
+                f"Sending to LLM. Text: {text}"
+            )
+            self._output.print_info("... отправка запроса LLM")
             answer = self._llm.ask(text)
             if answer:
+                self._output.print_debug(f"[LLM] Ответ: {answer}")
                 self._speaking = True
                 self._abort_playback.clear()
                 self._speak_async(answer)

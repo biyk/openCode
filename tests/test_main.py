@@ -10,8 +10,32 @@ from unittest.mock import MagicMock
 import pytest
 
 import main
-
 from lib.orchestrator import Orchestrator
+
+
+class TestEncodingFix:
+    """Тесты для исправления кодировки Vosk на Windows."""
+
+    def test_fix_encoding_identity_on_non_windows(self, monkeypatch):
+        """На не-Windows возвращает текст как есть."""
+        monkeypatch.setattr(sys, "platform", "linux")
+        assert main._fix_encoding("привет") == "привет"
+        assert main._fix_encoding("") == ""
+        assert main._fix_encoding("  ") == "  "
+
+    def test_fix_encoding_cp866_to_utf8_on_windows(self, monkeypatch):
+        """На Windows пытается cp866 -> utf-8."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        result = main._fix_encoding("привет")
+        assert isinstance(result, str)
+
+    def test_fix_encoding_empty_string(self):
+        """Пустая строка возвращается как есть."""
+        assert main._fix_encoding("") == ""
+
+    def test_fix_encoding_normal_text(self):
+        """Обычный текст возвращается как есть."""
+        assert main._fix_encoding("test") == "test"
 
 
 class TestEnsureVoskModel:
@@ -79,6 +103,7 @@ class TestTranscriptionWorker:
         worker._llm = mocker.MagicMock()
         worker._tts = mocker.MagicMock()
         worker._orchestrator = mocker.MagicMock()
+        worker._orchestrator.speaking = False
         return worker
 
     def test_init_sets_up_components(self, mocker):
@@ -91,6 +116,7 @@ class TestTranscriptionWorker:
         mock_provider.get_client.return_value = "LLM"
         matcher = main.CommandMatcher.return_value
         matcher.get_llm_config.return_value = {"history_limit": 5}
+        matcher.get_intent_config.return_value = {}
 
         worker = main.TranscriptionWorker(lang_code="ru", device_name="dev")
 
@@ -109,11 +135,78 @@ class TestTranscriptionWorker:
         mock_provider.get_client.return_value = "LLM"
         matcher = main.CommandMatcher.return_value
         matcher.get_llm_config.return_value = {}
+        matcher.get_intent_config.return_value = {}
 
         worker = main.TranscriptionWorker()
 
         assert worker._llm == "LLM"
         mock_provider.get_client.assert_called_once_with(history_limit=10)
+
+    def test_init_builds_intent_classifier_when_enabled(self, mocker):
+        """При intent.enabled=true создаётся IntentClassifier и передаётся оркестратору."""
+        mocker.patch("main.get_device_commands_path", return_value="x")
+        mocker.patch("main.CommandMatcher")
+        mocker.patch("main.Logger")
+        mocker.patch("main.TextToSpeech")
+        mock_provider = mocker.patch("main._provider_manager")
+        mock_provider.get_client.return_value = "LLM"
+        matcher = main.CommandMatcher.return_value
+        matcher.get_llm_config.return_value = {}
+        matcher.get_intent_config.return_value = {
+            "enabled": True, "include_media": True}
+        matcher.match_config.return_value = {"volumeup": ["громче"]}
+        mock_probe = mocker.patch("main.is_media_playing")
+        mock_intent = mocker.patch("main.IntentClassifier")
+        mock_intent.return_value = "INTENT"
+
+        worker = main.TranscriptionWorker()
+
+        mock_intent.assert_called_once_with(
+            commands={"volumeup": ["громче"]},
+            llm="LLM",
+            media_probe=mock_probe,
+        )
+        assert worker._orchestrator._intent == "INTENT"
+
+    def test_init_intent_without_media_probe(self, mocker):
+        """При include_media=false классификатор создаётся без media_probe."""
+        mocker.patch("main.get_device_commands_path", return_value="x")
+        mocker.patch("main.CommandMatcher")
+        mocker.patch("main.Logger")
+        mocker.patch("main.TextToSpeech")
+        mock_provider = mocker.patch("main._provider_manager")
+        mock_provider.get_client.return_value = "LLM"
+        matcher = main.CommandMatcher.return_value
+        matcher.get_llm_config.return_value = {}
+        matcher.get_intent_config.return_value = {
+            "enabled": True, "include_media": False}
+        matcher.match_config.return_value = {"volumeup": ["громче"]}
+        mock_intent = mocker.patch("main.IntentClassifier")
+        mock_intent.return_value = "INTENT"
+
+        worker = main.TranscriptionWorker()
+
+        mock_intent.assert_called_once_with(
+            commands={"volumeup": ["громче"]},
+            llm="LLM",
+            media_probe=None,
+        )
+        assert worker._orchestrator._intent == "INTENT"
+
+    def test_init_mini_disabled_by_default(self, mocker):
+        """Без intent-конфига оркестратор работает без классификатора."""
+        mocker.patch("main.get_device_commands_path", return_value="x")
+        mocker.patch("main.CommandMatcher")
+        mocker.patch("main.Logger")
+        mocker.patch("main.TextToSpeech")
+        mocker.patch("main._provider_manager")
+        matcher = main.CommandMatcher.return_value
+        matcher.get_llm_config.return_value = {}
+        matcher.get_intent_config.return_value = {}
+
+        worker = main.TranscriptionWorker()
+
+        assert worker._orchestrator._intent is None
 
     def test_audio_callback_status_does_not_block(self, mocker):
         """Наличие status не мешает постановке данных в очередь."""
@@ -141,17 +234,26 @@ class TestTranscriptionWorker:
         worker._orchestrator.process_text.assert_called_once_with(
             "пожалуйста что-то")
 
-    def _patch_run_deps(self, mocker, recognizer=None):
+    def _patch_run_deps(self, mocker, recognizer=None, stop_recognizer=None):
         """Патчит зависимости run() и возвращает recognizer."""
+        mocker.patch("main._fix_encoding", side_effect=lambda x: x)
         mocker.patch("main.SetLogLevel")
         mocker.patch("main.ensure_vosk_model", return_value="model")
         mocker.patch("main.Model")
         default_recognizer = mocker.MagicMock()
-        mocker.patch(
-            "main.KaldiRecognizer", return_value=recognizer or default_recognizer
-        )
+        main_recognizer = recognizer or default_recognizer
+        default_stop = mocker.MagicMock()
+        default_stop.AcceptWaveform.return_value = False
+        stop_rec = stop_recognizer or default_stop
+
+        def _make_recognizer(model, rate, grammar=None):
+            if grammar is None:
+                return main_recognizer
+            return stop_rec
+
+        mocker.patch("main.KaldiRecognizer", side_effect=_make_recognizer)
         mocker.patch("main.sd.RawInputStream", return_value=mocker.MagicMock())
-        return recognizer or default_recognizer
+        return main_recognizer
 
     def test_run_processes_audio_queue(self, mocker):
         """run() распознаёт блоки аудио и обрабатывает текст."""
@@ -235,6 +337,66 @@ class TestTranscriptionWorker:
         recognizer.Reset.assert_not_called()
         worker._output.print_stopped.assert_called_once()
 
+    def test_run_stop_recognizer_aborts_when_speaking(self, mocker):
+        """Грамматический распознаватель стоп-слов прерывает озвучку."""
+        worker = self._make_worker(mocker)
+        worker._running.is_set.side_effect = [True, False]
+        worker._queue.get.return_value = b"audio"
+        stop_recognizer = mocker.MagicMock()
+        stop_recognizer.AcceptWaveform.return_value = True
+        stop_recognizer.Result.return_value = '{"text": "стоп"}'
+        recognizer = self._patch_run_deps(
+            mocker, stop_recognizer=stop_recognizer)
+        recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": ""}'
+        worker._orchestrator.speaking = True
+        worker._orchestrator.maybe_abort.return_value = True
+
+        worker.run()
+
+        worker._orchestrator.maybe_abort.assert_called_once_with("стоп")
+        recognizer.Reset.assert_called_once()
+        stop_recognizer.Reset.assert_called_once()
+        worker._output.print_stopped.assert_called_once()
+
+    def test_run_stop_recognizer_no_abort_when_text_empty(self, mocker):
+        """Пустой стоп-результат не сбрасывает распознаватели."""
+        worker = self._make_worker(mocker)
+        worker._running.is_set.side_effect = [True, False]
+        worker._queue.get.return_value = b"audio"
+        stop_recognizer = mocker.MagicMock()
+        stop_recognizer.AcceptWaveform.return_value = True
+        stop_recognizer.Result.return_value = '{"text": ""}'
+        recognizer = self._patch_run_deps(
+            mocker, stop_recognizer=stop_recognizer)
+        recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": ""}'
+        worker._orchestrator.speaking = True
+
+        worker.run()
+
+        worker._orchestrator.maybe_abort.assert_not_called()
+        recognizer.Reset.assert_not_called()
+        stop_recognizer.Reset.assert_not_called()
+        worker._output.print_stopped.assert_called_once()
+
+    def test_run_stop_path_skipped_when_not_speaking(self, mocker):
+        """Вне озвучки грамматический распознаватель не используется."""
+        worker = self._make_worker(mocker)
+        worker._running.is_set.side_effect = [True, False]
+        worker._queue.get.return_value = b"audio"
+        stop_recognizer = mocker.MagicMock()
+        recognizer = self._patch_run_deps(
+            mocker, stop_recognizer=stop_recognizer)
+        recognizer.AcceptWaveform.return_value = False
+        recognizer.PartialResult.return_value = '{"partial": ""}'
+        worker._orchestrator.speaking = False
+
+        worker.run()
+
+        stop_recognizer.AcceptWaveform.assert_not_called()
+        worker._output.print_stopped.assert_called_once()
+
     def test_run_queue_empty_continues(self, mocker):
         """Пустая очередь не прерывает цикл."""
         worker = self._make_worker(mocker)
@@ -299,6 +461,16 @@ class TestMainEntryPoint:
 
             def get_llm_config(self):
                 return {}
+
+            def get_intent_config(self):
+                return {}
+
+            def match_config(self):
+                return {}
+
+            @property
+            def triggers(self):
+                return []
 
             def has_trigger(self, *args, **kwargs):
                 return False

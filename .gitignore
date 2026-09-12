@@ -15,3 +15,4 @@ temp*.txt
 htmlcov/
 bin/*
 !bin/tts_sapi.ps1
+!bin/media_state.ps1

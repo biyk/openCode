@@ -201,6 +201,39 @@ class TestCommandMatcher:
         matcher = CommandMatcher(temp_commands_file)
         assert matcher._get_command("nonexistent_id") is None
 
+    def test_get_command_returns_shell_command(self, temp_commands_file, mocker):
+        """get_command возвращает команду по id с учётом платформы."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        matcher = CommandMatcher(temp_commands_file)
+        result = matcher.get_command("volumeup")
+        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+
+    def test_get_command_none_for_unknown(self, temp_commands_file):
+        """get_command для неизвестного id возвращает None."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.get_command("ghost") is None
+
+    def test_execute_by_id_success(self, temp_commands_file, mocker):
+        """execute_by_id выполняет команду по id."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        mocker.patch("lib.commands.subprocess.run")
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.execute_by_id("volumeup") is True
+
+    def test_execute_by_id_unknown_returns_false(self, temp_commands_file, mocker):
+        """execute_by_id для неизвестного id возвращает False."""
+        mocker.patch("lib.commands.subprocess.run")
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.execute_by_id("ghost") is False
+
+    def test_execute_by_id_command_error(self, temp_commands_file, mocker):
+        """execute_by_id возвращает False при ошибке субпроцесса."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        subprocess_mock = mocker.patch("lib.commands.subprocess.run")
+        subprocess_mock.side_effect = subprocess.CalledProcessError(1, "cmd")
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.execute_by_id("volumeup") is False
+
     def test_get_command_missing_platform(self, temp_commands_file, mocker):
         """Если для платформы нет команды и нет default — None."""
         mocker.patch("lib.commands.platform.system", return_value="Linux")
@@ -248,3 +281,33 @@ class TestCommandMatcher:
             assert matcher.get_llm_config() == {}
         finally:
             os.unlink(temp_path)
+
+    def test_get_intent_config_empty_when_missing(self, temp_commands_file):
+        """Если поля intent нет — возвращается пустой словарь (фича выключена)."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.get_intent_config() == {}
+
+    def test_get_intent_config_returns_dict(self, tmp_path):
+        """get_intent_config возвращает конфигурацию интеллектуального классификатора."""
+        import tempfile
+        import json
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, encoding='utf-8'
+        ) as f:
+            json.dump({"intent": {"enabled": True, "include_media": False}}, f)
+            temp_path = f.name
+        try:
+            matcher = CommandMatcher(temp_path)
+            assert matcher.get_intent_config() == {
+                "enabled": True, "include_media": False}
+        finally:
+            os.unlink(temp_path)
+
+    def test_match_config_returns_match(self, temp_commands_file):
+        """match_config возвращает словарь фраз для классификатора."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.match_config() == {
+            "volumeup": ["громче", "сделай громче"],
+            "volumedown": ["тише", "сделай тише"],
+            "playpause": ["пауза", "плей"],
+        }

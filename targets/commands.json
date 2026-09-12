@@ -14,5 +14,9 @@
     },
     "llm": {
         "history_limit": 10
+    },
+    "intent": {
+        "enabled": false,
+        "include_media": true
     }
 }

@@ -73,20 +73,45 @@ class CommandMatcher:
                     return self._get_command(cmd_id) or cmd_id
         return None
 
+    def get_command(self, cmd_id: str) -> Optional[str]:
+        """Возвращает shell-команду по id с учётом платформы."""
+        self.reload()
+        return self._get_command(cmd_id)
+
     def execute(self, text: str) -> bool:
         """Находит и выполняет команду через shell."""
         self.reload()
         command = self.find(text)
         if command:
-            try:
-                subprocess.run(command, shell=True, check=True)
-                if os.environ.get("VOICE_CONFIRMATION_PHRASE"):
-                    self._tts.speak_and_play(os.environ["VOICE_CONFIRMATION_PHRASE"])
-                return True
-            except subprocess.CalledProcessError:
-                return False
+            return self._run(command)
         return False
+
+    def execute_by_id(self, cmd_id: str) -> bool:
+        """Выполняет команду по id через shell (для мини-коррекции)."""
+        self.reload()
+        command = self._get_command(cmd_id)
+        if not command:
+            return False
+        return self._run(command)
+
+    def _run(self, command: str) -> bool:
+        """Запускает shell-команду и возвращает успех."""
+        try:
+            subprocess.run(command, shell=True, check=True)
+            if os.environ.get("VOICE_CONFIRMATION_PHRASE"):
+                self._tts.speak_and_play(os.environ["VOICE_CONFIRMATION_PHRASE"])
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def get_llm_config(self) -> dict:
         """Возвращает конфигурацию для LLM."""
         return self._data.get("llm", {})
+
+    def get_intent_config(self) -> dict:
+        """Возвращает конфигурацию интеллектуального классификатора команд."""
+        return self._data.get("intent", {})
+
+    def match_config(self) -> dict:
+        """Возвращает словарь {command_id: [фразы]} для классификатора."""
+        return self._data.get("match", {})

@@ -21,10 +21,15 @@ class OmniRouterClient(BaseLLMClient):
         self._history_limit = history_limit
         self._timeout = timeout
         self._logger = Logger()
+        self._output = None
 
     @property
     def name(self) -> str:
         return "OmniRouter"
+
+    def _set_output(self, output) -> None:
+        """Устанавливает вывод для debug-логирования (вызывается из main)."""
+        self._output = output
 
     def ask(self, text: str) -> Optional[str]:
         """Отправляет текст в LLM и возвращает ответ."""
@@ -45,6 +50,10 @@ class OmniRouterClient(BaseLLMClient):
 
         try:
             print("[OmniRouter] Отправка запроса...")
+            if self._output:
+                self._output.print_debug(
+                    f"[LLM Request] model={self._model}, messages={messages}"
+                )
             response = requests.post(
                 f"{self._base_url}/chat/completions",
                 headers=headers,
@@ -56,6 +65,8 @@ class OmniRouterClient(BaseLLMClient):
             data = response.json()
             answer = data.get("choices", [{}])[0].get("message", {}).get("content")
             print("[OmniRouter] Ответ получен")
+            if self._output:
+                self._output.print_debug(f"[LLM Response] {answer}")
 
             self._logger.log_llm("user", text)
             if answer:
@@ -64,4 +75,6 @@ class OmniRouterClient(BaseLLMClient):
             return answer
         except Exception as e:
             print(f"[OmniRouter] Ошибка: {e}")
+            if self._output:
+                self._output.print_debug(f"[LLM Error] {e}")
             return None

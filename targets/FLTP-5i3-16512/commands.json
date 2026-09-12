@@ -30,5 +30,9 @@
     },
     "llm": {
         "history_limit": 10
+    },
+    "intent": {
+        "enabled": true,
+        "include_media": true
     }
 }

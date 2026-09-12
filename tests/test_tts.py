@@ -408,6 +408,17 @@ class TestTextToSpeech:
         assert not os.path.exists(path)
         tts._play_mp3.assert_called_once_with(path, None)
 
+    def test_play_file_unlink_error_tolerated(self):
+        """WinError 32 при удалении занятого файла не роняет поток."""
+        tts = TextToSpeech()
+        tts._play_mp3 = MagicMock()
+        path = tts._temp_file(".mp3")
+        with open(path, "wb") as f:
+            f.write(b"ID3")
+        with patch("lib.tts.os.unlink", side_effect=OSError("файл занят")):
+            tts._play_file(path)
+        tts._play_mp3.assert_called_once_with(path, None)
+
     @patch("lib.tts.subprocess.Popen")
     def test_play_wav_timeout(self, mock_popen, capsys):
         """Таймаут воспроизведения WAV обрабатывается."""

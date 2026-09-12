@@ -77,3 +77,53 @@ class TestOmniRouterClient:
         )
         client = self._client()
         assert client.ask("Привет") is None
+
+    def test_set_output(self):
+        """_set_output сохраняет output для debug-логирования."""
+        client = self._client()
+        mock_output = MagicMock()
+        client._set_output(mock_output)
+        assert client._output == mock_output
+
+    def test_ask_logs_request_and_response_debug(self, mocker):
+        """При успешном ответе логируются запрос и ответ через print_debug."""
+        mock_output = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "Ответ системы"}}]
+        }
+        mock_post = mocker.patch("lib.providers.omni.requests.post")
+        mock_post.return_value = mock_response
+
+        client = self._client()
+        client._set_output(mock_output)
+        result = client.ask("Привет")
+
+        assert result == "Ответ системы"
+        assert mock_output.print_debug.call_count == 2
+        req_call = mock_output.print_debug.call_args_list[0][0][0]
+        assert "[LLM Request]" in req_call
+        assert "model=" in req_call
+        assert "messages=" in req_call
+        resp_call = mock_output.print_debug.call_args_list[1][0][0]
+        assert "[LLM Response]" in resp_call
+        assert "Ответ системы" in resp_call
+
+    def test_ask_logs_error_debug(self, mocker):
+        """При ошибке запроса логируется запрос и ошибка через print_debug."""
+        mock_output = MagicMock()
+        mocker.patch(
+            "lib.providers.omni.requests.post", side_effect=ConnectionError("down")
+        )
+        client = self._client()
+        client._set_output(mock_output)
+        result = client.ask("Привет")
+
+        assert result is None
+        assert mock_output.print_debug.call_count == 2
+        req_call = mock_output.print_debug.call_args_list[0][0][0]
+        assert "[LLM Request]" in req_call
+        error_call = mock_output.print_debug.call_args_list[1][0][0]
+        assert "[LLM Error]" in error_call
+        assert "down" in error_call
