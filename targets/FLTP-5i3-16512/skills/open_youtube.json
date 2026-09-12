@@ -1,0 +1,16 @@
+{
+  "name": "open_youtube",
+  "description": "Открывает YouTube в браузере",
+  "phrases": [
+    "открой ютуб",
+    "включи ютуб",
+    "запусти ютуб"
+  ],
+  "params": {},
+  "steps": [
+    {
+      "action": "open_url",
+      "url": "https://www.youtube.com"
+    }
+  ]
+}

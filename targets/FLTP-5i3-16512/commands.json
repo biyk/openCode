@@ -34,5 +34,8 @@
     "intent": {
         "enabled": true,
         "include_media": true
+    },
+    "skills": {
+        "enabled": true
     }
 }

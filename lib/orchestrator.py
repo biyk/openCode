@@ -1,8 +1,8 @@
 """Оркестратор обработки голосового ввода (детерминированное ядро).
 
 Решает, на каком уровне обрабатывать распознанный текст: стоп-слово во время
-озвучки, готовая команда или запрос к LLM. Сюда же подключаются будущие слои
-(мини-LLM, скиллы, большая LLM, модель-контролёр), не затрагивая ядро
+озвучки, готовая команда, скилл или запрос к LLM. Сюда же подключаются будущие слои
+(мини-LLM, большая LLM, модель-контролёр), не затрагивая ядро
 распознавания в main.py.
 """
 
@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 
 from lib.commands import CommandMatcher
 from lib.output import TranscriptionOutput
+from lib.skills import SkillRegistry
 
 
 class Orchestrator:
@@ -29,6 +30,7 @@ class Orchestrator:
         suppress_after: float = 0.5,
         clear_speech_buffer: Optional[Callable[[], None]] = None,
         intent: Any = None,
+        skills: Optional[SkillRegistry] = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
@@ -38,6 +40,7 @@ class Orchestrator:
         self._suppress_after = suppress_after
         self._clear_speech_buffer = clear_speech_buffer or (lambda: None)
         self._intent = intent or None
+        self._skills = skills or None
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
@@ -87,8 +90,18 @@ class Orchestrator:
                         f"[Mini] Команда «{detected}» не найдена"
                     )
                     return
+            # Проверка скиллов (после intent, до LLM)
+            if self._skills is not None:
+                skill_name = self._skills.match(text)
+                if skill_name is not None:
+                    self._output.print_info(f"[Skill] Распознан скилл: {skill_name}")
+                    if self._skills.execute(skill_name):
+                        self._output.print_text(f"Скилл выполнен: {skill_name}")
+                        return
+                    self._output.print_error(f"[Skill] Ошибка исполнения: {skill_name}")
+                    return
             self._output.print_debug(
-                f"[LLM Decision] Trigger found, no command match, no intent match. "
+                f"[LLM Decision] Trigger found, no command match, no intent match, no skill match. "
                 f"Sending to LLM. Text: {text}"
             )
             self._output.print_info("... отправка запроса LLM")

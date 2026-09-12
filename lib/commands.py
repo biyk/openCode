@@ -115,3 +115,7 @@ class CommandMatcher:
     def match_config(self) -> dict:
         """Возвращает словарь {command_id: [фразы]} для классификатора."""
         return self._data.get("match", {})
+
+    def get_skills_config(self) -> dict:
+        """Возвращает конфигурацию скиллов."""
+        return self._data.get("skills", {})

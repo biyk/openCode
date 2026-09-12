@@ -37,6 +37,7 @@ from lib.logger import Logger
 from lib.tts import TextToSpeech
 from lib.config_loader import get_device_commands_path
 from lib.orchestrator import Orchestrator
+from lib.skills import SkillRegistry, get_skills_dir
 from lib.intent import IntentClassifier
 from lib.media import is_media_playing
 from lib.providers.manager import ProviderManager
@@ -148,7 +149,17 @@ class TranscriptionWorker:
             stop_words=STOP_WORDS,
             suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
             intent=intent,
+            skills=None,  # будет инициализирован ниже если включен
         )
+
+        # Skills (после создания оркестратора, чтобы skills имел доступ к output через оркестратор)
+        skills_config = self._matcher.get_skills_config()
+        if skills_config.get("enabled"):
+            skills = SkillRegistry(
+                skills_dir=str(get_skills_dir()),
+                logger=self._logger,
+            )
+            self._orchestrator._skills = skills
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.

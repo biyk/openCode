@@ -40,3 +40,15 @@ class Logger:
                 history.append({"role": "assistant", "content": line[11:].strip()})
 
         return history
+
+    def log_info(self, message: str) -> None:
+        """Логирует информационное сообщение в файл команд."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(self._log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [INFO] {message}\n")
+
+    def log_error(self, message: str) -> None:
+        """Логирует ошибку в файл команд."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(self._log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [ERROR] {message}\n")
