@@ -17,7 +17,7 @@ class OmniRouterClient(BaseLLMClient):
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None,
                  history_limit: int = 10, timeout: int = 300):
         self._base_url = (base_url or "http://localhost:20128/v1").rstrip("/")
-        self._model = model or "ds-web/deepseek-v4-flash-search"
+        self._model = model or "auto"
         self._history_limit = history_limit
         self._timeout = timeout
         self._logger = Logger()

@@ -55,6 +55,38 @@ class TestTranscriptionOutput:
         sys.stdout = sys.__stdout__
         assert "Запись остановлена" in captured.getvalue()
 
+    def test_print_partial_writes_without_newline(self):
+        output = TranscriptionOutput()
+        captured = StringIO()
+        sys.stdout = captured
+        output.print_partial("частичный текст")
+        sys.stdout = sys.__stdout__
+        assert captured.getvalue() == "\rчастичный текст"
+
+    def test_print_partial_empty_skips(self):
+        output = TranscriptionOutput()
+        captured = StringIO()
+        sys.stdout = captured
+        output.print_partial("")
+        sys.stdout = sys.__stdout__
+        assert captured.getvalue() == ""
+
+    def test_print_progress_with_total(self):
+        output = TranscriptionOutput()
+        captured = StringIO()
+        sys.stdout = captured
+        output.print_progress(5, 10, prefix="Загрузка")
+        sys.stdout = sys.__stdout__
+        assert captured.getvalue() == "\rЗагрузка: 50.0%"
+
+    def test_print_progress_unknown_total(self):
+        output = TranscriptionOutput()
+        captured = StringIO()
+        sys.stdout = captured
+        output.print_progress(0, 0, prefix="Загрузка")
+        sys.stdout = sys.__stdout__
+        assert captured.getvalue() == "\rЗагрузка..."
+
     def test_init_with_color(self):
         output = TranscriptionOutput(use_color=True)
         assert output.use_color is True

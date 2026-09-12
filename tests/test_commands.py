@@ -1,5 +1,6 @@
 import pytest
 import os
+import subprocess
 import tempfile
 import json
 from lib.commands import CommandMatcher, DEFAULT_TRIGGERS
@@ -27,13 +28,17 @@ def temp_commands_file():
             "volumeup": ["громче", "сделай громче"],
             "volumedown": ["тише", "сделай тише"],
             "playpause": ["пауза", "плей"]
+        },
+        "llm": {
+            "history_limit": 10
         }
     }
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
         json.dump(commands, f)
         temp_path = f.name
     yield temp_path
-    os.unlink(temp_path)
+    if os.path.exists(temp_path):
+        os.unlink(temp_path)
 
 
 class TestCommandMatcher:
@@ -161,5 +166,85 @@ class TestCommandMatcher:
         try:
             matcher = CommandMatcher(temp_path)
             assert matcher.triggers == DEFAULT_TRIGGERS
+        finally:
+            os.unlink(temp_path)
+
+    def test_reload_when_file_removed(self, temp_commands_file):
+        """reload() при удалённом файле молча выходит (OSError)."""
+        matcher = CommandMatcher(temp_commands_file)
+        os.unlink(temp_commands_file)
+        matcher.reload()
+        assert matcher._data is not None
+
+    def test_reload_picks_up_changes(self, temp_commands_file, mocker):
+        """reload() перечитывает файл после его изменения."""
+        matcher = CommandMatcher(temp_commands_file)
+        with open(temp_commands_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["match"]["volumeup"].append("повысить")
+        with open(temp_commands_file, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        matcher.reload()
+        result = matcher.find("пожалуйста повысить")
+        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+
+    def test_reload_no_change_no_op(self, temp_commands_file):
+        """Если файл не менялся, reload() ничего не делает."""
+        matcher = CommandMatcher(temp_commands_file)
+        matcher.reload()
+        assert matcher._data is not None
+
+    def test_get_command_unknown_id(self, temp_commands_file):
+        """_get_command для несуществующего id возвращает None."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher._get_command("nonexistent_id") is None
+
+    def test_get_command_missing_platform(self, temp_commands_file, mocker):
+        """Если для платформы нет команды и нет default — None."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, encoding='utf-8'
+        ) as f:
+            json.dump({
+                "triggers": DEFAULT_TRIGGERS,
+                "commands": {"onlywin": {"windows": "echo hi"}},
+                "match": {"onlywin": ["окно"]},
+            }, f)
+            temp_path = f.name
+        try:
+            matcher = CommandMatcher(temp_path)
+            assert matcher._get_command("onlywin") is None
+            assert matcher.find("пожалуйста окно") == "onlywin"
+        finally:
+            os.unlink(temp_path)
+
+    def test_execute_called_process_error(self, temp_commands_file, mocker):
+        """При ошибке выполнения команды execute() возвращает False."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        subprocess_mock = mocker.patch("lib.commands.subprocess.run")
+        subprocess_mock.side_effect = subprocess.CalledProcessError(1, "cmd")
+        matcher = CommandMatcher(temp_commands_file)
+        result = matcher.execute("пожалуйста громче")
+        assert result is False
+
+    def test_get_llm_config_returns_dict(self, temp_commands_file):
+        """get_llm_config возвращает конфигурацию LLM."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.get_llm_config() == {"history_limit": 10}
+
+    def test_get_llm_config_empty_when_missing(self, tmp_path):
+        """Если поля llm нет — возвращается пустой словарь."""
+        import tempfile
+        import json
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, encoding='utf-8'
+        ) as f:
+            json.dump({"commands": {}, "match": {}}, f)
+            temp_path = f.name
+        try:
+            matcher = CommandMatcher(temp_path)
+            assert matcher.get_llm_config() == {}
         finally:
             os.unlink(temp_path)

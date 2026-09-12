@@ -3,6 +3,7 @@ import sys
 import json
 import queue
 import threading
+import time
 import zipfile
 import socket
 from typing import Optional
@@ -28,6 +29,11 @@ _provider_manager = ProviderManager()
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
 BLOCKSIZE = 2048         # Размер блока аудио
+
+# Сколько секунд после озвучки игнорировать микрофон (хвост эха TTS)
+AUDIO_SUPPRESS_AFTER_TTS = 0.5
+# Слова, которые прерывают озвучку
+STOP_WORDS = frozenset(("стоп", "останови", "stop", "хватит", "прекрати"))
 
 # Модели Vosk (маленькие, ~50-60 МБ)
 VOSK_MODELS = {
@@ -89,6 +95,8 @@ class TranscriptionWorker:
         self._queue = queue.Queue()
         self._accumulated = []
         self._speaking = False
+        self._suppress_until = 0.0
+        self._abort_playback = threading.Event()
         self._output = TranscriptionOutput()
         commands_file = get_device_commands_path(device_name)
         self._matcher = CommandMatcher(commands_file)
@@ -100,15 +108,28 @@ class TranscriptionWorker:
         self._tts = TextToSpeech()
 
     def audio_callback(self, indata, frames, time_info, status):
-        """Обратный вызов sounddevice для каждого блока аудио."""
-        if status:
-            pass
-        if self._speaking:
-            return
+        """Обратный вызов sounddevice для каждого блока аудио.
+
+        Данные записываются всегда, даже во время озвучки, чтобы можно
+        было прервать её словом из STOP_WORDS.
+        """
         self._queue.put(bytes(indata))
 
     def _on_speaking_finished(self):
         self._speaking = False
+        self._suppress_until = time.monotonic() + AUDIO_SUPPRESS_AFTER_TTS
+
+    def _speak_async(self, answer: str) -> None:
+        """Запускает озвучку в фоне, оставляя цикл распознавания активным."""
+        def _play() -> None:
+            try:
+                self._tts.speak_and_play(answer, abort_event=self._abort_playback)
+            except Exception as e:
+                self._output.print_error(f"Ошибка озвучки: {e}")
+            finally:
+                self._on_speaking_finished()
+
+        threading.Thread(target=_play, daemon=True).start()
 
     def run(self):
         """Основной цикл - работает до вызова stop()."""
@@ -156,6 +177,13 @@ class TranscriptionWorker:
 
     def _process_text(self, text: str) -> None:
         """Обрабатывает распознанный текст: команда или LLM."""
+        if time.monotonic() < self._suppress_until:
+            return
+        if self._speaking:
+            if text in STOP_WORDS:
+                self._abort_playback.set()
+                self._output.print_info("[TTS] Озвучка прервана")
+            return
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
             return
@@ -168,13 +196,15 @@ class TranscriptionWorker:
             answer = self._llm.ask(text)
             if answer:
                 self._speaking = True
-                self._tts.speak_and_play(answer, self._on_speaking_finished)
+                self._abort_playback.clear()
+                self._speak_async(answer)
             else:
                 self._output.print_error("[LLM] Ошибка ответа")
                 self._output.print_text(text)
 
     def stop(self):
         self._running.clear()
+        self._abort_playback.set()
 
 # ---------- Главная функция ----------
 def main():

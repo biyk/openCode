@@ -56,3 +56,7 @@ class TestOpenRouterClient:
     def test_base_url(self):
         client = OpenRouterClient(api_key="test")
         assert client._base_url == "https://openrouter.ai/api/v1/chat/completions"
+
+    def test_name(self):
+        client = OpenRouterClient(api_key="test")
+        assert client.name == "OpenRouter"

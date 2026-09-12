@@ -10,5 +10,7 @@ logs/
 temp/
 temp*.txt
 *.log
+.coverage
+htmlcov/
 bin/*
 !bin/tts_sapi.ps1
