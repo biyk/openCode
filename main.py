@@ -22,8 +22,15 @@ if sys.platform == "win32":
         pass
 
 def _fix_encoding(text: str) -> str:
-    """Пытается исправить битый текст от Vosk на Windows (cp866 -> utf-8)."""
+    """Исправляет битый текст от Vosk на Windows.
+
+    Если текст уже содержит корректную кириллицу — возвращает его как есть
+    (повторная перекодировка нормальной UTF-8 строки через cp866 ломает её).
+    В противном случае пытается перекодировать моховидный текст cp866 -> utf-8.
+    """
     if not text or sys.platform != "win32":
+        return text
+    if any("\u0410" <= ch <= "\u044F" or ch in "\u0401\u0451" for ch in text):
         return text
     try:
         encoded = text.encode("cp866", errors="ignore")
@@ -40,6 +47,7 @@ from lib.orchestrator import Orchestrator
 from lib.skills import SkillRegistry, get_skills_dir
 from lib.intent import IntentClassifier
 from lib.media import is_media_playing
+from lib.status import StatusStore
 from lib.providers.manager import ProviderManager
 
 import sounddevice as sd
@@ -120,7 +128,12 @@ class TranscriptionWorker:
         self._accumulated = []
         self._output = output or TranscriptionOutput()
         commands_file = get_device_commands_path(device_name)
-        self._matcher = CommandMatcher(commands_file)
+        self._status = StatusStore(
+            StatusStore.path_for_commands_file(commands_file),
+            output=self._output,
+        )
+        self._status.start()
+        self._matcher = CommandMatcher(commands_file, status_store=self._status)
         self._logger = Logger()
 
         llm_config = self._matcher.get_llm_config()

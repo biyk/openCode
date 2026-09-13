@@ -8,17 +8,17 @@ from lib.providers import BaseLLMClient
 SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text()
 
 
-class OmniRouterClient(BaseLLMClient):
-    """Клиент для локального OmniRouter прокси (OpenAI-совместимый API).
+class LmStudioClient(BaseLLMClient):
+    """Клиент для локального LM Studio (OpenAI-совместимый API).
 
-    Отправляет запросы в http://localhost:20128/v1/chat/completions.
+    Отправляет запросы в http://localhost:1234/v1/chat/completions.
     """
 
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None,
                  history_limit: int = 10, timeout: int = 300, log_history: bool = True,
                  announce: bool = True):
-        self._base_url = (base_url or "http://localhost:20128/v1").rstrip("/")
-        self._model = model or "auto"
+        self._base_url = (base_url or "http://localhost:1234/v1").rstrip("/")
+        self._model = model or "liquid/lfm2.5-1.2b"
         self._history_limit = history_limit
         self._timeout = timeout
         self._log_history = log_history
@@ -28,7 +28,7 @@ class OmniRouterClient(BaseLLMClient):
 
     @property
     def name(self) -> str:
-        return "OmniRouter"
+        return "LM Studio"
 
     def _set_output(self, output) -> None:
         """Устанавливает вывод для debug-логирования (вызывается из main)."""
@@ -85,5 +85,5 @@ class OmniRouterClient(BaseLLMClient):
                 self._output.print_error(f"[LLM] {self.name}: ошибка: {e}")
                 self._output.print_debug(f"[LLM Error] {e}")
             else:
-                print(f"[OmniRouter] Ошибка: {e}")
+                print(f"[LM Studio] Ошибка: {e}")
             return None

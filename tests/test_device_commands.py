@@ -40,22 +40,26 @@ class TestDeviceCommands:
             assert isinstance(cmd, (dict, str)), f"Command {cmd_id} has invalid type"
 
     def test_find_command_with_platform(self, device_commands_path):
-        """Проверяет, что find() возвращает команду для текущей платформы."""
+        """Проверяет дословный поиск и shell-команду для текущей платформы."""
         matcher = CommandMatcher(device_commands_path)
 
         match_data = matcher._data.get("match", {})
         if not match_data:
             pytest.skip("No match patterns in commands file")
 
-        first_pattern = list(match_data.values())[0][0]
+        first_id = list(match_data.keys())[0]
+        first_pattern = match_data[first_id][0]
         # Теперь нужен триггер для активации команд
-        result = matcher.find(f"пожалуйста {first_pattern}")
+        found = matcher.find_literal_id(f"пожалуйста {first_pattern}")
 
-        assert result is not None, f"Command not found for pattern: {first_pattern}"
+        assert found == first_id, f"Command not found for pattern: {first_pattern}"
+        result = matcher.get_command(found)
 
         if platform.system() == "Windows":
-            assert "playerctl" not in result, f"playerctl not available on Windows: {result}"
-            assert "pactl" not in result, f"pactl not available on Windows: {result}"
+            assert "playerctl" not in (result or ""), (
+                f"playerctl not available on Windows: {result}")
+            assert "pactl" not in (result or ""), (
+                f"pactl not available on Windows: {result}")
 
     def test_windows_commands_are_valid_powershell(self, device_commands_path):
         """Проверяет, что Windows команды не содержат ошибок."""

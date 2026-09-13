@@ -1,0 +1,22 @@
+{
+    "statuses": {
+        "vpn": {
+            "description": "VPN включён (youtube доступен напрямую)",
+            "checker": "vpn",
+            "interval": 5,
+            "need_message": "Включи VPN вручную"
+        },
+        "media": {
+            "description": "Сейчас играет медиа",
+            "checker": "media",
+            "interval": 5,
+            "need_message": "Сейчас ничего не играет"
+        },
+        "browser_youtube": {
+            "description": "Браузер запущен, есть вкладка ютуба",
+            "checker": "browser_youtube",
+            "interval": 5,
+            "need_message": "Открой ютуб"
+        }
+    }
+}

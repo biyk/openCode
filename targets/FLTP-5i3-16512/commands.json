@@ -20,13 +20,43 @@
             "linux": "playerctl stop",
             "windows": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\"",
             "default": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\""
+        },
+        "openyoutube": {
+            "linux": "python -m lib.browser_control open-url \"https://youtube.com\"",
+            "windows": "python -m lib.browser_control open-url \"https://youtube.com\"",
+            "default": "python -m lib.browser_control open-url \"https://youtube.com\""
+        },
+        "youtube_news": {
+            "linux": "python -m lib.browser_control youtube-play \"новости\"",
+            "windows": "python -m lib.browser_control youtube-play \"новости\"",
+            "default": "python -m lib.browser_control youtube-play \"новости\""
+        }
+    },
+    "requires": {
+        "playpause": ["media"],
+        "stop": ["media"],
+        "openyoutube": ["vpn"],
+        "youtube_news": ["vpn", "browser_youtube"],
+        "news": ["vpn"]
+    },
+    "provides": {
+        "openyoutube": ["browser_youtube"],
+        "youtube_news": ["browser_youtube"]
+    },
+    "sequences": {
+        "news": {
+            "description": "Открыть ютуб и включить новости",
+            "steps": ["openyoutube", "youtube_news"]
         }
     },
     "match": {
         "volumeup": ["громче", "сделай громче", "увеличь громкость", "громкость вверх"],
         "volumedown": ["тише", "сделай тише", "уменьши громкость", "громкость вниз"],
-        "playpause": ["пауза", "плей", "играй", "включи", "play", "pause", "дальше"],
-        "stop": ["стоп", "остановить", "выключи", "stop"]
+        "playpause": ["пауза", "плей", "играй", "включи", "дальше"],
+        "stop": ["стоп", "остановить", "выключи"],
+        "openyoutube": ["открой ютуб", "запусти ютуб", "включи ютуб"],
+        "youtube_news": ["новости ютуб", "новости на ютубе"],
+        "news": ["включи новости", "покажи новости", "запусти новости"]
     },
     "llm": {
         "history_limit": 10

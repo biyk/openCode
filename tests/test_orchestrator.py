@@ -17,7 +17,14 @@ class TestOrchestrator:
             "tts": mocker.MagicMock(),
         }
         defaults.update(kwargs)
-        return Orchestrator(**defaults)
+        orch = Orchestrator(**defaults)
+        if "matcher" not in kwargs:
+            orch._matcher.find_literal_id.return_value = None
+            orch._matcher.missing_requires.return_value = []
+            orch._matcher.triggers = ["пожалуйста", "алиса"]
+            orch._matcher.status_snapshot.return_value = {}
+            orch._matcher.requires_map.return_value = {}
+        return orch
 
     def test_defaults(self, mocker):
         """Стоп-слова и окно эха задаются по умолчанию."""
@@ -86,23 +93,69 @@ class TestOrchestrator:
         orch._llm.ask.assert_not_called()
 
     def test_process_text_command_found(self, mocker):
-        """Команда с триггером выполняется."""
+        """Дословная команда с триггером выполняется (id в print_info)."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = "play"
-        orch.process_text("пожалуйста вкл")
-        orch._matcher.execute.assert_called_once_with("пожалуйста вкл")
-        # print_text вызывается 2 раза: распознанный текст + команда
-        assert orch._output.print_text.call_count == 2
-        orch._output.print_text.assert_any_call("пожалуйста вкл")
-        orch._output.print_text.assert_any_call("play")
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("пожалуйста пауза")
+        orch._matcher.execute_by_id.assert_called_once_with("playpause")
+        # print_text вызывается 1 раз: распознанный текст
+        orch._output.print_text.assert_called_once_with("пожалуйста пауза")
+        orch._output.print_info.assert_any_call(
+            "[Command] Распознана команда: playpause")
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_command_absent(self, mocker):
+        """Без дословной команды текст уходит дальше (intent/LLM)."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._llm.ask.return_value = "Ответ"
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста сделай кромку")
+        spy.assert_called_once_with("Ответ")
+        orch._matcher.execute_by_id.assert_not_called()
+
+    def test_process_text_literal_blocked_goes_to_intent(self, mocker):
+        """Дословная, но заблокированная команда — в intent с контекстом."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = None
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = ["media"]
+        orch._matcher.status_snapshot.return_value = {"media": False}
+        orch._llm.ask.return_value = None
+        orch.process_text("пожалуйста включи")
+        orch._matcher.execute_by_id.assert_not_called()
+        text, context = intent.detect.call_args.args
+        assert text == "пожалуйста включи"
+        assert context["blocked"] == [("playpause", ["media"])]
+        assert context["triggers"] == ["пожалуйста", "алиса"]
+        assert context["statuses"] == {"media": False}
+
+    def test_process_text_garbled_goes_to_intent(self, mocker):
+        """Исковерканное Vosk («ютюб») — в intent, не в подстроку."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = "openyoutube"
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("пожалуйста включи и ютюб")
+        intent.detect.assert_called_once()
+        orch._matcher.execute_by_id.assert_called_once_with("openyoutube")
         orch._llm.ask.assert_not_called()
 
     def test_process_text_llm_answer(self, mocker):
         """Без команды ответ LLM озвучивается в фоне."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._llm.ask.return_value = "Ответ"
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
@@ -126,7 +179,7 @@ class TestOrchestrator:
         """Ошибка LLM печатается как текст."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._llm.ask.return_value = None
         orch.process_text("пожалуйста что-то")
         orch._output.print_error.assert_called_once_with("[LLM] Ошибка ответа")
@@ -138,7 +191,7 @@ class TestOrchestrator:
         """Без intent-слоя текст уходит в LLM, логов [Mini] нет."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._llm.ask.return_value = "Ответ"
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
@@ -154,10 +207,12 @@ class TestOrchestrator:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста сделай кромку")
-        intent.detect.assert_called_once_with("пожалуйста сделай кромку")
+        text, context = intent.detect.call_args.args
+        assert text == "пожалуйста сделай кромку"
+        assert context["blocked"] == []
         orch._matcher.execute_by_id.assert_called_once_with("volumeup")
         # print_text вызывается 2 раза: распознанный текст + команда
         assert orch._output.print_text.call_count == 2
@@ -171,7 +226,7 @@ class TestOrchestrator:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._matcher.execute_by_id.return_value = False
         orch.process_text("пожалуйста сделай кромку")
         orch._matcher.execute_by_id.assert_called_once_with("volumeup")
@@ -185,12 +240,44 @@ class TestOrchestrator:
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find.return_value = None
+        orch._matcher.find_literal_id.return_value = None
         orch._llm.ask.return_value = None
         orch.process_text("пожалуйста неизвестный запрос")
         calls = [c.args[0] for c in orch._output.print_info.call_args_list]
         assert not any("[Mini]" in call for call in calls)
-        intent.detect.assert_called_once_with("пожалуйста неизвестный запрос")
+        text, context = intent.detect.call_args.args
+        assert text == "пожалуйста неизвестный запрос"
+        assert set(context) == {"triggers", "statuses", "requires", "blocked"}
+
+    def test_process_text_literal_blocked_falls_through_to_llm(self, mocker):
+        """Дословная, но заблокированная, без intent — сигнал идёт в LLM."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = ["media"]
+        orch._llm.ask.return_value = "Ответ"
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста включи")
+        orch._matcher.execute_by_id.assert_not_called()
+        spy.assert_called_once_with("Ответ")
+
+    def test_process_text_intent_blocked_speaks(self, mocker):
+        """Intent-команда без статуса: озвучка вместо 'не найдена'."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = "openyoutube"
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.execute_by_id.return_value = False
+        orch._matcher.missing_requires.return_value = ["vpn"]
+        orch._matcher.need_message.return_value = "Включи VPN вручную"
+        orch._abort_playback = mocker.MagicMock()
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста открой ютуб")
+        spy.assert_called_once_with("Включи VPN вручную")
+        orch._llm.ask.assert_not_called()
 
     def test_speak_async_plays_in_background(self, mocker):
         """_speak_async запускает озвучку и сбрасывает состояние."""

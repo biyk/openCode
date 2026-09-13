@@ -50,76 +50,64 @@ class TestCommandMatcher:
         assert "commands" in matcher._data
         assert "match" in matcher._data
 
-    def test_find_exact_match(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Linux")
+    def test_find_literal_exact_match(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("пожалуйста громче")
-        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+        assert matcher.find_literal_id("пожалуйста громче") == "volumeup"
 
-    def test_find_partial_match(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Linux")
+    def test_find_literal_no_substring_match(self, temp_commands_file):
+        """Подстрока НЕ считается: лишние слова вокруг — мимо."""
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("алиса сделай громче музыку")
-        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+        assert matcher.find_literal_id("алиса сделай громче музыку") is None
+        assert matcher.find_literal_id("пожалуйста очень громче") is None
 
-    def test_find_case_insensitive(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Linux")
+    def test_find_literal_case_insensitive(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("ПОЖАЛУЙСТА ГРОМЧЕ")
-        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+        assert matcher.find_literal_id("ПОЖАЛУЙСТА ГРОМЧЕ") == "volumeup"
 
-    def test_find_no_match(self, temp_commands_file):
+    def test_find_literal_triggers_stripped(self, temp_commands_file):
+        """Триггеры вырезаются с любой позиции."""
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("пожалуйста неизвестная команда")
-        assert result is None
+        assert matcher.find_literal_id("громче пожалуйста") == "volumeup"
+        assert matcher.find_literal_id("алиса громче пожалуйста") == "volumeup"
 
-    def test_find_russian_template(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Linux")
+    def test_find_literal_no_match(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("пожалуйста сделай тише")
-        assert result == "pactl set-sink-volume @DEFAULT_SINK@ -10%"
+        assert matcher.find_literal_id("пожалуйста неизвестная команда") is None
 
-    def test_find_windows_platform(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Windows")
+    def test_find_literal_russian_template(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("алиса громче")
-        assert result == "echo volumeup"
+        assert matcher.find_literal_id("пожалуйста сделай тише") == "volumedown"
 
-    def test_find_fallback_to_default(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Darwin")
+    def test_find_literal_string_command(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("пожалуйста громче")
-        assert result == "echo volumeup"
+        assert matcher.find_literal_id("пожалуйста пауза") == "playpause"
 
-    def test_find_string_command_fallback(self, temp_commands_file, mocker):
-        mocker.patch("lib.commands.platform.system", return_value="Windows")
+    def test_core_phrase_strips_triggers(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("пожалуйста пауза")
-        assert result == "playerctl play-pause"
+        assert matcher.core_phrase("алиса включи ютуб пожалуйста") == "включи ютуб"
+        assert matcher.core_phrase("ПОЖАЛУЙСТА  ГРОМЧЕ ") == "громче"
+        assert matcher.core_phrase("пожалуйста") == ""
 
     def test_load_invalid_file(self):
         matcher = CommandMatcher("/nonexistent/file.json")
         assert matcher._data == {}
 
-    def test_execute_no_command(self, temp_commands_file):
-        matcher = CommandMatcher(temp_commands_file)
-        result = matcher.execute("пожалуйста неизвестная команда")
-        assert result is False
-
-    def test_execute_valid_command(self, temp_commands_file, mocker):
+    def test_execute_by_id_confirmation_phrase(self, temp_commands_file, mocker):
+        """VOICE_CONFIRMATION_PHRASE озвучивается после команды."""
         mocker.patch("lib.commands.platform.system", return_value="Linux")
         mocker.patch("lib.commands.subprocess.run")
-        mocker.patch("lib.commands.TextToSpeech.speak_and_play")
+        speak_mock = mocker.patch("lib.commands.TextToSpeech.speak_and_play")
         mocker.patch.dict("os.environ", {"VOICE_CONFIRMATION_PHRASE": "Готово"})
         from importlib import reload
         import lib.commands
         reload(lib.commands)
         from lib.commands import CommandMatcher as CM2
         matcher = CM2(temp_commands_file)
-        result = matcher.execute("пожалуйста громче")
-        assert result is True
+        assert matcher.execute_by_id("volumeup") is True
+        speak_mock.assert_called_once_with("Готово")
 
-    def test_execute_no_confirmation_by_default(self, temp_commands_file, mocker):
+    def test_execute_by_id_no_confirmation_by_default(
+            self, temp_commands_file, mocker):
         mocker.patch("lib.commands.platform.system", return_value="Linux")
         mocker.patch("lib.commands.subprocess.run")
         speak_mock = mocker.patch("lib.commands.TextToSpeech.speak_and_play")
@@ -129,15 +117,13 @@ class TestCommandMatcher:
         reload(lib.commands)
         from lib.commands import CommandMatcher as CM2
         matcher = CM2(temp_commands_file)
-        result = matcher.execute("пожалуйста громче")
-        assert result is True
+        assert matcher.execute_by_id("volumeup") is True
         speak_mock.assert_not_called()
 
-    def test_find_without_trigger_returns_none(self, temp_commands_file):
+    def test_find_literal_without_trigger_returns_none(self, temp_commands_file):
         """Без триггера команда не должна находиться."""
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.find("громче")
-        assert result is None
+        assert matcher.find_literal_id("громче") is None
 
     def test_has_trigger_detects_trigger(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
@@ -187,8 +173,7 @@ class TestCommandMatcher:
 
         mocker.patch("lib.commands.platform.system", return_value="Linux")
         matcher.reload()
-        result = matcher.find("пожалуйста повысить")
-        assert result == "pactl set-sink-volume @DEFAULT_SINK@ +10%"
+        assert matcher.find_literal_id("пожалуйста повысить") == "volumeup"
 
     def test_reload_no_change_no_op(self, temp_commands_file):
         """Если файл не менялся, reload() ничего не делает."""
@@ -249,18 +234,17 @@ class TestCommandMatcher:
         try:
             matcher = CommandMatcher(temp_path)
             assert matcher._get_command("onlywin") is None
-            assert matcher.find("пожалуйста окно") == "onlywin"
+            assert matcher.find_literal_id("пожалуйста окно") == "onlywin"
         finally:
             os.unlink(temp_path)
 
-    def test_execute_called_process_error(self, temp_commands_file, mocker):
-        """При ошибке выполнения команды execute() возвращает False."""
+    def test_execute_by_id_called_process_error(self, temp_commands_file, mocker):
+        """При ошибке выполнения команды execute_by_id возвращает False."""
         mocker.patch("lib.commands.platform.system", return_value="Linux")
         subprocess_mock = mocker.patch("lib.commands.subprocess.run")
         subprocess_mock.side_effect = subprocess.CalledProcessError(1, "cmd")
         matcher = CommandMatcher(temp_commands_file)
-        result = matcher.execute("пожалуйста громче")
-        assert result is False
+        assert matcher.execute_by_id("volumeup") is False
 
     def test_get_llm_config_returns_dict(self, temp_commands_file):
         """get_llm_config возвращает конфигурацию LLM."""
@@ -311,3 +295,173 @@ class TestCommandMatcher:
             "volumedown": ["тише", "сделай тише"],
             "playpause": ["пауза", "плей"],
         }
+
+    def test_find_literal_returns_cmd_id(self, temp_commands_file, mocker):
+        """find_literal_id возвращает id команды, а не shell-строку."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_literal_id("пожалуйста громче") == "volumeup"
+        assert matcher.find_literal_id("пожалуйста неизвестная") is None
+
+    def test_find_literal_exact_phrases(self, tmp_path, mocker):
+        """Каждая фраза матчится только дословно."""
+        import json
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        cfg = {
+            "triggers": ["пожалуйста"],
+            "commands": {
+                "playpause": "echo play",
+                "openyt": "echo youtube",
+            },
+            "match": {
+                "playpause": ["включи"],
+                "openyt": ["включи ютуб"],
+            },
+        }
+        import tempfile
+        path = tempfile.mktemp(suffix=".json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f)
+            matcher = CommandMatcher(path)
+            assert matcher.find_literal_id("пожалуйста включи ютуб") == "openyt"
+            assert matcher.find_literal_id("пожалуйста включи") == "playpause"
+            # Короткий шаблон внутри длинной фразы — не совпадение.
+            assert matcher.find_literal_id("пожалуйста включи и ютюб") is None
+        finally:
+            os.unlink(path)
+
+    def _write_cfg(self, cfg):
+        """Пишет конфиг во временный файл, возвращает путь."""
+        import json
+        import tempfile
+        path = tempfile.mktemp(suffix=".json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+        return path
+
+    def _fake_store(self, active):
+        """Фейковое хранилище статусов: active — множество включённых."""
+        from unittest.mock import MagicMock
+        store = MagicMock()
+        store.enabled = True
+        store.ensure.side_effect = lambda names: [
+            n for n in names if n not in active]
+        return store
+
+    def test_missing_requires_when_status_off(self, tmp_path, mocker):
+        """missing_requires перечисляет невыполненные статусы."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"playpause": "echo play", "stop": "echo stop"},
+            "requires": {"playpause": ["media"], "stop": ["media"]},
+            "match": {"playpause": ["пауза", "плей"], "stop": ["стоп"]},
+        })
+        try:
+            matcher = CommandMatcher(path, status_store=self._fake_store(set()))
+            assert matcher.find_literal_id("пожалуйста пауза") == "playpause"
+            assert matcher.missing_requires("playpause") == ["media"]
+            assert matcher.missing_requires("stop") == ["media"]
+        finally:
+            os.unlink(path)
+
+    def test_missing_requires_empty_when_status_on(self, tmp_path, mocker):
+        """При включённом статусе missing_requires пусто."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"playpause": "echo play"},
+            "requires": {"playpause": ["media"]},
+            "match": {"playpause": ["пауза", "плей"]},
+        })
+        try:
+            matcher = CommandMatcher(
+                path, status_store=self._fake_store({"media"}))
+            assert matcher.find_literal_id("пожалуйста пауза") == "playpause"
+            assert matcher.missing_requires("playpause") == []
+        finally:
+            os.unlink(path)
+
+    def test_requires_ignored_without_store(self, temp_commands_file, mocker):
+        """Без хранилища статусы не проверяются (обратная совместимость)."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_literal_id("пожалуйста пауза") == "playpause"
+        assert matcher.missing_requires("playpause") == []
+
+    def test_execute_by_id_blocked_when_status_off(self, tmp_path, mocker):
+        """execute_by_id не запускает команду без нужного статуса."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        run_mock = mocker.patch("lib.commands.subprocess.run")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"openyoutube": "echo yt"},
+            "requires": {"openyoutube": ["vpn"]},
+            "match": {"openyoutube": ["открой ютуб"]},
+        })
+        try:
+            matcher = CommandMatcher(path, status_store=self._fake_store(set()))
+            assert matcher.execute_by_id("openyoutube") is False
+            run_mock.assert_not_called()
+            assert matcher.missing_requires("openyoutube") == ["vpn"]
+        finally:
+            os.unlink(path)
+
+    def test_execute_sequence_runs_steps_in_order(self, tmp_path, mocker):
+        """Sequence выполняет шаги по очереди и ставит provides."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        run_mock = mocker.patch("lib.commands.subprocess.run")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"openyoutube": "echo yt", "playnews": "echo news"},
+            "sequences": {"news": {"steps": ["openyoutube", "playnews"]}},
+            "provides": {"openyoutube": ["browser_youtube"]},
+            "match": {"news": ["включи новости"]},
+        })
+        try:
+            store = self._fake_store({"vpn"})
+            matcher = CommandMatcher(path, status_store=store)
+            assert matcher.execute_by_id("news") is True
+            assert run_mock.call_count == 2
+            store.set.assert_called_once_with("browser_youtube", True)
+            assert matcher.find_literal_id("пожалуйста включи новости") == "news"
+        finally:
+            os.unlink(path)
+
+    def test_execute_sequence_stops_on_first_failure(self, tmp_path, mocker):
+        """Sequence прерывается на первом упавшем шаге."""
+        import subprocess
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        run_mock = mocker.patch("lib.commands.subprocess.run")
+        run_mock.side_effect = subprocess.CalledProcessError(1, "cmd")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"a": "echo a", "b": "echo b"},
+            "sequences": {"seq": {"steps": ["a", "b"]}},
+            "match": {"seq": ["цепочка"]},
+        })
+        try:
+            matcher = CommandMatcher(path)
+            assert matcher.execute_by_id("seq") is False
+            assert run_mock.call_count == 1
+        finally:
+            os.unlink(path)
+
+    def test_execute_sequence_blocked_step(self, tmp_path, mocker):
+        """Sequence не запускается, если шаг заблокирован статусом."""
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        run_mock = mocker.patch("lib.commands.subprocess.run")
+        path = self._write_cfg({
+            "triggers": ["пожалуйста"],
+            "commands": {"openyoutube": "echo yt"},
+            "requires": {"openyoutube": ["vpn"]},
+            "sequences": {"news": {"steps": ["openyoutube"]}},
+            "match": {"news": ["включи новости"]},
+        })
+        try:
+            matcher = CommandMatcher(path, status_store=self._fake_store(set()))
+            assert matcher.execute_by_id("news") is False
+            run_mock.assert_not_called()
+        finally:
+            os.unlink(path)

@@ -4,6 +4,7 @@ import platform
 import subprocess
 from typing import Optional
 
+from lib.status import StatusStore
 from lib.tts import TextToSpeech
 
 CONFIRMATION_PHRASE = os.environ.get("VOICE_CONFIRMATION_PHRASE")
@@ -11,14 +12,27 @@ CONFIRMATION_PHRASE = os.environ.get("VOICE_CONFIRMATION_PHRASE")
 DEFAULT_TRIGGERS = ["пожалуйста", "алиса"]
 
 
-class CommandMatcher:
-    """Сопоставление голосовых команд с shell-командами."""
+def _normalize(text: str) -> str:
+    """Нижний регистр, ё→е, схлопывание пробелов."""
+    return " ".join(text.lower().replace("ё", "е").split())
 
-    def __init__(self, commands_file: str):
+
+class CommandMatcher:
+    """Сопоставление голосовых команд с shell-командами.
+
+    Каждая команда может требовать статусы ("requires": {"id": [...]}):
+    команда выполняется только если все её статусы активны в StatusStore.
+    Составные команды описываются в "sequences": {"id": {"steps": [...]}},
+    после успешного шага выставляются его "provides"-статусы.
+    """
+
+    def __init__(self, commands_file: str,
+                 status_store: Optional[StatusStore] = None):
         self._commands_file = commands_file
         self._mtime = 0.0
         self._data = self._load()
         self._tts = TextToSpeech()
+        self._status_store = status_store
 
     def _load(self) -> dict:
         try:
@@ -60,17 +74,34 @@ class CommandMatcher:
             return cmd.get(system) or cmd.get("default")
         return cmd
 
-    def find(self, text: str) -> Optional[str]:
-        """Находит команду по шаблону в тексте (только если есть триггер)."""
+    def core_phrase(self, text: str) -> str:
+        """Возвращает текст без триггерных слов (нормализованный).
+
+        «алиса включи ютуб пожалуйста» → «включи ютуб».
+        """
+        self.reload()
+        triggers = {_normalize(t) for t in self.triggers}
+        tokens = [t for t in _normalize(text).split(" ") if t not in triggers]
+        return " ".join(tokens)
+
+    def find_literal_id(self, text: str) -> Optional[str]:
+        """Возвращает id команды при ДОСЛОВНОМ совпадении (или None).
+
+        Ядро фразы (текст без триггеров) должно в точности равняться
+        одному из шаблонов. Подстроки НЕ считаются: «включи пожалуйста»
+        не запускает playpause по шаблону «включи». Статусы здесь
+        не проверяются — их смотрит вызывающий через missing_requires().
+        """
         self.reload()
         if not self.has_trigger(text):
             return None
-        text_lower = text.lower()
-        match = self._data.get("match", {})
-        for cmd_id, templates in match.items():
+        core = self.core_phrase(text)
+        if not core:
+            return None
+        for cmd_id, templates in self._data.get("match", {}).items():
             for template in templates:
-                if template in text_lower:
-                    return self._get_command(cmd_id) or cmd_id
+                if _normalize(template) == core:
+                    return cmd_id
         return None
 
     def get_command(self, cmd_id: str) -> Optional[str]:
@@ -78,21 +109,42 @@ class CommandMatcher:
         self.reload()
         return self._get_command(cmd_id)
 
-    def execute(self, text: str) -> bool:
-        """Находит и выполняет команду через shell."""
-        self.reload()
-        command = self.find(text)
-        if command:
-            return self._run(command)
-        return False
-
     def execute_by_id(self, cmd_id: str) -> bool:
-        """Выполняет команду по id через shell (для мини-коррекции)."""
+        """Выполняет команду по id (или составную sequence по шагам)."""
         self.reload()
+        seq = self.sequences().get(cmd_id)
+        if seq is not None:
+            return self._execute_sequence(cmd_id, seq)
+        return self._execute_step(cmd_id)
+
+    def _execute_step(self, cmd_id: str) -> bool:
+        """Выполняет один шаг: проверка requires, shell, provides."""
+        if self.missing_requires(cmd_id):
+            return False
         command = self._get_command(cmd_id)
         if not command:
             return False
-        return self._run(command)
+        if not self._run(command):
+            return False
+        self._mark_provides(cmd_id)
+        return True
+
+    def _execute_sequence(self, seq_id: str, seq: dict) -> bool:
+        """Выполняет шаги составной команды по очереди до первой ошибки."""
+        if self.missing_requires(seq_id):
+            return False
+        for step in seq.get("steps", []):
+            if not self._execute_step(step):
+                return False
+        self._mark_provides(seq_id)
+        return True
+
+    def _mark_provides(self, cmd_id: str) -> None:
+        """Оптимистично выставляет provides-статусы после успеха."""
+        if self._status_store is None:
+            return
+        for name in self.provides_for(cmd_id):
+            self._status_store.set(name, True)
 
     def _run(self, command: str) -> bool:
         """Запускает shell-команду и возвращает успех."""
@@ -119,3 +171,43 @@ class CommandMatcher:
     def get_skills_config(self) -> dict:
         """Возвращает конфигурацию скиллов."""
         return self._data.get("skills", {})
+
+    def requires_map(self) -> dict:
+        """Возвращает {command_id: [статусы]} — условия запуска команд."""
+        return self._data.get("requires", {})
+
+    def provides_map(self) -> dict:
+        """Возвращает {command_id: [статусы]} — статусы после успеха."""
+        return self._data.get("provides", {})
+
+    def sequences(self) -> dict:
+        """Возвращает {sequence_id: {steps: [...]}} составных команд."""
+        return self._data.get("sequences", {})
+
+    def requires_for(self, cmd_id: str) -> list[str]:
+        """Возвращает статусы, требуемые для запуска команды."""
+        requires = self.requires_map().get(cmd_id, [])
+        return list(requires)
+
+    def provides_for(self, cmd_id: str) -> list[str]:
+        """Возвращает статусы, выставляемые после успеха команды."""
+        provides = self.provides_map().get(cmd_id, [])
+        return list(provides)
+
+    def missing_requires(self, cmd_id: str) -> list[str]:
+        """Возвращает невыполненные requires команды (пусто = можно)."""
+        if self._status_store is None or not self._status_store.enabled:
+            return []
+        return self._status_store.ensure(self.requires_for(cmd_id))
+
+    def need_message(self, name: str) -> str:
+        """Человекочитаемое сообщение при отсутствии статуса."""
+        if self._status_store is not None:
+            return self._status_store.need_message(name)
+        return f"Нужен статус: {name}"
+
+    def status_snapshot(self) -> dict[str, bool]:
+        """Текущие статусы (пусто, если хранилище не подключено)."""
+        if self._status_store is None:
+            return {}
+        return self._status_store.snapshot()

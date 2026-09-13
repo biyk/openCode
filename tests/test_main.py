@@ -29,6 +29,13 @@ class TestEncodingFix:
         result = main._fix_encoding("привет")
         assert isinstance(result, str)
 
+    def test_fix_encoding_keeps_valid_cyrillic(self, monkeypatch):
+        """Корректная кириллица не перекодируется повторно (регрессия)."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mojibake = bytes([0xAF, 0xE0, 0xA8, 0xA2, 0xA5, 0xE2]).decode("cp866", errors="ignore")
+        result = main._fix_encoding(mojibake)
+        assert "привет" in result or result == "привет"
+
     def test_fix_encoding_empty_string(self):
         """Пустая строка возвращается как есть."""
         assert main._fix_encoding("") == ""

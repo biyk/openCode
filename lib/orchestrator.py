@@ -72,48 +72,83 @@ class Orchestrator:
             return
         # Сначала выводим распознанный текст (с триггером) в консоль и лог
         self._output.print_text(text)
-        command = self._matcher.find(text)
-        if command:
-            self._matcher.execute(text)
-            self._output.print_text(command)
+        # 1. Дословное совпадение — запускаем сразу.
+        literal_id = self._matcher.find_literal_id(text)
+        blocked: list[tuple[str, list[str]]] = []
+        if literal_id is not None:
+            missing = self._matcher.missing_requires(literal_id)
+            if not missing:
+                self._output.print_info(
+                    f"[Command] Распознана команда: {literal_id}")
+                self._matcher.execute_by_id(literal_id)
+                return
+            blocked = [(literal_id, missing)]
+        # 2. Не дословно — пусть разбирается LLM: отдаём ей триггеры,
+        #    команды, статусы и заблокированных кандидатов.
+        if self._intent is not None:
+            detected = self._intent.detect(text, self._llm_context(blocked))
+            if detected is not None:
+                self._output.print_info(
+                    f"[Mini] Распознана команда «{detected}»"
+                )
+                if self._matcher.execute_by_id(detected):
+                    self._output.print_text(detected)
+                    return
+                missing = self._matcher.missing_requires(detected)
+                if missing:
+                    self._report_blocked(detected, missing)
+                    return
+                self._output.print_error(
+                    f"[Mini] Команда «{detected}» не найдена"
+                )
+                return
+        # Проверка скиллов (после intent, до LLM)
+        if self._skills is not None:
+            skill_name = self._skills.match(text)
+            if skill_name is not None:
+                self._output.print_info(f"[Skill] Распознан скилл: {skill_name}")
+                if self._skills.execute(skill_name):
+                    self._output.print_text(f"Скилл выполнен: {skill_name}")
+                    return
+                self._output.print_error(f"[Skill] Ошибка исполнения: {skill_name}")
+                return
+        self._output.print_debug(
+            f"[LLM Decision] Trigger found, no command match, no intent match, no skill match. "
+            f"Sending to LLM. Text: {text}"
+        )
+        self._output.print_info("... отправка запроса LLM")
+        answer = self._llm.ask(text)
+        if answer:
+            self._output.print_debug(f"[LLM] Ответ: {answer}")
+            self._speaking = True
+            self._abort_playback.clear()
+            self._speak_async(answer)
         else:
-            if self._intent is not None:
-                detected = self._intent.detect(text)
-                if detected is not None:
-                    self._output.print_info(
-                        f"[Mini] Распознана команда «{detected}»"
-                    )
-                    if self._matcher.execute_by_id(detected):
-                        self._output.print_text(detected)
-                        return
-                    self._output.print_error(
-                        f"[Mini] Команда «{detected}» не найдена"
-                    )
-                    return
-            # Проверка скиллов (после intent, до LLM)
-            if self._skills is not None:
-                skill_name = self._skills.match(text)
-                if skill_name is not None:
-                    self._output.print_info(f"[Skill] Распознан скилл: {skill_name}")
-                    if self._skills.execute(skill_name):
-                        self._output.print_text(f"Скилл выполнен: {skill_name}")
-                        return
-                    self._output.print_error(f"[Skill] Ошибка исполнения: {skill_name}")
-                    return
-            self._output.print_debug(
-                f"[LLM Decision] Trigger found, no command match, no intent match, no skill match. "
-                f"Sending to LLM. Text: {text}"
-            )
-            self._output.print_info("... отправка запроса LLM")
-            answer = self._llm.ask(text)
-            if answer:
-                self._output.print_debug(f"[LLM] Ответ: {answer}")
-                self._speaking = True
-                self._abort_playback.clear()
-                self._speak_async(answer)
-            else:
-                self._output.print_error("[LLM] Ошибка ответа")
-                self._output.print_text(text)
+            self._output.print_error("[LLM] Ошибка ответа")
+            self._output.print_text(text)
+
+    def _llm_context(self,
+                     blocked: list[tuple[str, list[str]]]) -> dict:
+        """Контекст для LLM-классификатора: триггеры, команды, статусы."""
+        return {
+            "triggers": list(self._matcher.triggers),
+            "statuses": self._matcher.status_snapshot(),
+            "requires": self._matcher.requires_map(),
+            "blocked": [(bid, list(missing)) for bid, missing in blocked],
+        }
+
+    def _report_blocked(self, cmd_id: str, missing: list[str]) -> None:
+        """Сообщает, каких статусов не хватает (консоль + голос).
+
+        Вместо молчаливого ухода в LLM пользователь слышит,
+        что нужно сделать (например, «Включи VPN вручную»).
+        """
+        names = ", ".join(missing)
+        self._output.print_error(f"[Blocked] «{cmd_id}»: нет статуса: {names}")
+        message = ". ".join(self._matcher.need_message(n) for n in missing)
+        self._speaking = True
+        self._abort_playback.clear()
+        self._speak_async(message)
 
     def maybe_abort(self, text: str) -> bool:
         """Прерывает озвучку, если в тексте есть стоп-слово (целое слово).

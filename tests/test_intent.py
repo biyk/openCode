@@ -96,3 +96,53 @@ class TestIntentClassifier:
         classifier.detect("громче")
         prompt = llm.ask.call_args.args[0]
         assert "воспроизводится медиа (музыка/видео): нет" in prompt
+
+    def test_context_prompt_has_triggers_statuses_requires(self):
+        """Контекстный промпт описывает триггеры, команды и статусы."""
+        classifier, llm = self._make(commands={
+            "openyoutube": ["открой ютуб"],
+            "playpause": ["пауза"],
+        })
+        llm.ask.return_value = "NONE"
+        context = {
+            "triggers": ["пожалуйста", "алиса"],
+            "statuses": {"vpn": True, "media": False},
+            "requires": {"openyoutube": ["vpn"], "playpause": ["media"]},
+            "blocked": [("playpause", ["media"])],
+        }
+        assert classifier.detect("пожалуйста включи и ютюб", context) is None
+        prompt = llm.ask.call_args.args[0]
+        assert "пожалуйста, алиса" in prompt
+        assert "- openyoutube: открой ютуб; требует: vpn" in prompt
+        assert "- playpause: пауза; требует: media" in prompt
+        assert "vpn=вкл" in prompt
+        assert "media=выкл" in prompt
+        assert "playpause (нет: media)" in prompt
+        assert "Запрос пользователя: «пожалуйста включи и ютюб»" in prompt
+
+    def test_context_detect_returns_command_id(self):
+        """LLM вернула id при контексте — detect возвращает его."""
+        classifier, llm = self._make(commands={"openyoutube": ["открой ютуб"]})
+        llm.ask.return_value = "openyoutube"
+        context = {
+            "triggers": ["пожалуйста"],
+            "statuses": {"vpn": True},
+            "requires": {"openyoutube": ["vpn"]},
+            "blocked": [],
+        }
+        assert classifier.detect("пожалуйста включи и ютюб", context) == (
+            "openyoutube")
+
+    def test_context_empty_blocked_section(self):
+        """Без заблокированных секция пишет «нет»."""
+        classifier, llm = self._make()
+        llm.ask.return_value = "NONE"
+        context = {
+            "triggers": ["пожалуйста"],
+            "statuses": {},
+            "requires": {},
+            "blocked": [],
+        }
+        classifier.detect("пожалуйста что-то", context)
+        prompt = llm.ask.call_args.args[0]
+        assert "Заблокированы нехваткой статусов: нет" in prompt
