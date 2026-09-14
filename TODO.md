@@ -54,17 +54,18 @@
    - По умолчанию — `ask_user` для любых действий записи/выполнения.
 
 6. [ ] **П6. Цикл самообучения (TDD) под флагом + подтверждение**
-   - **П6.0. База соответствий (алиасы) — ПЕРВЫМ (записано, ждёт «го»):**
+   - **П6.0. База соответствий (алиасы) — ГОТОВО:**
      `lib/aliases.py` (`AliasStore`: `targets/<host>/aliases.json`,
-     `{core: {command, hits, confirmed}}`, hot-reload по mtime; резолвят-
-     ся только `confirmed: true`); порядок в `process_text`: literal →
-     aliases → intent-LLM → skills → chat; дословный шаблон бьёт алиас.
-     Обучение двумя каналами (оба с подтверждением, автовключения нет):
-     явное «запомни X это Y» / «забудь X» + авто-кандидаты из успешных
-     недословных intent-резолвов в `pending` (`confirmed: false`,
-     подтверждение «да, запомни»); `hits++` при срабатывании (задел П7).
-     Тесты: `tests/test_aliases.py` + интеграция в orchestrator/main;
-     затем pytest + flake8; AGENTS.md обновить.
+     `{core: {command, hits, confirmed}}` + `pending`, hot-reload;
+     резолвятся только `confirmed: true`); порядок в `process_text`:
+     literal → aliases (`[Alias]`, `bump()`) → intent → skills → chat;
+     дословный шаблон бьёт алиас; алиасы уважают `requires`.
+     Обучение: явное «запомни [X это Y]» (confirm/add) / «забудь X»;
+     успешные недословные intent-резолвы auto-пишутся в `pending`
+     (`confirmed: false`); автовключения нет. Seed FLTP:
+     «включи и ютюб»→openyoutube, «паузы»→playpause.
+     Тесты: `tests/test_aliases.py` (20) + 9 интеграционных;
+     415 passed, flake8 чист.
    - Большая LLM предлагает: {match-фразы, команда/скилл, тест}.
    - Показ пользователю → подтверждение → тест в `tests/` → pytest →
      только при зелёном — запись в `commands.json` / `skills/`.

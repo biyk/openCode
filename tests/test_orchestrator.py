@@ -279,6 +279,145 @@ class TestOrchestrator:
         spy.assert_called_once_with("Включи VPN вручную")
         orch._llm.ask.assert_not_called()
 
+    def _aliases(self, tmp_path, data=None):
+        """Настоящий AliasStore во временном файле."""
+        import json
+        from lib.aliases import AliasStore
+        path = str(tmp_path / "aliases.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data or {"aliases": {}, "pending": {}}, f)
+        return AliasStore(path)
+
+    def test_process_text_alias_hit_executes(self, mocker, tmp_path):
+        """Известное коверканье запускается без LLM."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path, {"aliases": {
+            "включи и ютюб": {"command": "openyoutube", "hits": 0,
+                              "confirmed": True}}, "pending": {}})
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.core_phrase.return_value = "включи и ютюб"
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("алиса включи и ютюб пожалуйста")
+        orch._matcher.execute_by_id.assert_called_once_with("openyoutube")
+        orch._output.print_info.assert_any_call(
+            "[Alias] Распознана команда: openyoutube")
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_literal_beats_alias(self, mocker, tmp_path):
+        """Дословный шаблон важнее алиаса на тот же текст."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "openyoutube"
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch._matcher.core_phrase.return_value = "открой ютуб"
+        orch.process_text("алиса открой ютуб пожалуйста")
+        orch._matcher.execute_by_id.assert_called_once_with("openyoutube")
+        orch._output.print_info.assert_any_call(
+            "[Command] Распознана команда: openyoutube")
+
+    def test_process_text_alias_blocked_goes_to_intent(self, mocker, tmp_path):
+        """Заблокированный алиас — в intent с контекстом."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = None
+        orch = self._make(mocker, intent=intent)
+        orch._aliases = self._aliases(tmp_path, {"aliases": {
+            "включи и ютюб": {"command": "openyoutube", "hits": 0,
+                              "confirmed": True}}, "pending": {}})
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.core_phrase.return_value = "включи и ютюб"
+        orch._matcher.missing_requires.return_value = ["vpn"]
+        orch._llm.ask.return_value = None
+        orch.process_text("алиса включи и ютюб пожалуйста")
+        orch._matcher.execute_by_id.assert_not_called()
+        text, context = intent.detect.call_args.args
+        assert context["blocked"] == [("openyoutube", ["vpn"])]
+
+    def test_process_text_remember_direct(self, mocker, tmp_path):
+        """«запомни X это Y» сохраняет алиас и подтверждает голосом."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.core_phrase.return_value = (
+            "запомни включи и ютюб это openyoutube")
+        orch._matcher.match_config.return_value = {
+            "openyoutube": ["открой ютуб"]}
+        orch._matcher.sequences.return_value = {}
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("алиса запомни включи и ютюб это openyoutube")
+        assert orch._aliases.resolve("включи и ютюб") == "openyoutube"
+        spy.assert_called_once()
+        assert "Запомнила" in spy.call_args.args[0]
+        orch._matcher.execute_by_id.assert_not_called()
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_remember_unknown_id(self, mocker, tmp_path):
+        """«запомни» с неизвестной командой — отказ голосом."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.core_phrase.return_value = "запомни громче это нетакой"
+        orch._matcher.match_config.return_value = {"volumeup": ["громче"]}
+        orch._matcher.sequences.return_value = {}
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("алиса запомни громче это нетакой")
+        assert orch._aliases.resolve("громче") is None
+        assert "Не знаю команду" in spy.call_args.args[0]
+
+    def test_process_text_remember_nothing(self, mocker, tmp_path):
+        """«запомни» без истории — «Нечего запоминать»."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.core_phrase.return_value = "запомни"
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("алиса запомни пожалуйста")
+        assert "Нечего запоминать" in spy.call_args.args[0]
+
+    def test_process_text_forget(self, mocker, tmp_path):
+        """«забудь X» удаляет алиас."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path, {"aliases": {
+            "включи и ютюб": {"command": "openyoutube", "hits": 1,
+                              "confirmed": True}}, "pending": {}})
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.core_phrase.return_value = "забудь включи и ютюб"
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("алиса забудь включи и ютюб пожалуйста")
+        assert orch._aliases.resolve("включи и ютюб") is None
+        assert "Забыла" in spy.call_args.args[0]
+
+    def test_process_text_pending_auto_added(self, mocker, tmp_path):
+        """Успешный недословный intent-резолв попадает в pending."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = "openyoutube"
+        orch = self._make(mocker, intent=intent)
+        orch._aliases = self._aliases(tmp_path)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.core_phrase.return_value = "включи и ютюб"
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("алиса включи и ютюб пожалуйста")
+        assert "включи и ютюб" in orch._aliases.pending_list()
+
+    def test_process_text_remember_confirms_pending(self, mocker, tmp_path):
+        """«запомни» подтверждает pending-запись."""
+        orch = self._make(mocker)
+        orch._aliases = self._aliases(tmp_path, {"aliases": {}, "pending": {
+            "паузы": {"command": "playpause", "hits": 0,
+                      "confirmed": False}}})
+        orch._last_resolution = ("паузы", "playpause")
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.core_phrase.return_value = "запомни"
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("алиса запомни пожалуйста")
+        assert orch._aliases.resolve("паузы") == "playpause"
+        assert "Запомнила" in spy.call_args.args[0]
+
     def test_speak_async_plays_in_background(self, mocker):
         """_speak_async запускает озвучку и сбрасывает состояние."""
         orch = self._make(mocker)

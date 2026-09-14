@@ -1,47 +1,11 @@
 {
-    "active": "race",
+    "active": "omni",
     "providers": [
-        {
-            "id": "openrouter",
-            "name": "OpenRouter",
-            "class": "OpenRouterClient",
-            "module": "lib.providers.openrouter"
-        },
-        {
-            "id": "gigachat",
-            "name": "GigaChat",
-            "class": "GigaChatClient",
-            "module": "lib.providers.gigachat"
-        },
-        {
-            "id": "gpt4free",
-            "name": "GPT4Free",
-            "class": "Gpt4FreeClient",
-            "module": "lib.providers.gpt4free"
-        },
-        {
-            "id": "deepseek",
-            "name": "DeepSeek",
-            "class": "DeepSeekClient",
-            "module": "lib.providers.deepseek"
-        },
         {
             "id": "omni",
             "name": "OmniRouter",
             "class": "OmniRouterClient",
             "module": "lib.providers.omni"
-        },
-        {
-            "id": "lmstudio",
-            "name": "LM Studio",
-            "class": "LmStudioClient",
-            "module": "lib.providers.lmstudio"
-        },
-        {
-            "id": "race",
-            "name": "Race (omni+lmstudio)",
-            "class": "RaceClient",
-            "module": "lib.providers.race"
         }
     ]
 }

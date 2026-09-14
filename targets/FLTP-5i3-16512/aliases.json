@@ -1,0 +1,15 @@
+{
+    "aliases": {
+        "включи и ютюб": {
+            "command": "openyoutube",
+            "hits": 0,
+            "confirmed": true
+        },
+        "паузы": {
+            "command": "playpause",
+            "hits": 0,
+            "confirmed": true
+        }
+    },
+    "pending": {}
+}

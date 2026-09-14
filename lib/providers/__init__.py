@@ -17,6 +17,6 @@ class BaseLLMClient(ABC):
         pass
 
 
-from lib.providers.manager import ProviderManager
+from .omni import OmniRouterClient
 
-__all__ = ["BaseLLMClient", "ProviderManager"]
+__all__ = ["BaseLLMClient", "OmniRouterClient"]

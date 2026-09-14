@@ -48,6 +48,7 @@ from lib.skills import SkillRegistry, get_skills_dir
 from lib.intent import IntentClassifier
 from lib.media import is_media_playing
 from lib.status import StatusStore
+from lib.aliases import AliasStore
 from lib.providers.manager import ProviderManager
 
 import sounddevice as sd
@@ -173,6 +174,11 @@ class TranscriptionWorker:
                 logger=self._logger,
             )
             self._orchestrator._skills = skills
+
+        # Алиасы (база соответствий П6.0, всегда активны — детерминированы)
+        self._aliases = AliasStore(
+            AliasStore.path_for_commands_file(commands_file))
+        self._orchestrator._aliases = self._aliases
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.
