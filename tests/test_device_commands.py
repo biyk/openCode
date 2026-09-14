@@ -111,3 +111,28 @@ class TestDeviceCommands:
                 assert "user32.dll" in normalized or 'DllImport("user32' in normalized, (
                     f"Command {cmd_id}: missing .dll extension in DllImport"
                 )
+
+    def test_windows_file_commands_exist(self, device_commands_path):
+        """Команды powershell -File ссылаются на существующие файлы."""
+        import re
+        from pathlib import Path
+        repo_root = Path(device_commands_path).resolve().parents[2]
+        with open(device_commands_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        commands = data.get("commands", {})
+        found = 0
+        for cmd_id, cmd in commands.items():
+            if isinstance(cmd, dict):
+                windows_cmd = cmd.get("windows") or cmd.get("default")
+            else:
+                windows_cmd = cmd
+            if not windows_cmd or "-File" not in windows_cmd:
+                continue
+            match = re.search(r'-File\s+"([^"]+)"', windows_cmd)
+            assert match, f"Command {cmd_id}: unparsable -File reference"
+            found += 1
+            assert (repo_root / match.group(1)).exists(), (
+                f"Command {cmd_id}: missing file {match.group(1)}"
+            )
+        assert found > 0, "No -File commands found to check"

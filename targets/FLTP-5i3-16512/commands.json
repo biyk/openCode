@@ -18,8 +18,8 @@
         },
         "stop": {
             "linux": "playerctl stop",
-            "windows": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\"",
-            "default": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB2)\""
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/mediastop.ps1\"",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/mediastop.ps1\""
         },
         "openyoutube": {
             "linux": "python -m lib.browser_control open-url \"https://youtube.com\"",
@@ -33,8 +33,8 @@
         }
     },
     "requires": {
-        "playpause": ["media"],
-        "stop": ["media"],
+        "playpause": ["media_session"],
+        "stop": ["media_session"],
         "openyoutube": ["vpn"],
         "youtube_news": ["vpn", "browser_youtube"],
         "news": ["vpn"]

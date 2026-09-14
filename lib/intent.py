@@ -1,5 +1,6 @@
 """Классификация голосовой команды через LLM (мини-слой)."""
 
+import re
 from typing import Any, Callable, Optional
 
 
@@ -80,19 +81,61 @@ class IntentClassifier:
             "1. Дословное совпадение с командой — её id.\n"
             "2. Ошибки распознавания речи (похожие слова, перепутанный "
             "порядок) — самый похожий id.\n"
-            "3. Предпочитай команды, чьи требования выполнены.\n"
-            "4. Иначе — ровно NONE."
+            "3. Выбирай id ПО СМЫСЛУ запроса, даже если требования команды "
+            "сейчас не выполнены, — проверку статусов выполняет программа, "
+            "а не ты.\n"
+            "4. Иначе — ровно NONE.\n"
+            "Ответ — ровно одно слово, без объяснений и лишних строк."
         )
 
     def detect(self, text: str,
                context: Optional[dict] = None) -> Optional[str]:
-        """Возвращает id команды из списка или None, если ничего не подходит."""
+        """Возвращает id команды из списка или None, если ничего не подходит.
+
+        Если провайдер умеет classify() (гонка) — классификация идёт через
+        него: без записи в историю и с пропуском NONE-ответов. Иначе —
+        обычный ask() (старое поведение для одиночных провайдеров).
+        """
         if not text.strip() or not self._commands:
             return None
-        raw = self._llm.ask(self._build_prompt(text, context))
-        if not raw:
+        prompt = self._build_prompt(text, context)
+        classify = getattr(self._llm, "classify", None)
+        if callable(classify):
+            raw = classify(prompt)
+        else:
+            raw = self._llm.ask(prompt)
+        if not raw or not isinstance(raw, str):
             return None
-        candidate = raw.strip().lower().strip('"').strip("«»").strip()
-        if candidate in self._commands:
-            return candidate
-        return None
+        return self._extract_id(raw)
+
+    def _extract_id(self, raw: str) -> Optional[str]:
+        """Достаёт id команды из ответа LLM, даже с мусором вокруг.
+
+        Большая модель иногда дописывает объяснения после id
+        («playpause\\n\\nПравила...») — ищем id сначала строго,
+        потом первое слово, потом как целое слово (раннее вхождение).
+        """
+        text = raw.strip().lower().strip('"').strip("«»").strip()
+        if text in self._commands:
+            return text
+        if text == "none":
+            return None
+        first_line = text.split("\n", 1)[0].strip().strip('"').strip("«»")
+        if first_line in self._commands:
+            return first_line
+        if first_line == "none":
+            return None
+        first_word = re.split(r"\s+", first_line, maxsplit=1)[0]
+        first_word = first_word.strip(".,;:!?\"'«»()[]")
+        if first_word in self._commands:
+            return first_word
+        if first_word == "none":
+            return None
+        best: Optional[str] = None
+        best_pos: Optional[int] = None
+        for cmd_id in self._commands:
+            match = re.search(r"(?<![\w-])" + re.escape(cmd_id) + r"(?![\w-])",
+                              text)
+            if match and (best_pos is None or match.start() < best_pos):
+                best, best_pos = cmd_id, match.start()
+        return best

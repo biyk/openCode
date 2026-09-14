@@ -1,6 +1,7 @@
 import threading
+import time
 from typing import Optional
-from queue import Queue
+from queue import Empty, Queue
 
 from lib.logger import Logger
 from lib.providers import BaseLLMClient
@@ -42,15 +43,8 @@ class RaceClient(BaseLLMClient):
         self._omni._set_output(output)
         self._lmstudio._set_output(output)
 
-    def ask(self, text: str) -> Optional[str]:
-        """Отправляет текст в оба провайдера и возвращает первый ответ."""
-        results: Queue = Queue()
-
-        if self._output:
-            self._output.print_info(
-                f"[LLM Race] Отправляю запрос: omni ({self._omni._model}) "
-                f"+ lmstudio ({self._lmstudio._model})"
-            )
+    def _spawn(self, text: str, results: Queue) -> None:
+        """Запускает оба провайдера в daemon-потоках."""
 
         def _run(client: BaseLLMClient, label: str) -> None:
             try:
@@ -68,6 +62,18 @@ class RaceClient(BaseLLMClient):
         for t in threads:
             t.start()
 
+    def ask(self, text: str) -> Optional[str]:
+        """Отправляет текст в оба провайдера и возвращает первый ответ."""
+        results: Queue = Queue()
+
+        if self._output:
+            self._output.print_info(
+                f"[LLM Race] Отправляю запрос: omni ({self._omni._model}) "
+                f"+ lmstudio ({self._lmstudio._model})"
+            )
+
+        self._spawn(text, results)
+
         winner, answer = self._collect(results)
         if answer is not None:
             if self._output:
@@ -77,6 +83,42 @@ class RaceClient(BaseLLMClient):
             self._logger.log_llm("user", text)
             self._logger.log_llm("assistant", answer)
         return answer
+
+    def classify(self, text: str, timeout: Optional[int] = None) -> Optional[str]:
+        """Классификация: первый СОДЕРЖАТЕЛЬНЫЙ ответ, без записи в историю.
+
+        Ответы NONE/пустые пропускаются — быстрый «не знаю» от маленькой
+        модели не должен убивать медленный правильный ответ большой.
+        Ничего не пишет в историю LLM (в отличие от ask).
+        """
+        results: Queue = Queue()
+
+        if self._output:
+            self._output.print_info(
+                f"[LLM Race] Классификация: omni ({self._omni._model}) "
+                f"+ lmstudio ({self._lmstudio._model})"
+            )
+
+        self._spawn(text, results)
+
+        deadline = time.monotonic() + (timeout or self._timeout)
+        for _ in range(2):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                label, answer = results.get(timeout=remaining)
+            except Empty:
+                break
+            if (isinstance(answer, str) and answer.strip()
+                    and answer.strip().lower() != "none"):
+                if self._output:
+                    self._output.print_info(
+                        "[LLM Race] Классифицировал: "
+                        f"{label} ({self._winner_name(label)})"
+                    )
+                return answer
+        return None
 
     def _winner_name(self, label: str) -> str:
         """Возвращает имя провайдера по метке победителя."""

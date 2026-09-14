@@ -12,6 +12,12 @@
             "interval": 5,
             "need_message": "Сейчас ничего не играет"
         },
+        "media_session": {
+            "description": "Есть медиа-сессия (хоть на паузе — есть чем управлять)",
+            "checker": "media_session",
+            "interval": 5,
+            "need_message": "Нет медиа для управления"
+        },
         "browser_youtube": {
             "description": "Браузер запущен, есть вкладка ютуба",
             "checker": "browser_youtube",

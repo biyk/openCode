@@ -62,6 +62,15 @@ def _check_media() -> bool:
         return False
 
 
+def _check_media_session() -> bool:
+    """Возвращает True, если есть хоть одна медиа-сессия (хоть на паузе)."""
+    from lib.media import is_media_available
+    try:
+        return bool(is_media_available())
+    except Exception:
+        return False
+
+
 def _check_browser() -> bool:
     """Возвращает True, если браузер отвечает по CDP (порт 9222)."""
     from lib.browser_control import is_running
@@ -85,6 +94,7 @@ def _check_browser_youtube() -> bool:
 BUILTIN_CHECKERS: dict[str, Callable[[], bool]] = {
     "vpn": _check_vpn,
     "media": _check_media,
+    "media_session": _check_media_session,
     "browser": _check_browser,
     "browser_youtube": _check_browser_youtube,
 }

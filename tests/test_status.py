@@ -266,7 +266,8 @@ class TestBuiltinCheckers:
 
     def test_registry_has_expected(self):
         """Все четыре чекера зарегистрированы и вызываемы."""
-        for name in ("vpn", "media", "browser", "browser_youtube"):
+        for name in ("vpn", "media", "media_session", "browser",
+                     "browser_youtube"):
             assert name in BUILTIN_CHECKERS
             assert callable(BUILTIN_CHECKERS[name])
 
