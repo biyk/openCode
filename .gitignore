@@ -1,4 +1,6 @@
 .env
+credentials.json
+token.json
 .idea/
 __pycache__/
 *.pyc

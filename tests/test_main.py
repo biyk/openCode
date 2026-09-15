@@ -475,6 +475,9 @@ class TestMainEntryPoint:
             def get_skills_config(self):
                 return {}
 
+            def get_google_config(self):
+                return {}
+
             def match_config(self):
                 return {}
 

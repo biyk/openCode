@@ -17,6 +17,8 @@ class BaseLLMClient(ABC):
         pass
 
 
+from .lmstudio import LmStudioClient
 from .omni import OmniRouterClient
+from .race import RaceClient
 
-__all__ = ["BaseLLMClient", "OmniRouterClient"]
+__all__ = ["BaseLLMClient", "LmStudioClient", "OmniRouterClient", "RaceClient"]

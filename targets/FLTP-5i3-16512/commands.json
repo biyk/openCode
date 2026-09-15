@@ -65,6 +65,9 @@
         "enabled": true,
         "include_media": true
     },
+    "google": {
+        "enabled": true
+    },
     "skills": {
         "enabled": true
     }

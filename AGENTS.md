@@ -5,22 +5,21 @@
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-pip install flake8 mypy pytest-mock
+pip install flake8 pytest-mock
 
 # Run all unit tests
-pytest tests/ -v
+pytest tests/ -v          # 440 tests
 
 # Run a single test file
-pytest tests/test_commands.py -v
+pytest tests/test_orchestrator.py -v
 
 # Run a single test
-pytest tests/test_commands.py::test_find_command -v
+pytest tests/test_orchestrator.py::test_process_text_llm_answer -v
 
-# Run linting
-flake8 .
+# Run linting (IMPORTANT: no .flake8 config exists, default limit is 79)
+flake8 --max-line-length=100 .
 
-# Run type checking
-mypy .
+# mypy is BROKEN in this repo (duplicate module names error) — skip it.
 
 # Run the application
 python main.py
@@ -31,42 +30,50 @@ python main.py
 
 ## 2. Architecture
 
-- `main.py` — entry point. `TranscriptionWorker` (main.py) : `audio_callback` ALWAYS puts mic audio into the queue (recording never stops, even during TTS — needed for stop words). Main loop runs Vosk STT → `_fix_encoding` (main.py:24) → `_process_text` which delegates to `Orchestrator.process_text`. On Windows starts with `chcp 65001` + `sys.stdout/stderr.reconfigure(utf-8)` (main.py:15-22).
-- **`lib/orchestrator.py` — `Orchestrator` is the deterministic decision core**: state `_speaking`, `_abort_playback` (threading.Event), `_suppress_until`; methods `process_text`/`maybe_abort`/`_speak_async`/`_on_speaking_finished`/`stop`. `process_text` pipeline: (1) inside suppress-window after playback → ignore; (2) if `_speaking` → respond ONLY to `maybe_abort` (whole-word match against `STOP_WORDS`); (3) ordinary path: require `CommandMatcher.has_trigger(text)` (triggers from commands.json, NOT `LLM_TRIGGER`; FLTP uses `["пожалуйста","алиса"]`), then literal match (`core_phrase` = text minus triggers, exact template equality) → `execute_by_id` (prints `[Command] Распознана команда: {id}`), else `intent.detect(text, context)` → `skills.match` → LLM. No substring matching anywhere: «включи ютуб» never falls into playpause template «включи». Context for LLM: `{triggers, statuses, requires, blocked}` — LLM gets enabled triggers, all commands with phrases+requires, live status values, and literal-but-blocked candidates; garbled Vosk («ютюб» for «ютуб») is resolved by LLM, which answers id or NONE. LLM-picked id with unmet requires → `[Blocked]` + TTS speaks `need_message`.
-- `lib/status.py` — `StatusStore`: system statuses (`vpn`/`media`/`browser_youtube` + custom shell `check`) defined in `targets/<host>/status.json` (sibling of commands.json); background daemon thread polls every `interval` (default 5s), prints `[Status] {name}: on/off` only on change. Built-in checkers: `vpn` = youtube reachable (check-only, never toggles — user enables VPN manually), `media` = `is_media_playing()`, `browser`/`browser_youtube` via CDP. No status file → store disabled → all `requires` pass. Thread-safe; `ensure()` refreshes synchronously when cached value blocks a command.
+- `main.py` — entry point. `TranscriptionWorker` : `audio_callback` ALWAYS puts mic audio into the queue (recording never stops, even during TTS — needed for stop words). Main loop: Vosk STT → `_fix_encoding` (main.py:24) → `_process_text` → `Orchestrator.process_text`. On Windows starts with `chcp 65001` + `sys.stdout/stderr.reconfigure(utf-8)` (main.py:15-22).
+- **`lib/orchestrator.py` — deterministic decision core**: state `_speaking`, `_abort_playback` (threading.Event), `_suppress_until`, `_llm_active`, `_llm_queue` (queue.Queue); methods `process_text`/`maybe_abort`/`_speak_async`/`_on_speaking_finished`/`stop`.
+  **Pipeline in `process_text`** (each step returns on match):
+  1. Suppress window → ignore
+  2. `_speaking` → `maybe_abort` only (stop-word kills TTS)
+  3. `_llm_active` → `maybe_abort` (stop-word cancels pending LLM answer; non-stop words fall through to normal command processing — voice input is NOT blocked while LLM thinks)
+  4. No trigger → `print_text` only, no command processing
+  5. Memory commands: «запомни/забудь» (aliases)
+  6. Reminders: «напомни мне …» (Google Calendar+Tasks, `google.enabled` flag)
+  7. Literal match: exact template equality (no substring matching)
+  8. Alias match: known garbled phrases from `aliases.json`
+  9. Intent classifier: `llm.classify()` or `llm.ask()`
+  10. Skills registry: `skills/*.json`
+  11. **Async LLM chat**: text → `_llm_queue` → background daemon worker → `llm.ask()` → speak. **process_text returns immediately** — voice input stays active.
+
+  Context for LLM: `{triggers, statuses, requires, blocked}` — enabled triggers, all commands with phrases+requires, live status values, literal-but-blocked candidates; garbled Vosk («ютюб» for «ютуб») is resolved by LLM, which answers id or NONE. LLM-picked id with unmet requires → `[Blocked]` + TTS speaks `need_message`.
+- `lib/status.py` — `StatusStore`: system statuses (`vpn`/`media`/`browser_youtube` + custom shell `check`) defined in `targets/<host>/status.json` (sibling of commands.json); background daemon thread polls every `interval` (default 5s), prints `[Status] {name}: on/off` only on change. Built-in checkers: `vpn` = youtube reachable (check-only, never toggles), `media` = `is_media_playing()`, `browser`/`browser_youtube` via CDP. No status file → store disabled → all `requires` pass. Thread-safe; `ensure()` refreshes synchronously when cached value blocks a command.
 - `lib/skills.py` — `SkillRegistry`: JSON skills in `targets/<host>/skills/*.json` (name/phrases/params/steps), actions `open_url`/`run_cmd`, `${param}` substitution, reload on change. Gate: `skills.enabled` in commands.json.
-- `lib/aliases.py` — `AliasStore` (П6.0): `{core_phrase: {command, hits, confirmed}}` + `pending` in `targets/<host>/aliases.json`, hot-reload on mtime. Orchestrator order: literal → aliases (`[Alias]`, `bump()` hits) → intent → skills → chat; literal template always beats alias; aliases respect `requires`. Voice teaching: «запомни [X это Y]» (confirm/add), «забудь X»; successful non-literal intent resolutions auto-land in `pending` (`confirmed: false`).
-- `lib/aliases.py` — `AliasStore` (П6.0): `{core_phrase: {command, hits, confirmed}}` + `pending` in `targets/<host>/aliases.json`, hot-reload on mtime. Orchestrator order: literal → aliases (`[Alias]`, `bump()` hits) → intent → skills → chat; literal template always beats alias; aliases respect `requires`. Voice teaching: «запомни [X это Y]» (confirm/add), «забудь X»; successful non-literal intent resolutions auto-land in `pending` (`confirmed: false`).
+- `lib/aliases.py` — `AliasStore` (П6.0): `{core_phrase: {command, hits, confirmed}}` + `pending` in `targets/<host>/aliases.json`, hot-reload on mtime. Orchestrator order: literal → aliases → intent → skills → chat; literal template always beats alias; aliases respect `requires`. Voice teaching: «запомни [X это Y]» (confirm/add), «забудь X»; successful non-literal intent resolutions auto-land in `pending` (`confirmed: false`).
+- `lib/google_calendar.py` — Google Calendar + Tasks via OAuth 2.0 (Desktop app: `credentials.json` + `token.json`, оба в .gitignore; refresh-token автоматически, `is_ready()` проверяет валидность). `create_reminder(summary, when, reminder_minutes=10)`: Task в «Список по умолчанию» (id резолвится из API, НЕ `default`) + Calendar-событие на 30 мин (start/end — `dateTime` с offset, `timeZone` НЕ передавать — Windows-локали «Московское стандартное время» Google отвергает).
+- `lib/reminders.py` — `ReminderHandler`: определяет «напомни мне …» (за флагом `google.enabled`), парсит время через `lib/time_parser.py` (через N час/мин/дней, завтра/сегодня в HH:MM, в HH:MM, в понедельник), при неудаче — LLM fallback (`_parse_with_llm`) с таймаутом 20с через `ThreadPoolExecutor` (OmniRouter default 300s, поэтому таймаут критичен). `main.py` инстанцирует handler только при `google.enabled`.
 - `lib/browser_control.py` — CLI for Chrome DevTools Protocol: `python -m lib.browser_control open-url <url>` (used by `openyoutube` command). Port 9222, `ensure_browser()` launches chrome/brave with `--remote-debugging-port`. Subcommands: `status`, `tabs`, `open-url`, `eval`, `click`, `youtube-play`.
-- `lib/intent.py` — `IntentClassifier` (mini-LLM fallback for command detection); `detect(text, context=None)` — without context uses legacy media_probe prompt, with context uses triggers/statuses/requires/blocked prompt; `_extract_id` pulls the id out even with junk appended (exact → first line → first word → whole-word search, earliest wins); `lib/media.py` — `is_media_playing()` via `bin/media_state.ps1`, which checks ALL SMTC sessions (not just current) for `Playing`; `is_media_available()` runs the same script with `-AnySession` (True if any session exists, even Paused/Stopped) — `playpause`/`stop` require `media_session`, NOT `media`, so paused video can be resumed; `stop` = `targets/<host>/commands/mediastop.ps1`: sends VK_MEDIA_STOP (0xB2), waits 2s, re-checks via `media_state.ps1`, and falls back to Play/Pause (0xB3) if still playing — YouTube ignores the Stop key; GOTCHA: `PlaybackStatus` type is `GlobalSystemMediaTransportControlsSessionPlaybackStatus`, NOT `Windows.Media.MediaPlaybackStatus` — compare as string, enum comparison is always False; `lib/output.py` — `TranscriptionOutput` (print_text/print_info/print_debug/print_error — always pass output through this, providers announce via it).
+- `lib/intent.py` — `IntentClassifier`: `detect(text, context=None)` — without context uses legacy media_probe prompt, with context uses triggers/statuses/requires/blocked prompt; `_extract_id` pulls the id out even with junk appended (exact → first line → first word → whole-word search, earliest wins).
+- `lib/media.py` — `is_media_playing()` via `bin/media_state.ps1`, which checks ALL SMTC sessions for `Playing`; `is_media_available()` runs the same script with `-AnySession`. `playpause`/`stop` require `media_session`, NOT `media`, so paused video can be resumed. `stop` = `targets/<host>/commands/mediastop.ps1`: sends VK_MEDIA_STOP (0xB2), waits 2s, re-checks via `media_state.ps1`, and falls back to Play/Pause (0xB3) if still playing. GOTCHA: `PlaybackStatus` type is `GlobalSystemMediaTransportControlsSessionPlaybackStatus` — compare as string, enum comparison is always False.
+- `lib/output.py` — `TranscriptionOutput` (print_text/print_info/print_debug/print_error — always pass output through this, providers announce via it).
 - `lib/config_loader.py` — device config path resolution: `targets/<hostname>/commands.json` → `targets/commands.json`.
-- **Stop-word → abort playback**: `_speaking=True; _abort_playback.clear(); _speak_async(answer)` (orchestrator) plays TTS in a background thread; `_on_speaking_finished` resets `_speaking`, sets suppress-window (default 0.5s, `suppress_after`) and calls optional `clear_speech_buffer`. `speak_and_play(..., abort_event)` in `lib/tts.py`.
-- `lib/providers/manager.py` — `ProviderManager` loads `providers.json`, `get_client(**kwargs)` imports the active provider's module and instantiates it with kwargs.
-- **Active provider is `race`** in `providers.json`. `RaceClient` (lib/providers/race.py) sends the request simultaneously to **OmniRouter** (local OpenAI-compatible gateway at `http://localhost:20128/v1`, server must be running separately, model `auto`) and **LM Studio** (`http://localhost:1234/v1`, model `liquid/lfm2.5-1.2b`, launched via `~/.lmstudio/bin/lms.exe server start`); first non-empty answer wins, prints `[LLM Race] Отправляю запрос...` / `[LLM Race] Победил: {provider}`. Sub-clients get `announce=False`; standalone providers print `[LLM] {name} ({model}): запрос` via output when `announce=True`. `classify(text, timeout=None)` is for intent-classification ONLY: skips NONE/empty answers (fast NONE must not kill a slow correct id), never writes to LLM history. `IntentClassifier.detect` uses `llm.classify()` when available (duck-typed), else falls back to `ask()`.
 
-## 2a. Self-learning roadmap (concept in `WORKFLOW.md`)
+## 3. LLM Providers
 
-- Orchestrator = deterministic core (our Python) — mini-LLM/skill-LLM/big-LLM/controller are layers around it; big LLM is NOT the orchestrator.
-- Big LLM invoked via **OpenCode CLI** subprocess with omni model/combo; delivers via `targets/<host>/skills/`.
-- TDD loop: propose command → user confirms → test → pytest green → write to config.
-- Feature-flagged phases: see `TODO.md` "Самообучающийся ассистент — план внедрения". Keep existing stop-word/recording logic intact.
-- Existing GitHub research + borrow list: `WORKFLOW.md` §9.
-
-## 3. LLM Provider Contract
-
-- **`BaseLLMClient` is defined in `lib/providers/__init__.py` — there is no `base.py`.** New providers go in `lib/providers/` and implement:
-  - `ask(self, text: str) -> Optional[str]`
-  - `name` property
-- Providers are registered in `providers.json` (`{"id","name","class","module"}`); switch via `"active"` field.
-- OmniRouterClient/LmStudioClient: timeout default 300s (constructor params), passed to `requests.post`; configurable via `get_client(..., timeout=N)`. Both accept `announce: bool` — standalone clients print `[LLM]`-line; `RaceClient` sets `announce=False` on sub-clients so only it announces.
+- `lib/providers/__init__.py` defines `BaseLLMClient` (no `base.py`). New providers: implement `ask(text) -> Optional[str]` and `name` property.
+- `providers.json` configures all providers; `"active"` field selects which one is used.
+- **Active provider: `race`** (`RaceClient` in `lib/providers/race.py`).
+  - `RaceClient` sends the request simultaneously to **OmniRouter** (`http://localhost:20128/v1`, model `auto`) and **LM Studio** (`http://localhost:1234/v1`, model `liquid/lfm2.5-1.2b`); first non-empty answer wins, prints `[LLM Race] Отправляю запрос...` / `[LLM Race] Победил: {provider}`. Sub-clients get `announce=False`.
+  - LM Studio must be running: `~/.lmstudio/bin/lms.exe server start`. OmniRouter has its own supervisor (§6).
+  - `classify(text, timeout=None)` for intent-classification ONLY: skips NONE/empty answers (fast NONE must not kill slow correct id), never writes to LLM history. `IntentClassifier.detect` uses `llm.classify()` when available, else falls back to `ask()`.
+- `OmniRouterClient` / `LmStudioClient`: timeout default 300s, passed to `requests.post`. Both accept `announce: bool`.
 
 ## 4. Commands
 
-- Commands in `targets/commands.json`: `match` maps spoken templates → command ids; `commands` maps ids → shell strings (or per-OS dict with `windows`/`linux`/`default` keys); `triggers` lists activation words; `requires` maps id → list of statuses that must be active; `provides` maps id → statuses set True after success; `sequences` maps id → `{steps: [ids]}` run in order, abort on first failure (e.g. `news` = `openyoutube` + `youtube_news`).
+- Commands in `targets/<host>/commands.json`: `match` maps spoken templates → command ids; `commands` maps ids → shell strings (or per-OS dict with `windows`/`linux`/`default` keys); `triggers` lists activation words; `requires` maps id → list of statuses that must be active; `provides` maps id → statuses set True after success; `sequences` maps id → `{steps: [ids]}` run in order, abort on first failure (e.g. `news` = `openyoutube` + `youtube_news`).
 - `CommandMatcher(commands_file, status_store=None)` auto-reloads on file mtime change — no app restart needed.
 - `find_literal_id(text)` returns id only on EXACT match of `core_phrase` (triggers stripped, lower, ё→е) against a template; `missing_requires(id)` lists unmet statuses; `execute_by_id` enforces `requires` per step (also for sequences and intent-detected ids). `main.py` wires `StatusStore` into the matcher. English templates are removed by design — Vosk is a Russian model, keep all match phrases in Russian.
-- Media play/pause for this machine is configured in `targets/FLTP-5i3-16512/commands.json`.
-- Command config is EXPLICITLY device-specific — edit `targets/<hostname>/commands.json`, not the default, when targeting this machine.
+- Media play/pause is configured in `targets/FLTP-5i3-16512/commands.json`.
+- Command config is EXPLICITLY device-specific — edit `targets/<hostname>/commands.json`, not the default.
 
 ## 5. Windows-Specific Gotchas
 

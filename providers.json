@@ -1,11 +1,23 @@
 {
-    "active": "omni",
+    "active": "race",
     "providers": [
         {
             "id": "omni",
             "name": "OmniRouter",
             "class": "OmniRouterClient",
             "module": "lib.providers.omni"
+        },
+        {
+            "id": "lmstudio",
+            "name": "LM Studio",
+            "class": "LmStudioClient",
+            "module": "lib.providers.lmstudio"
+        },
+        {
+            "id": "race",
+            "name": "Race(omni+lmstudio)",
+            "class": "RaceClient",
+            "module": "lib.providers.race"
         }
     ]
 }

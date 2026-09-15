@@ -172,6 +172,10 @@ class CommandMatcher:
         """Возвращает конфигурацию скиллов."""
         return self._data.get("skills", {})
 
+    def get_google_config(self) -> dict:
+        """Возвращает конфигурацию интеграции Google (calendar/tasks)."""
+        return self._data.get("google", {})
+
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""
         return self._data.get("requires", {})

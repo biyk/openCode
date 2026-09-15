@@ -49,6 +49,7 @@ from lib.intent import IntentClassifier
 from lib.media import is_media_playing
 from lib.status import StatusStore
 from lib.aliases import AliasStore
+from lib.reminders import ReminderHandler
 from lib.providers.manager import ProviderManager
 
 import sounddevice as sd
@@ -179,6 +180,11 @@ class TranscriptionWorker:
         self._aliases = AliasStore(
             AliasStore.path_for_commands_file(commands_file))
         self._orchestrator._aliases = self._aliases
+
+        # Напоминания (Google Calendar + Tasks, флаг google.enabled)
+        google_config = self._matcher.get_google_config()
+        if google_config.get("enabled"):
+            self._orchestrator._reminders = ReminderHandler(llm=self._llm)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.

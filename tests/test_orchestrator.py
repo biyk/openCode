@@ -35,6 +35,9 @@ class TestOrchestrator:
         assert orch.speaking is False
         assert orch.suppress_until == 0.0
         assert orch.abort_playback is not None
+        assert orch._llm_queue.empty()
+        assert orch._llm_worker is None
+        assert orch._llm_active is False
 
     def test_custom_stop_words_and_suppress(self, mocker):
         """Кастомные стоп-слова и окно эха переопределяются."""
@@ -117,6 +120,7 @@ class TestOrchestrator:
         orch._abort_playback.is_set.return_value = False
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста сделай кромку")
+        orch._llm_queue.join()
         spy.assert_called_once_with("Ответ")
         orch._matcher.execute_by_id.assert_not_called()
 
@@ -161,8 +165,9 @@ class TestOrchestrator:
         orch._abort_playback.is_set.return_value = False
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста расскажи")
+        orch._llm_queue.join()
         orch._output.print_info.assert_called_once_with(
-            "... отправка запроса LLM")
+            "... отправка запроса LLM (фон)")
         # print_debug вызывается 2 раза: решение + ответ LLM
         assert orch._output.print_debug.call_count == 2
         decision_call = orch._output.print_debug.call_args_list[0][0][0]
@@ -182,6 +187,7 @@ class TestOrchestrator:
         orch._matcher.find_literal_id.return_value = None
         orch._llm.ask.return_value = None
         orch.process_text("пожалуйста что-то")
+        orch._llm_queue.join()
         orch._output.print_error.assert_called_once_with("[LLM] Ошибка ответа")
         # print_text вызывается 2 раза: распознанный текст + текст ошибки
         assert orch._output.print_text.call_count == 2
@@ -197,6 +203,7 @@ class TestOrchestrator:
         orch._abort_playback.is_set.return_value = False
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста сделай кромку")
+        orch._llm_queue.join()
         spy.assert_called_once_with("Ответ")
         for call in orch._output.print_info.call_args_list:
             assert "[Mini]" not in call.args[0]
@@ -260,6 +267,7 @@ class TestOrchestrator:
         orch._abort_playback.is_set.return_value = False
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста включи")
+        orch._llm_queue.join()
         orch._matcher.execute_by_id.assert_not_called()
         spy.assert_called_once_with("Ответ")
 
@@ -482,6 +490,67 @@ class TestOrchestrator:
         assert not orch._abort_playback.is_set()
         orch._output.print_info.assert_not_called()
 
+    def test_maybe_abort_pending_llm(self, mocker):
+        """Стоп-слово во время ожидания ответа LLM отменяет его."""
+        orch = self._make(mocker)
+        orch._llm_active = True
+        assert orch.maybe_abort("стоп") is True
+        assert orch._abort_playback.is_set()
+        orch._output.print_info.assert_called_once_with(
+            "[LLM] Ожидаемый ответ отменён")
+
+    def test_process_text_non_blocking_while_llm_pending(self, mocker):
+        """Пока LLM думает, обычная команда выполняется сразу."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch._llm_active = True
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        orch.process_text("алиса пауза")
+        orch._matcher.execute_by_id.assert_called_once_with("playpause")
+
+    def test_llm_worker_answers_async(self, mocker):
+        """Запрос LLM обрабатывается воркером в фоне, не блокируя loop."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._llm.ask.return_value = "Ответ"
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста расскажи")
+        # process_text вернулся сразу, значит _enqueue_llm не блокировал
+        orch._llm_queue.join()
+        spy.assert_called_once_with("Ответ")
+        orch._llm.ask.assert_called_once_with("пожалуйста расскажи")
+
+    def test_llm_worker_discards_on_abort(self, mocker):
+        """Ответ LLM, пришедший после стоп-слова, не озвучивается."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._llm.ask.return_value = "Запоздавший ответ"
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.side_effect = [False, True]
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста расскажи")
+        orch._llm_queue.join()
+        spy.assert_not_called()
+        orch._output.print_debug.assert_any_call("[LLM] Ответ отменён (стоп)")
+
+    def test_stop_drains_pending_llm(self, mocker):
+        """stop() очищает очередь ожидающих LLM-запросов."""
+        orch = self._make(mocker)
+        mocker.patch.object(orch, "_ensure_llm_worker")
+        orch._enqueue_llm("один")
+        orch._enqueue_llm("два")
+        assert orch._llm_queue.qsize() == 2
+        orch.stop()
+        assert orch._llm_queue.qsize() == 0
+
     def test_on_speaking_finished(self, mocker):
         """Завершение озвучки сбрасывает флаг и ставит окно эха."""
         orch = self._make(mocker)
@@ -509,3 +578,82 @@ class TestOrchestrator:
         orch.stop()
         assert orch._abort_playback.is_set()
         assert orch.speaking is False
+
+    def test_process_text_reminder_succeeds(self, mocker, tmp_path):
+        """Напоминание создаёт Calendar event и озвучивается."""
+        reminder = mocker.MagicMock()
+        reminder.is_reminder.return_value = True
+        orch = self._make(mocker, reminders=reminder)
+        spec = mocker.MagicMock()
+        spec.text = "постирать"
+        spec.when.strftime.return_value = "15.09 13:00"
+        reminder.create.return_value = spec
+        reminder.add_to_calendar.return_value = "evt-abc"
+        orch._abort_playback = mocker.MagicMock()
+        # Не запускать реальный поток TTS
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса напомни мне через 3 часа постирать")
+        reminder.is_reminder.assert_called_once()
+        reminder.create.assert_called_once()
+        reminder.add_to_calendar.assert_called_once_with(spec)
+        assert orch._speaking is True
+        assert len(spoken) == 1
+        assert "постирать" in spoken[0]
+
+    def test_process_text_reminder_no_time(self, mocker):
+        """Напоминание без времени — голосовое сообщение об ошибке."""
+        reminder = mocker.MagicMock()
+        reminder.is_reminder.return_value = True
+        reminder.create.return_value = None
+        orch = self._make(mocker, reminders=reminder)
+        orch._abort_playback = mocker.MagicMock()
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса напомни постирать")
+        reminder.create.assert_called_once()
+        reminder.add_to_calendar.assert_not_called()
+        assert orch._speaking is True
+        assert any("поняла" in s.lower() or "время" in s.lower()
+                   for s in spoken)
+
+    def test_process_text_reminder_google_failure(self, mocker):
+        """Ошибка Google API → голосовое сообщение и return."""
+        reminder = mocker.MagicMock()
+        reminder.is_reminder.return_value = True
+        spec = mocker.MagicMock()
+        spec.when.strftime.return_value = "15.09 13:00"
+        spec.text = "тест"
+        reminder.create.return_value = spec
+        reminder.add_to_calendar.return_value = None
+        orch = self._make(mocker, reminders=reminder)
+        orch._abort_playback = mocker.MagicMock()
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса напомни мне через 3 часа тест")
+        reminder.add_to_calendar.assert_called_once()
+        assert orch._speaking is True
+        assert any("ошибк" in s.lower() or "авторизац" in s.lower()
+                   for s in spoken)
+
+    def test_process_text_reminder_cancels_not_literal(self, mocker):
+        """Напоминание не проходит literal-матчинг."""
+        reminder = mocker.MagicMock()
+        reminder.is_reminder.return_value = True
+        reminder.create.return_value = None
+        orch = self._make(mocker, reminders=reminder)
+        orch._abort_playback = mocker.MagicMock()
+        orch._speak_async = lambda ans: setattr(orch, '_speaking', True)
+        orch.process_text("алиса напомни мне через 3 часа")
+        reminder.create.assert_called_once()
+        orch._matcher.find_literal_id.assert_not_called()
+
+    def test_reminder_is_optional(self, mocker):
+        """Нет reminders → обход без ошибок."""
+        orch = self._make(mocker, reminders=None)
+        orch._abort_playback = mocker.MagicMock()
+        orch.process_text("алиса пауза")
+        orch._matcher.find_literal_id.assert_called_once_with("алиса пауза")

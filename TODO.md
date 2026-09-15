@@ -99,6 +99,17 @@
 ## Планируемые задачи (прочие)
 
 * \[ ] Создать/скопировать файл настроек opencode
+* \[x] **Google Calendar + Tasks (напоминания голосом)** — ГОТОВО:
+  - `lib/google_calendar.py` (OAuth: credentials.json → token.json, refresh),
+    `lib/time_parser.py` (через N часов/минут, завтра в HH:MM, в HH:MM, дни),
+    `lib/reminders.py` (ReminderHandler + LLM-fallback), порядок в
+    process_text: после «запомни/забудь», до literal-матчинга.
+  - «напомни мне через 3 часа X» → Task в «Список по умолчанию» +
+    Calendar-событие на это время (popup за 10 мин).
+  - Флаг `google.enabled` в commands.json; credentials.json/token.json
+    в .gitignore. 401 passed, flake8 чист.
+  - Что дальше: чтение («что у меня сегодня»), удаление, повторные
+    напоминания, выбор списка/календаря, длительность события.
 
 ---
 

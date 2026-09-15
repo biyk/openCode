@@ -8,6 +8,9 @@ pytest>=8.0.0
 websocket-client>=1.7.0
 g4f>=0.0.0
 piper-tts>=1.8.0
+google-api-python-client>=2.100.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
 
 # Системные зависимости (установить отдельно)
 # mpg123 - для воспроизведения MP3 TTS

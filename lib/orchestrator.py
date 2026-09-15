@@ -6,6 +6,7 @@
 распознавания в main.py.
 """
 
+import queue
 import threading
 import time
 from typing import Any, Callable, Optional
@@ -13,6 +14,7 @@ from typing import Any, Callable, Optional
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
 from lib.output import TranscriptionOutput
+from lib.reminders import ReminderHandler
 from lib.skills import SkillRegistry
 
 
@@ -33,6 +35,7 @@ class Orchestrator:
         intent: Any = None,
         skills: Optional[SkillRegistry] = None,
         aliases: Optional[AliasStore] = None,
+        reminders: Optional[ReminderHandler] = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
@@ -44,10 +47,14 @@ class Orchestrator:
         self._intent = intent or None
         self._skills = skills or None
         self._aliases = aliases or None
+        self._reminders = reminders or None
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
         self._last_resolution: Optional[tuple[str, str]] = None
+        self._llm_queue: queue.Queue[Optional[str]] = queue.Queue()
+        self._llm_worker: Optional[threading.Thread] = None
+        self._llm_active = False
 
     @property
     def speaking(self) -> bool:
@@ -71,6 +78,9 @@ class Orchestrator:
         if self._speaking:
             self.maybe_abort(text)
             return
+        if self._llm_active and self.maybe_abort(text):
+            # Пока LLM думает, стоп-слово только отменяет ожидаемый ответ
+            return
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
             return
@@ -78,6 +88,9 @@ class Orchestrator:
         self._output.print_text(text)
         # 0. Мета-команды обучения алиасов («запомни»/«забудь»).
         if self._aliases is not None and self._handle_memory_command(text):
+            return
+        # 0.5. Напоминания («напомни через 3 часа ...») — в Google Calendar+Tasks.
+        if self._reminders is not None and self._handle_reminder(text):
             return
         # 1. Дословное совпадение — запускаем сразу.
         literal_id = self._matcher.find_literal_id(text)
@@ -137,19 +150,70 @@ class Orchestrator:
             f"[LLM Decision] Trigger found, no command match, no intent match, no skill match. "
             f"Sending to LLM. Text: {text}"
         )
-        self._output.print_info("... отправка запроса LLM")
-        answer = self._llm.ask(text)
-        if answer:
-            self._output.print_debug(f"[LLM] Ответ: {answer}")
-            self._speaking = True
-            self._abort_playback.clear()
-            self._speak_async(answer)
-        else:
-            self._output.print_error("[LLM] Ошибка ответа")
-            self._output.print_text(text)
+        self._output.print_info("... отправка запроса LLM (фон)")
+        self._enqueue_llm(text)
+
+    def _enqueue_llm(self, text: str) -> None:
+        """Ставит текст в фоновую очередь LLM."""
+        self._llm_queue.put(text)
+        self._ensure_llm_worker()
+
+    def _drain_llm_queue(self) -> None:
+        """Выбрасывает накопленные, но ещё не обработанные запросы LLM."""
+        discarded = 0
+        while True:
+            try:
+                self._llm_queue.get_nowait()
+                discarded += 1
+            except Exception:
+                break
+        if discarded:
+            self._output.print_debug(f"[LLM] Отброшено запросов: {discarded}")
+
+    def _ensure_llm_worker(self) -> None:
+        """Запускает воркер, если он ещё не создан."""
+        if self._llm_worker is not None:
+            return
+        self._llm_worker = threading.Thread(
+            target=self._llm_worker_loop, daemon=True)
+        self._llm_worker.start()
+
+    def _llm_worker_loop(self) -> None:
+        """Фоновый воркер: обрабатывает запросы из очереди."""
+        while True:
+            text = self._llm_queue.get()
+            try:
+                self._llm_active = True
+                if self._abort_playback.is_set():
+                    self._output.print_debug("[LLM] Запрос отменён (стоп)")
+                    continue
+                answer = self._llm.ask(text)
+                if self._abort_playback.is_set():
+                    self._output.print_debug("[LLM] Ответ отменён (стоп)")
+                    continue
+                if not answer:
+                    self._output.print_error("[LLM] Ошибка ответа")
+                    self._output.print_text(text)
+                    continue
+                self._output.print_debug(f"[LLM] Ответ: {answer}")
+                # Ждём, пока предыдущая озвучка не закончится (одна голосовая
+                # линия), чтобы ответы не накладывались друг на друга.
+                while self._speaking and not self._abort_playback.is_set():
+                    time.sleep(0.05)
+                if self._abort_playback.is_set():
+                    self._output.print_debug("[LLM] Ответ отменён (стоп)")
+                    continue
+                self._speaking = True
+                self._abort_playback.clear()
+                self._speak_async(answer)
+            except Exception as e:
+                self._output.print_error(f"[LLM] Ошибка фонового запроса: {e}")
+            finally:
+                self._llm_active = False
+                self._llm_queue.task_done()
 
     def _remember_candidate(self, text: str, cmd_id: str,
-                              literal_id: Optional[str]) -> None:
+                            literal_id: Optional[str]) -> None:
         """Сохраняет авто-кандидата в pending (только для недословных).
 
         Дословные фразы учить не нужно — они уже шаблоны. Запоминает
@@ -237,6 +301,28 @@ class Orchestrator:
         else:
             self._say("Такого не помню")
 
+    def _handle_reminder(self, text: str) -> bool:
+        """Обрабатывает напоминания. Возвращает True, если текст — напоминание."""
+        assert self._reminders is not None
+        if not self._reminders.is_reminder(text):
+            return False
+        self._output.print_info("[Reminder] Распознано напоминание")
+        spec = self._reminders.create(text)
+        if spec is None:
+            self._say("Не поняла, на какое время напомнить")
+            return True
+        event_id = self._reminders.add_to_calendar(spec)
+        if event_id is None:
+            self._output.print_error("[Google] Ошибка создания напоминания")
+            self._say("Не получилось создать напоминание — проверь "
+                      "авторизацию Google")
+            return True
+        when_str = spec.when.strftime("%d.%m %H:%M")
+        message = f"Напомню {when_str}: {spec.text}"
+        self._output.print_info(f"[Google] Создано: {message} (event {event_id})")
+        self._say(message)
+        return True
+
     def _llm_context(self,
                      blocked: list[tuple[str, list[str]]]) -> dict:
         """Контекст для LLM-классификатора: триггеры, команды, статусы."""
@@ -261,18 +347,21 @@ class Orchestrator:
         self._speak_async(message)
 
     def maybe_abort(self, text: str) -> bool:
-        """Прерывает озвучку, если в тексте есть стоп-слово (целое слово).
+        """Прерывает озвучку или ожидающий ответ LLM, если есть стоп-слово.
 
-        Возвращает True, если озвучка была прервана. Используется для
+        Возвращает True, если процесс был прерван. Используется для
         финальных и частичных результатов распознавания.
         """
-        if not self._speaking:
+        if not self._speaking and not self._llm_active:
             return False
         tokens = text.lower().split()
         if not any(token in self._stop_words for token in tokens):
             return False
         self._abort_playback.set()
-        self._output.print_info("[TTS] Озвучка прервана")
+        if self._speaking:
+            self._output.print_info("[TTS] Озвучка прервана")
+        else:
+            self._output.print_info("[LLM] Ожидаемый ответ отменён")
         return True
 
     def _speak_async(self, answer: str) -> None:
@@ -294,5 +383,6 @@ class Orchestrator:
         self._clear_speech_buffer()
 
     def stop(self) -> None:
-        """Прерывает активное воспроизведение TTS."""
+        """Прерывает активное воспроизведение TTS и очищает очередь LLM."""
         self._abort_playback.set()
+        self._drain_llm_queue()
