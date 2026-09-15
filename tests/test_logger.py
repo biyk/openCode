@@ -2,7 +2,6 @@ import pytest
 import os
 import shutil
 import tempfile
-from pathlib import Path
 from lib.logger import Logger
 
 

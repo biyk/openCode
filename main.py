@@ -21,6 +21,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+
 def _fix_encoding(text: str) -> str:
     """Исправляет битый текст от Vosk на Windows.
 
@@ -38,23 +39,24 @@ def _fix_encoding(text: str) -> str:
     except Exception:
         return text
 
-from lib.output import TranscriptionOutput
-from lib.commands import CommandMatcher
-from lib.logger import Logger
-from lib.tts import TextToSpeech
-from lib.config_loader import get_device_commands_path
-from lib.orchestrator import Orchestrator
-from lib.skills import SkillRegistry, get_skills_dir
-from lib.intent import IntentClassifier
-from lib.media import is_media_playing
-from lib.status import StatusStore
-from lib.aliases import AliasStore
-from lib.reminders import ReminderHandler
-from lib.providers.manager import ProviderManager
 
-import sounddevice as sd
-import requests
-from vosk import Model, KaldiRecognizer, SetLogLevel
+from lib.output import TranscriptionOutput  # noqa: E402
+from lib.commands import CommandMatcher  # noqa: E402
+from lib.logger import Logger  # noqa: E402
+from lib.tts import TextToSpeech  # noqa: E402
+from lib.config_loader import get_device_commands_path  # noqa: E402
+from lib.orchestrator import Orchestrator  # noqa: E402
+from lib.skills import SkillRegistry, get_skills_dir  # noqa: E402
+from lib.intent import IntentClassifier  # noqa: E402
+from lib.media import is_media_playing  # noqa: E402
+from lib.status import StatusStore  # noqa: E402
+from lib.aliases import AliasStore  # noqa: E402
+from lib.reminders import ReminderHandler  # noqa: E402
+from lib.providers.manager import ProviderManager  # noqa: E402
+
+import sounddevice as sd  # noqa: E402
+import requests  # noqa: E402
+from vosk import Model, KaldiRecognizer, SetLogLevel  # noqa: E402
 
 _provider_manager = ProviderManager()
 
@@ -83,6 +85,8 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # ---------- Загрузка модели ----------
+
+
 def ensure_vosk_model(lang_code: str) -> str:
     """Проверяет наличие модели Vosk, скачивает при необходимости."""
     info = VOSK_MODELS[lang_code]
@@ -118,6 +122,8 @@ def ensure_vosk_model(lang_code: str) -> str:
         raise RuntimeError(f"Ошибка загрузки модели для {lang_code}: {e}")
 
 # ---------- Обработка аудио ----------
+
+
 class TranscriptionWorker:
     """Захватывает аудио и распознаёт речь."""
 
@@ -270,6 +276,8 @@ class TranscriptionWorker:
         self._orchestrator.stop()
 
 # ---------- Главная функция ----------
+
+
 def main():
     lang = "ru"
     device_name = socket.gethostname()
@@ -287,6 +295,7 @@ def main():
     worker.stop()
     thread.join(timeout=2)
     output.print_info("Выход.")
+
 
 if __name__ == "__main__":
     main()
