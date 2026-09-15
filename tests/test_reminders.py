@@ -17,6 +17,17 @@ class TestCleanCandidate:
         """«напомни мне купить молоко» → «купить молоко»."""
         assert _clean_candidate("напомни мне купить молоко") == "купить молоко"
 
+    def test_me_plus_pozhaluista(self):
+        """«напомни мне пожалуйста через десять часов...» → «через ...»."""
+        assert _clean_candidate(
+            "напомни мне пожалуйста через десять часов захватить мир") == \
+            "через десять часов захватить мир"
+
+    def test_multiple_fillers(self):
+        """Несколько заполнителей подряд убираются все."""
+        assert _clean_candidate(
+            "напомни пожалуйста алиса через час убраться") == "через час убраться"
+
     def test_sklad(self):
         """«поставь напоминание на завтра» → «на завтра»."""
         assert _clean_candidate("поставь напоминание на завтра") == "на завтра"
@@ -46,7 +57,8 @@ class TestIsReminder:
     """Определение, является ли текст напоминанием."""
 
     def _handler(self):
-        return ReminderHandler()
+        mock_google = type("G", (), {"create_reminder": lambda **kw: "e"})()
+        return ReminderHandler(google=mock_google)
 
     def test_positive(self):
         """Фраза начинается с «напомни» → True."""
@@ -78,24 +90,33 @@ class TestCreate:
         assert spec.when.hour == 13
         assert spec.text == "постирать белье"
 
-    def test_no_time_returns_none(self):
-        """Фраза без времени → None."""
+    def test_no_time_defaults_plus_60(self):
+        """Фраза без времени → через 60 минут от текущего момента."""
+        now = datetime(2026, 9, 15, 10, 0)
+        h = self._handler(now=now)
+        spec = h.create("напомни купить капусту")
+        assert spec is not None
+        assert spec.when == datetime(2026, 9, 15, 11, 0)
+        assert spec.text == "купить капусту"
+
+    def test_empty_phrase_returns_none(self):
+        """Пустая фраза после очистки → None."""
         h = self._handler()
-        assert h.create("напомни постирать белье") is None
+        assert h.create("напомни") is None
 
 
-class TestAddToCalendar:
+class TestAddEvent:
     """Вызов Google Calendar API (mock)."""
 
     def test_success(self):
         """Успешное создание напоминания → event_id."""
         mock_google = type("G", (), {
-            "create_reminder": lambda self, **kw: {"event": "evt123"},
+            "create_reminder": lambda self, **kw: "event123",
         })()
         handler = ReminderHandler(google=mock_google)
         spec = ReminderSpec(
             when=datetime(2026, 9, 15, 13, 0), text="постирать")
-        assert handler.add_to_calendar(spec) == "evt123"
+        assert handler.add_event(spec) == "event123"
 
     def test_failure_returns_none(self):
         """Ошибка Google API → None."""
@@ -106,20 +127,20 @@ class TestAddToCalendar:
         handler = ReminderHandler(google=mock_google)
         spec = ReminderSpec(
             when=datetime(2026, 9, 15, 13, 0), text="тест")
-        assert handler.add_to_calendar(spec) is None
+        assert handler.add_event(spec) is None
 
 
 class TestIntegration:
     """Интеграция полного цикла: текст → spec → mock calendar."""
 
     def test_full_flow(self):
-        """Полный сценарий: текст → напоминание создано."""
+        """Полный сценарий: текст → событие создано."""
         now = datetime(2026, 9, 15, 10, 0)
         created = {}
 
         def fake_create(self, **kw):
             created.update(kw)
-            return {"event": "evt_ok"}
+            return "event_ok"
 
         mock_google = type("G", (), {"create_reminder": fake_create})()
         tp = TimeParser(now=now)
@@ -129,6 +150,16 @@ class TestIntegration:
         assert spec is not None
         assert spec.when.hour == 10 and spec.when.minute == 30
         assert spec.text == "позвонить маме"
-        eid = handler.add_to_calendar(spec)
-        assert eid == "evt_ok"
+        eid = handler.add_event(spec)
+        assert eid == "event_ok"
         assert created["summary"] == "позвонить маме"
+
+    def test_full_flow_no_time(self):
+        """Без времени — событие на now+60, текст — вся фраза."""
+        now = datetime(2026, 9, 15, 10, 0)
+        tp = TimeParser(now=now)
+        handler = ReminderHandler(parser=tp)
+        spec = handler.create("напомни помыть полы")
+        assert spec is not None
+        assert spec.when == datetime(2026, 9, 15, 11, 0)
+        assert spec.text == "помыть полы"

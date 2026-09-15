@@ -58,6 +58,11 @@ class TimeParser:
     def __init__(self, now: Optional[datetime] = None) -> None:
         self._now = now or datetime.now()
 
+    @property
+    def now(self) -> datetime:
+        """Текущее время, относительно которого парсится фраза."""
+        return self._now
+
     def parse(self, phrase: str) -> ReminderSpec:
         """Возвращает напоминание с временем и оставшимся текстом."""
         phrase = phrase.strip().lower()

@@ -580,7 +580,7 @@ class TestOrchestrator:
         assert orch.speaking is False
 
     def test_process_text_reminder_succeeds(self, mocker, tmp_path):
-        """Напоминание создаёт Calendar event и озвучивается."""
+        """Напоминание создаёт задачу в Tasks и озвучивается."""
         reminder = mocker.MagicMock()
         reminder.is_reminder.return_value = True
         orch = self._make(mocker, reminders=reminder)
@@ -588,7 +588,7 @@ class TestOrchestrator:
         spec.text = "постирать"
         spec.when.strftime.return_value = "15.09 13:00"
         reminder.create.return_value = spec
-        reminder.add_to_calendar.return_value = "evt-abc"
+        reminder.add_event.return_value = "event-abc"
         orch._abort_playback = mocker.MagicMock()
         # Не запускать реальный поток TTS
         spoken = []
@@ -597,13 +597,13 @@ class TestOrchestrator:
         orch.process_text("алиса напомни мне через 3 часа постирать")
         reminder.is_reminder.assert_called_once()
         reminder.create.assert_called_once()
-        reminder.add_to_calendar.assert_called_once_with(spec)
+        reminder.add_event.assert_called_once_with(spec)
         assert orch._speaking is True
         assert len(spoken) == 1
         assert "постирать" in spoken[0]
 
     def test_process_text_reminder_no_time(self, mocker):
-        """Напоминание без времени — голосовое сообщение об ошибке."""
+        """Пустое напоминание — голосовое сообщение об ошибке."""
         reminder = mocker.MagicMock()
         reminder.is_reminder.return_value = True
         reminder.create.return_value = None
@@ -614,9 +614,9 @@ class TestOrchestrator:
                                          setattr(orch, '_speaking', True))
         orch.process_text("алиса напомни постирать")
         reminder.create.assert_called_once()
-        reminder.add_to_calendar.assert_not_called()
+        reminder.add_event.assert_not_called()
         assert orch._speaking is True
-        assert any("поняла" in s.lower() or "время" in s.lower()
+        assert any("напомнить" in s.lower()
                    for s in spoken)
 
     def test_process_text_reminder_google_failure(self, mocker):
@@ -627,14 +627,14 @@ class TestOrchestrator:
         spec.when.strftime.return_value = "15.09 13:00"
         spec.text = "тест"
         reminder.create.return_value = spec
-        reminder.add_to_calendar.return_value = None
+        reminder.add_event.return_value = None
         orch = self._make(mocker, reminders=reminder)
         orch._abort_playback = mocker.MagicMock()
         spoken = []
         orch._speak_async = lambda ans: (spoken.append(ans),
                                          setattr(orch, '_speaking', True))
         orch.process_text("алиса напомни мне через 3 часа тест")
-        reminder.add_to_calendar.assert_called_once()
+        reminder.add_event.assert_called_once()
         assert orch._speaking is True
         assert any("ошибк" in s.lower() or "авторизац" in s.lower()
                    for s in spoken)

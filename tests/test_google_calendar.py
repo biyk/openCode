@@ -1,4 +1,4 @@
-"""Тесты обёртки Google Calendar/Tasks (моки API, без сети)."""
+"""Тесты обёртки Google Calendar (моки API, без сети)."""
 
 from datetime import datetime
 
@@ -11,69 +11,37 @@ from lib.google_calendar import GoogleCalendar, GoogleOAuthError
 NOW = datetime(2026, 9, 15, 13, 0)
 
 
-class FakeTasksResource:
-    """Фейк tasks-ресурса (insert + tasklists.list)."""
+class FakeCalendarResource:
+    """Фейк events-ресурса (insert + list)."""
 
-    def __init__(self, log):
+    def __init__(self, log, event_items=None):
         self._log = log
-        self.deleted = []
+        self._event_items = event_items or []
 
-    def insert(self, tasklist=None, body=None):
-        self._log.append(("task", tasklist, body))
-        return FakeRequest({"id": "task-1"})
-
-    def tasklists(self):
+    def events(self):
         return self
-
-    def list(self):
-        return FakeRequest({"items": [
-            {"id": "resolved-default", "title": "Список по умолчанию"},
-        ]})
-
-
-class FakeEventsResource:
-    """Фейк calendar-ресурса (insert + list)."""
-
-    def __init__(self, log):
-        self._log = log
 
     def insert(self, calendarId=None, body=None):
         self._log.append(("event", calendarId, body))
         return FakeRequest({"id": "event-1"})
 
     def list(self, **kw):
-        return FakeRequest({"items": [
-            {"summary": "Встреча", "start": {"dateTime": "2026-09-15T14:00"}},
-        ]})
+        return FakeRequest({"items": self._event_items})
 
 
 class FakeService:
     """Заглушка googleapiclient discovery.build."""
 
-    def __init__(self):
+    def __init__(self, event_items=None):
         self.log = []
-        self._tasks = FakeTasksResource(self.log)
-        self._events = FakeEventsResource(self.log)
-
-    def tasks(self):
-        return self._tasks
+        self._calendar = FakeCalendarResource(self.log, event_items=event_items)
 
     def events(self):
-        return self._events
+        return self._calendar
 
     @property
     def created(self):
-        return [b for kind, _, b in self.log if kind in ("task", "event")]
-
-    # discovery-подобные методы списков — для list_upcoming
-    def events_list(self, **kw):
-        items = [
-            {"summary": "Встреча", "start": {"dateTime": "2026-09-15T14:00"}},
-        ]
-        return FakeRequest({"items": items})
-
-    def list(self, **kw):
-        return self.events_list(**kw)
+        return [b for kind, _, b in self.log if kind == "event"]
 
 
 class FakeRequest:
@@ -89,7 +57,21 @@ class FakeRequest:
 class TestAuthorize:
     """OAuth-флоу."""
 
-    def test_authorize_builds_services(self, monkeypatch, tmp_path):
+    @staticmethod
+    def _write_token(path, scopes):
+        """Пишет валидный (не протухший) token.json с заданным scope."""
+        import json
+        path.write_text(json.dumps({
+            "token": "access_token",
+            "refresh_token": "refresh_token",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "client_id": "c",
+            "client_secret": "s",
+            "scopes": scopes,
+            "expiry": "2099-01-01T00:00:00Z",
+        }), encoding="utf-8")
+
+    def test_authorize_builds_services(self, tmp_path):
         """Успешная авторизация создаёт сервисы."""
         g = GoogleCalendar(
             token_file=str(tmp_path / "token.json"),
@@ -102,14 +84,41 @@ class TestAuthorize:
         g.authorize()
         assert g.is_ready() is False
 
-    def test_missing_credentials_file(self, tmp_path, monkeypatch):
+    def test_missing_credentials_file(self, tmp_path):
         """Нет credentials.json → GoogleOAuthError."""
         g = GoogleCalendar(
             credentials_file=str(tmp_path / "missing.json"),
             token_file=str(tmp_path / "token.json"))
-        monkeypatch.setattr(g, "_load_or_get_credentials",
-                            lambda: (_ for _ in ()).throw(FileNotFoundError))
         with pytest.raises(Exception):
+            g._load_or_get_credentials()
+
+    def test_is_ready_false_when_calendar_scope_missing(self, tmp_path):
+        """Валидный tokens-only токен НЕ готов для календаря."""
+        tok = tmp_path / "token.json"
+        self._write_token(tok, ["https://www.googleapis.com/auth/tasks"])
+        g = GoogleCalendar(
+            token_file=str(tok),
+            credentials_file=str(tmp_path / "creds.json"))
+        assert g.is_ready() is False
+
+    def test_is_ready_true_when_calendar_scope_present(self, tmp_path):
+        """Токен со scope calendar.events готов."""
+        tok = tmp_path / "token.json"
+        self._write_token(
+            tok, ["https://www.googleapis.com/auth/calendar.events"])
+        g = GoogleCalendar(
+            token_file=str(tok),
+            credentials_file=str(tmp_path / "creds.json"))
+        assert g.is_ready() is True
+
+    def test_missing_scope_triggers_reauth(self, tmp_path):
+        """Нехватка scope → не возвращаем валидный токен, а идём в flow."""
+        tok = tmp_path / "token.json"
+        self._write_token(tok, ["https://www.googleapis.com/auth/tasks"])
+        g = GoogleCalendar(
+            token_file=str(tok),
+            credentials_file=str(tmp_path / "missing.json"))
+        with pytest.raises(GoogleOAuthError):
             g._load_or_get_credentials()
 
 
@@ -118,21 +127,23 @@ class TestOperations:
 
     def _google(self):
         g = GoogleCalendar()
-        g._tasks_service = FakeService()
         g._calendar_service = FakeService()
         g._ready = True
         return g
 
-    def test_create_reminder_both_apis(self):
-        """create_reminder вызывает Tasks и Calendar, возвращает id."""
+    def test_create_reminder_creates_event_with_time(self):
+        """create_reminder создаёт одно событие с временем и попапом."""
         g = self._google()
-        result = g.create_reminder("постирать", NOW)
-        assert result == {"task": "task-1", "event": "event-1"}
-        assert g._tasks_service.created[0]["title"] == "постирать"
-        assert "due" in g._tasks_service.created[0]
-        ev = g._calendar_service.created[0]
-        assert ev["summary"] == "постирать"
-        assert ev["start"]["dateTime"].startswith("2026-09-15T13:00")
+        event_id = g.create_reminder("постирать", NOW)
+        assert event_id == "event-1"
+        assert len(g._calendar_service.created) == 1
+        event = g._calendar_service.created[0]
+        assert event["summary"] == "постирать"
+        assert event["start"]["dateTime"].startswith("2026-09-15T13:00")
+        assert event["end"]["dateTime"].startswith("2026-09-15T13:30")
+        assert event["reminders"]["useDefault"] is False
+        assert event["reminders"]["overrides"] == [
+            {"method": "popup", "minutes": 0}]
 
     def test_create_reminder_empty_summary(self):
         """Пустой текст → GoogleOAuthError."""
@@ -140,17 +151,27 @@ class TestOperations:
         with pytest.raises(GoogleOAuthError):
             g.create_reminder("  ", NOW)
 
-    def test_list_upcoming_formats(self):
-        """list_upcoming возвращает summary+start."""
-        g = self._google()
-        items = g.list_upcoming(hours=24)
-        assert items == [{"summary": "Встреча",
-                          "start": "2026-09-15T14:00"}]
+    def test_list_events_returns_items(self):
+        """list_events мапит поля события."""
+        g = GoogleCalendar()
+        g._calendar_service = FakeService(event_items=[
+            {"id": "e1", "summary": "захватить мир",
+             "start": {"dateTime": "2026-09-15T14:00:00+04:00"}},
+            {"id": "e2", "summary": "аллдей",
+             "start": {"date": "2026-09-16"}},
+        ])
+        g._ready = True
+        items = g.list_events(limit=10)
+        assert [i["id"] for i in items] == ["e1", "e2"]
+        assert items[0] == {
+            "id": "e1", "summary": "захватить мир",
+            "start": "2026-09-15T14:00:00+04:00"}
+        assert items[1]["start"] == "2026-09-16"
 
-    def test_not_ready_authorizes(self, monkeypatch):
+    def test_not_ready_authorizes(self):
         """Если не ready — authorize() вызывается."""
         g = self._google()
         g._ready = False
         g.authorize = lambda: None
         g.create_reminder("тест", NOW)
-        assert g._ready is False  # authorize не сбрасывает ready, тк mock
+        assert g._ready is False  # authorize ставит ready в реальном флоу

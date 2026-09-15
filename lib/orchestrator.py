@@ -89,7 +89,7 @@ class Orchestrator:
         # 0. Мета-команды обучения алиасов («запомни»/«забудь»).
         if self._aliases is not None and self._handle_memory_command(text):
             return
-        # 0.5. Напоминания («напомни через 3 часа ...») — в Google Calendar+Tasks.
+        # 0.5. Напоминания («напомни через 3 часа ...») — в Google Calendar.
         if self._reminders is not None and self._handle_reminder(text):
             return
         # 1. Дословное совпадение — запускаем сразу.
@@ -309,13 +309,17 @@ class Orchestrator:
         self._output.print_info("[Reminder] Распознано напоминание")
         spec = self._reminders.create(text)
         if spec is None:
-            self._say("Не поняла, на какое время напомнить")
+            self._say("Не поняла, что напомнить")
             return True
-        event_id = self._reminders.add_to_calendar(spec)
+        event_id = self._reminders.add_event(spec)
         if event_id is None:
             self._output.print_error("[Google] Ошибка создания напоминания")
-            self._say("Не получилось создать напоминание — проверь "
-                      "авторизацию Google")
+            if not self._reminders.auth_ready():
+                self._say("Для напоминаний нужна авторизация Google. "
+                          "Скажи \"авторизация\".")
+            else:
+                self._say("Не получилось создать напоминание — проверь "
+                          "авторизацию Google")
             return True
         when_str = spec.when.strftime("%d.%m %H:%M")
         message = f"Напомню {when_str}: {spec.text}"

@@ -181,10 +181,10 @@ class TranscriptionWorker:
             AliasStore.path_for_commands_file(commands_file))
         self._orchestrator._aliases = self._aliases
 
-        # Напоминания (Google Calendar + Tasks, флаг google.enabled)
+        # Напоминания (Google Calendar, флаг google.enabled)
         google_config = self._matcher.get_google_config()
         if google_config.get("enabled"):
-            self._orchestrator._reminders = ReminderHandler(llm=self._llm)
+            self._orchestrator._reminders = ReminderHandler()
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.

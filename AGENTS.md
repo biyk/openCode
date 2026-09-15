@@ -8,13 +8,17 @@ pip install -r requirements.txt
 pip install flake8 pytest-mock
 
 # Run all unit tests
-pytest tests/ -v          # 440 tests
+python -m pytest tests/ -v          # 439 tests
 
 # Run a single test file
-pytest tests/test_orchestrator.py -v
+python -m pytest tests/test_orchestrator.py -v
 
 # Run a single test
-pytest tests/test_orchestrator.py::test_process_text_llm_answer -v
+python -m pytest tests/test_orchestrator.py::test_process_text_llm_answer -v
+
+# IMPORTANT: bare `pytest.exe` (Scripts\pytest.exe) fails to import lib.* on
+# Windows because its sys.path doesn't include repo root.  Always use
+# `python -m pytest` to ensure the repo root lands on sys.path[0].
 
 # Run linting (IMPORTANT: no .flake8 config exists, default limit is 79)
 flake8 --max-line-length=100 .
@@ -38,7 +42,7 @@ python main.py
   3. `_llm_active` → `maybe_abort` (stop-word cancels pending LLM answer; non-stop words fall through to normal command processing — voice input is NOT blocked while LLM thinks)
   4. No trigger → `print_text` only, no command processing
   5. Memory commands: «запомни/забудь» (aliases)
-  6. Reminders: «напомни мне …» (Google Calendar+Tasks, `google.enabled` flag)
+  6. Reminders: «напомни мне …» (Google Calendar, `google.enabled` flag) — событие со всплывающим попапом; если время не указано → +60 минут.
   7. Literal match: exact template equality (no substring matching)
   8. Alias match: known garbled phrases from `aliases.json`
   9. Intent classifier: `llm.classify()` or `llm.ask()`
@@ -49,8 +53,8 @@ python main.py
 - `lib/status.py` — `StatusStore`: system statuses (`vpn`/`media`/`browser_youtube` + custom shell `check`) defined in `targets/<host>/status.json` (sibling of commands.json); background daemon thread polls every `interval` (default 5s), prints `[Status] {name}: on/off` only on change. Built-in checkers: `vpn` = youtube reachable (check-only, never toggles), `media` = `is_media_playing()`, `browser`/`browser_youtube` via CDP. No status file → store disabled → all `requires` pass. Thread-safe; `ensure()` refreshes synchronously when cached value blocks a command.
 - `lib/skills.py` — `SkillRegistry`: JSON skills in `targets/<host>/skills/*.json` (name/phrases/params/steps), actions `open_url`/`run_cmd`, `${param}` substitution, reload on change. Gate: `skills.enabled` in commands.json.
 - `lib/aliases.py` — `AliasStore` (П6.0): `{core_phrase: {command, hits, confirmed}}` + `pending` in `targets/<host>/aliases.json`, hot-reload on mtime. Orchestrator order: literal → aliases → intent → skills → chat; literal template always beats alias; aliases respect `requires`. Voice teaching: «запомни [X это Y]» (confirm/add), «забудь X»; successful non-literal intent resolutions auto-land in `pending` (`confirmed: false`).
-- `lib/google_calendar.py` — Google Calendar + Tasks via OAuth 2.0 (Desktop app: `credentials.json` + `token.json`, оба в .gitignore; refresh-token автоматически, `is_ready()` проверяет валидность). `create_reminder(summary, when, reminder_minutes=10)`: Task в «Список по умолчанию» (id резолвится из API, НЕ `default`) + Calendar-событие на 30 мин (start/end — `dateTime` с offset, `timeZone` НЕ передавать — Windows-локали «Московское стандартное время» Google отвергает).
-- `lib/reminders.py` — `ReminderHandler`: определяет «напомни мне …» (за флагом `google.enabled`), парсит время через `lib/time_parser.py` (через N час/мин/дней, завтра/сегодня в HH:MM, в HH:MM, в понедельник), при неудаче — LLM fallback (`_parse_with_llm`) с таймаутом 20с через `ThreadPoolExecutor` (OmniRouter default 300s, поэтому таймаут критичен). `main.py` инстанцирует handler только при `google.enabled`.
+- `lib/google_calendar.py` — напоминания в **Google Calendar** via OAuth 2.0 (Desktop app: `credentials.json` + `token.json`, оба в .gitignore; refresh-token автоматически, `is_ready()` проверяет валидность). `create_reminder(summary, when)` создаёт **событие** в календаре (duration 30 мин, popup напоминание в момент начала по умолчанию). Google Tasks API **не хранит время задачи** (due = полночь всегда), поэтому напоминания живут только в Calendar. CLI: `python -m lib.google_calendar list [--limit N] [--out file]`.
+- `lib/reminders.py` — `ReminderHandler`: определяет «напомни мне …» (за флагом `google.enabled`), парсит время через `lib/time_parser.py` (через N час/мин/дней, завтра/сегодня в HH:MM, в HH:MM, в понедельник). Если время не указано — напоминание через **60 минут**. LLM не используется; полностью детерминированный парсинг. `main.py` инстанцирует handler только при `google.enabled`.
 - `lib/browser_control.py` — CLI for Chrome DevTools Protocol: `python -m lib.browser_control open-url <url>` (used by `openyoutube` command). Port 9222, `ensure_browser()` launches chrome/brave with `--remote-debugging-port`. Subcommands: `status`, `tabs`, `open-url`, `eval`, `click`, `youtube-play`.
 - `lib/intent.py` — `IntentClassifier`: `detect(text, context=None)` — without context uses legacy media_probe prompt, with context uses triggers/statuses/requires/blocked prompt; `_extract_id` pulls the id out even with junk appended (exact → first line → first word → whole-word search, earliest wins).
 - `lib/media.py` — `is_media_playing()` via `bin/media_state.ps1`, which checks ALL SMTC sessions for `Playing`; `is_media_available()` runs the same script with `-AnySession`. `playpause`/`stop` require `media_session`, NOT `media`, so paused video can be resumed. `stop` = `targets/<host>/commands/mediastop.ps1`: sends VK_MEDIA_STOP (0xB2), waits 2s, re-checks via `media_state.ps1`, and falls back to Play/Pause (0xB3) if still playing. GOTCHA: `PlaybackStatus` type is `GlobalSystemMediaTransportControlsSessionPlaybackStatus` — compare as string, enum comparison is always False.
