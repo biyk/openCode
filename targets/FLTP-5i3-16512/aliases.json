@@ -7,9 +7,15 @@
         },
         "паузы": {
             "command": "playpause",
-            "hits": 4,
+            "hits": 7,
             "confirmed": true
         }
     },
-    "pending": {}
+    "pending": {
+        "выключи вай фаю себе": {
+            "command": "stop",
+            "hits": 0,
+            "confirmed": false
+        }
+    }
 }

@@ -279,6 +279,18 @@ class TranscriptionWorker:
 
 
 def main():
+    from lib.version_checker import start_version_checker
+    from lib.version_gate import snapshot as _snapshot
+
+    snap = _snapshot()
+    # Проверка перед стартом (быстрый fail)
+    from lib.version_gate import check_versions_or_exit
+
+    check_versions_or_exit(snap.app_version, snap.project_version)
+
+    stop_evt = threading.Event()
+    start_version_checker(stop_evt, interval_s=120.0)
+
     lang = "ru"
     device_name = socket.gethostname()
 
