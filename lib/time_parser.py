@@ -56,7 +56,19 @@ class TimeParser:
     """
 
     def __init__(self, now: Optional[datetime] = None) -> None:
-        self._now = now or datetime.now()
+        """Парсер времени.
+
+        `now` используется для тестов (фиксированное время); в реальном
+        использовании он равен None, и тогда на каждый парсинг берётся
+        живое `datetime.now()`, чтобы относительные команды («через 30
+        минут») считались от момента команды, а не от старта приложения.
+        """
+        self._fixed_now = now
+
+    @property
+    def _now(self) -> datetime:
+        """Актуальное «текущее» время для вычислений."""
+        return self._fixed_now if self._fixed_now is not None else datetime.now()
 
     @property
     def now(self) -> datetime:
