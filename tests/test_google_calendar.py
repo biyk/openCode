@@ -156,17 +156,52 @@ class TestOperations:
         g = GoogleCalendar()
         g._calendar_service = FakeService(event_items=[
             {"id": "e1", "summary": "захватить мир",
-             "start": {"dateTime": "2026-09-15T14:00:00+04:00"}},
+             "start": {"dateTime": "2026-09-15T14:00:00+04:00"},
+             "end": {"dateTime": "2026-09-15T14:30:00+04:00"}},
             {"id": "e2", "summary": "аллдей",
-             "start": {"date": "2026-09-16"}},
+             "start": {"date": "2026-09-16"},
+             "end": {"date": "2026-09-17"}},
         ])
         g._ready = True
         items = g.list_events(limit=10)
         assert [i["id"] for i in items] == ["e1", "e2"]
         assert items[0] == {
             "id": "e1", "summary": "захватить мир",
-            "start": "2026-09-15T14:00:00+04:00"}
+            "start": "2026-09-15T14:00:00+04:00",
+            "end": "2026-09-15T14:30:00+04:00"}
         assert items[1]["start"] == "2026-09-16"
+
+    def test_pending_events_filters_finished_and_sorts(self):
+        """pending_events отбрасывает завершённые и сортирует по началу."""
+        from datetime import timedelta
+        now = datetime.now().astimezone()
+        past = now - timedelta(hours=2)
+        soon = now + timedelta(minutes=10)
+        later = now + timedelta(hours=1)
+        g = GoogleCalendar()
+        g._calendar_service = FakeService(event_items=[
+            {"id": "past", "summary": "прошло",
+             "start": {"dateTime": past.isoformat()},
+             "end": {"dateTime": (past + timedelta(minutes=20)).isoformat()}},
+            {"id": "later", "summary": "позже",
+             "start": {"dateTime": later.isoformat()},
+             "end": {"dateTime": (later + timedelta(minutes=30)).isoformat()}},
+            {"id": "soon", "summary": "скоро",
+             "start": {"dateTime": soon.isoformat()},
+             "end": {"dateTime": (soon + timedelta(minutes=15)).isoformat()}},
+        ])
+        g._ready = True
+        items = g.pending_events()
+        assert [i["id"] for i in items] == ["soon", "later"]
+        assert items[0]["summary"] == "скоро"
+        assert items[0]["start"].tzinfo is not None
+
+    def test_pending_events_empty(self):
+        """Без событий pending_events возвращает пустой список."""
+        g = GoogleCalendar()
+        g._calendar_service = FakeService(event_items=[])
+        g._ready = True
+        assert g.pending_events() == []
 
     def test_not_ready_authorizes(self):
         """Если не ready — authorize() вызывается."""

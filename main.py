@@ -52,6 +52,8 @@ from lib.media import is_media_playing  # noqa: E402
 from lib.status import StatusStore  # noqa: E402
 from lib.aliases import AliasStore  # noqa: E402
 from lib.reminders import ReminderHandler  # noqa: E402
+from lib.plans import PlansHandler  # noqa: E402
+from lib.google_calendar import GoogleCalendar  # noqa: E402
 from lib.providers.manager import ProviderManager  # noqa: E402
 
 import sounddevice as sd  # noqa: E402
@@ -187,10 +189,12 @@ class TranscriptionWorker:
             AliasStore.path_for_commands_file(commands_file))
         self._orchestrator._aliases = self._aliases
 
-        # Напоминания (Google Calendar, флаг google.enabled)
+        # Напоминания и планы (Google Calendar, флаг google.enabled)
         google_config = self._matcher.get_google_config()
         if google_config.get("enabled"):
-            self._orchestrator._reminders = ReminderHandler()
+            google = GoogleCalendar()
+            self._orchestrator._reminders = ReminderHandler(google=google)
+            self._orchestrator._plans = PlansHandler(google=google)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.

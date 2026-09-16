@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
 from lib.output import TranscriptionOutput
+from lib.plans import PlansHandler
 from lib.reminders import ReminderHandler
 from lib.skills import SkillRegistry
 
@@ -36,6 +37,7 @@ class Orchestrator:
         skills: Optional[SkillRegistry] = None,
         aliases: Optional[AliasStore] = None,
         reminders: Optional[ReminderHandler] = None,
+        plans: Optional[PlansHandler] = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
@@ -48,6 +50,7 @@ class Orchestrator:
         self._skills = skills or None
         self._aliases = aliases or None
         self._reminders = reminders or None
+        self._plans = plans or None
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
@@ -91,6 +94,9 @@ class Orchestrator:
             return
         # 0.5. Напоминания («напомни через 3 часа ...») — в Google Calendar.
         if self._reminders is not None and self._handle_reminder(text):
+            return
+        # 0.7. Планы на день («что у меня сейчас по планам») — из календаря.
+        if self._plans is not None and self._handle_plans(text):
             return
         # 1. Дословное совпадение — запускаем сразу.
         literal_id = self._matcher.find_literal_id(text)
@@ -324,6 +330,31 @@ class Orchestrator:
         when_str = spec.when.strftime("%d.%m %H:%M")
         message = f"Напомню {when_str}: {spec.text}"
         self._output.print_info(f"[Google] Создано: {message} (event {event_id})")
+        self._say(message)
+        return True
+
+    def _handle_plans(self, text: str) -> bool:
+        """Обрабатывает запрос планов. Возвращает True, если это он."""
+        assert self._plans is not None
+        if not self._plans.is_plans_query(text):
+            return False
+        self._output.print_info("[Plans] Запрос планов распознан")
+        if not self._plans.auth_ready():
+            self._say("Для планов нужна авторизация Google. "
+                      "Скажи \"авторизация\".")
+            return True
+        task = self._plans.current_task()
+        if task is None:
+            self._say("По планам сейчас ничего нет")
+            return True
+        summary = task.get("summary") or "задача"
+        start = task.get("start")
+        if start is not None:
+            time_str = start.strftime("%H:%M")
+            message = f"Сейчас по планам: {summary} в {time_str}"
+        else:
+            message = f"Сейчас по планам: {summary}"
+        self._output.print_info(f"[Plans] Актуальная задача: {message}")
         self._say(message)
         return True
 

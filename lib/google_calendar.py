@@ -16,7 +16,7 @@
 from datetime import datetime, timedelta
 from json import loads
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -165,6 +165,54 @@ class GoogleCalendar:
             calendarId=self._calendar_id, body=body).execute()
         return str(result["id"])
 
+    def pending_events(self, limit: int = 50) -> list[dict]:
+        """Актуальные события: текущие и ближайшие в будущее.
+
+        Возвращает список событий, отсортированных по времени начала,
+        без завершённых. Каждый элемент: id, summary, start, end —
+        aware datetime (в локальной таймзоне). Для событий «весь день»
+        время начала/конца — 00:00. Удобно для «что сейчас по планам».
+        """
+        events = self.list_events(limit=limit)
+        now = datetime.now().astimezone()
+        result = []
+        for ev in events:
+            start = self._parse_event_datetime(ev.get("start"))
+            end = self._parse_event_datetime(ev.get("end"))
+            if start is None:
+                continue
+            if end is None:
+                end = start
+            if start.tzinfo is None:
+                start = start.astimezone()
+            if end.tzinfo is None:
+                end = end.astimezone()
+            # Если событие уже закончилось — пропускаем.
+            if end < now:
+                continue
+            result.append({
+                "id": ev.get("id", ""),
+                "summary": ev.get("summary", ""),
+                "start": start,
+                "end": end,
+            })
+        result.sort(key=lambda e: e["start"])
+        return result
+
+    @staticmethod
+    def _parse_event_datetime(value: str) -> Optional[datetime]:
+        """Парсит RFC3339 или дату из события. None если не парсится."""
+        if not value:
+            return None
+        val = value.strip()
+        try:
+            return datetime.fromisoformat(val)
+        except ValueError:
+            try:
+                return datetime.strptime(val, "%Y-%m-%d")
+            except ValueError:
+                return None
+
     def list_events(self, limit: int = 25) -> list[dict[str, str]]:
         """Ближайшие события календаря от текущего момента.
 
@@ -184,10 +232,13 @@ class GoogleCalendar:
         for ev in events:
             start = (ev.get("start") or {}).get(
                 "dateTime", (ev.get("start") or {}).get("date", ""))
+            end = (ev.get("end") or {}).get(
+                "dateTime", (ev.get("end") or {}).get("date", ""))
             result.append({
                 "id": str(ev.get("id", "")),
                 "summary": ev.get("summary", ""),
                 "start": start,
+                "end": end,
             })
         return result
 

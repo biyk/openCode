@@ -651,6 +651,72 @@ class TestOrchestrator:
         reminder.create.assert_called_once()
         orch._matcher.find_literal_id.assert_not_called()
 
+    def test_process_text_plans_speaks_current_task(self, mocker):
+        """Запрос планов озвучивает актуальную задачу."""
+        from datetime import datetime
+        plans = mocker.MagicMock()
+        plans.is_plans_query.return_value = True
+        plans.auth_ready.return_value = True
+        plans.current_task.return_value = {
+            "id": "e1", "summary": "созвон",
+            "start": datetime(2026, 9, 15, 13, 0),
+            "end": datetime(2026, 9, 15, 13, 30),
+        }
+        orch = self._make(mocker, plans=plans)
+        orch._abort_playback = mocker.MagicMock()
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса что у меня сейчас по планам")
+        plans.current_task.assert_called_once()
+        assert orch._speaking is True
+        assert len(spoken) == 1
+        assert "созвон" in spoken[0]
+        assert "13:00" in spoken[0]
+        orch._matcher.find_literal_id.assert_not_called()
+        orch._llm.ask.assert_not_called()
+
+    def test_process_text_plans_empty_calendar(self, mocker):
+        """Пустой календарь — «По планам сейчас ничего нет»."""
+        plans = mocker.MagicMock()
+        plans.is_plans_query.return_value = True
+        plans.auth_ready.return_value = True
+        plans.current_task.return_value = None
+        orch = self._make(mocker, plans=plans)
+        orch._abort_playback = mocker.MagicMock()
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса что у меня сейчас по планам")
+        assert any("ничего нет" in s.lower() for s in spoken)
+
+    def test_process_text_plans_not_authorized(self, mocker):
+        """Без авторизации — просьба авторизоваться."""
+        plans = mocker.MagicMock()
+        plans.is_plans_query.return_value = True
+        plans.auth_ready.return_value = False
+        orch = self._make(mocker, plans=plans)
+        orch._abort_playback = mocker.MagicMock()
+        spoken = []
+        orch._speak_async = lambda ans: (spoken.append(ans),
+                                         setattr(orch, '_speaking', True))
+        orch.process_text("алиса что у меня сейчас по планам")
+        plans.current_task.assert_not_called()
+        assert any("авторизац" in s.lower() for s in spoken)
+
+    def test_process_text_plans_not_query_falls_through(self, mocker):
+        """Не-запрос планов не перехватывается."""
+        plans = mocker.MagicMock()
+        plans.is_plans_query.return_value = False
+        orch = self._make(mocker, plans=plans)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("алиса пауза")
+        plans.current_task.assert_not_called()
+        orch._matcher.execute_by_id.assert_called_once_with("playpause")
+
     def test_reminder_is_optional(self, mocker):
         """Нет reminders → обход без ошибок."""
         orch = self._make(mocker, reminders=None)
