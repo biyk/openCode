@@ -21,6 +21,9 @@
 - Гонка провайдеров: OmniRouter + локальный LM Studio, побеждает
   быстрый ответ
 - Автоперезагрузка конфигов (команды/статусы/алиасы) без рестарта
+- **Команды дублируются скиллами opencode**: каждая голосовая команда
+  имеет пару-скилл в `.opencode/skill/` — тот же эффект достижим из
+  opencode (см. «Команды и скиллы opencode»)
 
 ## Требования
 
@@ -143,7 +146,29 @@ python -m piper.download_voices ru_RU-irina-medium --download-dir models/piper
 `[Blocked]`, голосом — что нужно сделать (`need_message` из
 `status.json`).
 
-### 4. Статусы (`targets/<hostname>/status.json`)
+### 4. Команды и скиллы opencode
+
+Концепция: каждая голосовая команда продублирована скиллом opencode.
+Скилл — это `.opencode/skill/<name>/SKILL.md` с тем же действием, но
+выполняемым агентом opencode (не через микрофон). Так одно и то же
+действие доступно и голосом, и из терминала/агента.
+
+| Команда (voice) | Скилл opencode |
+|---|---|
+| `volumeup` | `media-volume-up` |
+| `volumedown` | `media-volume-down` |
+| `playpause` | `media-play-pause` |
+| `stop` | `media-stop` |
+| `openyoutube` | `youtube-open` |
+| `youtube_news` / `news` | `youtube-news` |
+| PlansHandler («по планам/расписанию») | `calendar-plans` |
+| ReminderHandler («напомни…») | `calendar-reminder` |
+
+Тело скилла ссылается на те же `requires`/`provides` и исполняемые
+команды (ps1-скрипты, `lib/browser_control.py`, хендлеры планов/
+напоминаний), что и голосовая команда.
+
+### 5. Статусы (`targets/<hostname>/status.json`)
 
 ```json
 {
@@ -163,7 +188,7 @@ python -m piper.download_voices ru_RU-irina-medium --download-dir models/piper
 (по умолчанию 5), смены печатаются (`[Status] vpn: on`) и обновляют
 заголовок окна консоли. Без файла статусов все `requires` пропускаются.
 
-### 5. Алиасы (`targets/<hostname>/aliases.json`)
+### 6. Алиасы (`targets/<hostname>/aliases.json`)
 
 ```json
 {
@@ -180,7 +205,7 @@ python -m piper.download_voices ru_RU-irina-medium --download-dir models/piper
 Удачные не-дословные резолвы LLM сами падают в `pending`
 (`confirmed: false`) и ждут подтверждения.
 
-### 6. Браузер (CDP)
+### 7. Браузер (CDP)
 
 ```bash
 python -m lib.browser_control status
@@ -250,7 +275,7 @@ voice/
 │       ├── commands.json   #   команды/матчи/requires/sequences
 │       ├── status.json     #   статусы и проверки
 │       ├── aliases.json    #   база коверканий
-│       └── skills/         #   JSON-скиллы
+│       └── skills/         #   JSON-скиллы (детерминированные действия)
 ├── lib/
 │   ├── orchestrator.py     # Детерминированное ядро решений
 │   ├── commands.py         # CommandMatcher: literal/requires/sequences
@@ -279,6 +304,17 @@ voice/
 │   └── tts_sapi.ps1        # Озвучка через System.Speech
 ├── prompts/                # Системный промпт для LLM
 ├── models/                 # Модели Vosk (скачиваются автоматически)
+├── .opencode/              # Настройки opencode
+│   └── skill/              # Скиллы-дубли голосовых команд:
+│       ├── media-volume-up/        #   volumeup
+│       ├── media-volume-down/      #   volumedown
+│       ├── media-play-pause/       #   playpause
+│       ├── media-stop/             #   stop
+│       ├── youtube-open/           #   openyoutube
+│       ├── youtube-news/           #   youtube_news / news
+│       ├── calendar-plans/         #   PlansHandler
+│       ├── calendar-reminder/      #   ReminderHandler
+│       └── browser-automation/     #   общий браузерный скилл
 └── tests/                  # Тесты pytest
 ```
 
