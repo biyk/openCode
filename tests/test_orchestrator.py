@@ -1,12 +1,16 @@
 """Тесты детерминированного оркестратора обработки текста.
 
 Пайплайн: commands.json (дословно+алиасы) → mini-LLM (intent) →
-console opencode (opencode-cli со скиллами).
+console opencode (opencode-cli со скиллами). Плюс режим разработки:
+«режим разработки» включает pass-through всех фраз в модель напрямую,
+«стоп будильник» внутри dev-режима завершает приложение.
 """
 
 import time
 
 from lib.orchestrator import Orchestrator
+from lib.orchestrator import DEV_MODE_ENABLE_PHRASE
+from lib.orchestrator import DEV_MODE_EXIT_PHRASE
 
 
 class TestOrchestrator:
@@ -120,7 +124,8 @@ class TestOrchestrator:
         orch.process_text("пожалуйста сделай кромку")
         orch._opencode_queue.join()
         opencode.run.assert_called_once_with(
-            "пожалуйста сделай кромку", abort_event=orch._abort_playback)
+            "пожалуйста сделай кромку",
+            abort_event=orch._abort_playback, raw=False)
         orch._matcher.execute_by_id.assert_not_called()
 
     def test_process_text_literal_blocked_goes_to_intent(self, mocker):
@@ -531,7 +536,8 @@ class TestOrchestrator:
         # process_text вернулся сразу, значит _enqueue_opencode не блокировал
         orch._opencode_queue.join()
         opencode.run.assert_called_once_with(
-            "пожалуйста расскажи", abort_event=orch._abort_playback)
+            "пожалуйста расскажи",
+            abort_event=orch._abort_playback, raw=False)
 
     def test_opencode_worker_discards_on_abort(self, mocker):
         """Ответ opencode, пришедший после стоп-слова, не печатается."""
@@ -585,3 +591,67 @@ class TestOrchestrator:
         orch.stop()
         assert orch._abort_playback.is_set()
         assert orch.speaking is False
+
+    def test_dev_mode_disabled_by_default(self, mocker):
+        """Режим разработки по умолчанию выключен."""
+        orch = self._make(mocker)
+        assert orch.dev_mode is False
+
+    def test_dev_mode_enable_phrase_switches_on(self, mocker):
+        """«режим разработки» включает dev-режим и подтверждает голосом."""
+        orch = self._make(mocker)
+        orch._matcher.core_phrase.return_value = DEV_MODE_ENABLE_PHRASE
+        spy = mocker.patch.object(orch, "_speak_async")
+        orch.process_text("пожалуйста " + DEV_MODE_ENABLE_PHRASE)
+        assert orch.dev_mode is True
+        spy.assert_called_once()
+        assert "Режим разработки" in spy.call_args.args[0]
+        orch._matcher.has_trigger.assert_not_called()
+
+    def test_dev_mode_enable_phrase_toggles_off(self, mocker):
+        """Повтор фразы выключает dev-режим."""
+        orch = self._make(mocker)
+        orch._dev_mode = True
+        orch._matcher.core_phrase.return_value = DEV_MODE_ENABLE_PHRASE
+        orch.process_text(DEV_MODE_ENABLE_PHRASE)
+        assert orch.dev_mode is False
+
+    def test_dev_mode_forwards_raw_to_opencode(self, mocker):
+        """В dev-режиме любые фразы идут в opencode с raw=True, без матчера."""
+        opencode = mocker.MagicMock()
+        opencode.run.return_value = "Ответ"
+        orch = self._make(mocker, opencode=opencode)
+        orch._dev_mode = True
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.missing_requires.return_value = []
+        orch._abort_playback = mocker.MagicMock()
+        orch._abort_playback.is_set.return_value = False
+        orch.process_text("проверь последние логи и исправь ошибку")
+        orch._opencode_queue.join()
+        orch._matcher.execute_by_id.assert_not_called()
+        opencode.run.assert_called_once_with(
+            "проверь последние логи и исправь ошибку",
+            abort_event=orch._abort_playback, raw=True)
+
+    def test_dev_mode_stop_alarm_exits(self, mocker):
+        """«стоп будильник» в dev-режиме вызывает on_exit."""
+        exited = {}
+        on_exit = mocker.MagicMock(side_effect=lambda: exited.update(done=True))
+        orch = self._make(mocker, on_exit=on_exit)
+        orch._dev_mode = True
+        orch._matcher.core_phrase.return_value = DEV_MODE_EXIT_PHRASE
+        orch.process_text(DEV_MODE_EXIT_PHRASE)
+        assert exited.get("done") is True
+        orch._matcher.has_trigger.assert_not_called()
+
+    def test_dev_mode_stop_alarm_ignored_when_off(self, mocker):
+        """Вне dev-режима «стоп будильник» идёт обычным путём, без on_exit."""
+        on_exit = mocker.MagicMock()
+        orch = self._make(mocker, on_exit=on_exit)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.core_phrase.return_value = DEV_MODE_EXIT_PHRASE
+        orch.process_text(DEV_MODE_EXIT_PHRASE)
+        on_exit.assert_not_called()
+        assert orch.dev_mode is False

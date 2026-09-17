@@ -19,6 +19,10 @@ from lib.commands import CommandMatcher
 from lib.output import TranscriptionOutput
 from lib.opencode_cli import OpenCodeCliRunner
 
+# Управляющие фразы режима разработки (детерминированы, без матчера).
+DEV_MODE_ENABLE_PHRASE = "режим разработки"
+DEV_MODE_EXIT_PHRASE = "стоп будильник"
+
 
 class Orchestrator:
     """Детерминированный слой принятия решений для распознанного текста."""
@@ -36,6 +40,7 @@ class Orchestrator:
         intent: Any = None,
         aliases: Optional[AliasStore] = None,
         opencode: Optional[OpenCodeCliRunner] = None,
+        on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
@@ -46,13 +51,20 @@ class Orchestrator:
         self._intent = intent or None
         self._aliases = aliases or None
         self._opencode = opencode or None
+        self._on_exit = on_exit or None
+        self._dev_mode = False
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
         self._last_resolution: Optional[tuple[str, str]] = None
-        self._opencode_queue: queue.Queue[Optional[str]] = queue.Queue()
+        self._opencode_queue: queue.Queue[tuple[str, bool]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
+
+    @property
+    def dev_mode(self) -> bool:
+        """Включён ли режим разработки (все фразы → модель напрямую)."""
+        return self._dev_mode
 
     @property
     def speaking(self) -> bool:
@@ -78,6 +90,15 @@ class Orchestrator:
             return
         if self._opencode_active and self.maybe_abort(text):
             # Пока opencode думает, стоп-слово только отменяет ожидаемый ответ
+            return
+        if self._handle_dev_mode_controls(text):
+            return
+        if self._dev_mode:
+            # Режим разработки: все фразы напрямую в модель, без матчера.
+            self._output.print_text(text)
+            self._output.print_info(
+                "[DevMode] Фраза передана в модель напрямую")
+            self._enqueue_opencode(text, raw=True)
             return
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
@@ -137,12 +158,46 @@ class Orchestrator:
         self._output.print_info("... отправка запроса в opencode-cli (фон)")
         self._enqueue_opencode(text)
 
-    def _enqueue_opencode(self, text: str) -> None:
-        """Ставит текст в фоновую очередь console opencode."""
+    def _handle_dev_mode_controls(self, text: str) -> bool:
+        """Управляющие фразы режима разработки.
+
+        «режим разработки» — включить/выключить, «стоп будильник» внутри
+        dev-режима — полный выход из приложения (on_exit). Возвращает True,
+        если фраза была управляющей и обработана здесь.
+        """
+        core = self._matcher.core_phrase(text) if self._aliases is not None \
+            else text.strip()
+        low = (core or text).lower()
+
+        if DEV_MODE_ENABLE_PHRASE in low:
+            self._dev_mode = not self._dev_mode
+            if self._dev_mode:
+                self._output.print_info("[DevMode] Включён")
+                self._say("Режим разработки. Все фразы идут напрямую")
+            else:
+                self._output.print_info("[DevMode] Выключен")
+                self._say("Режим разработки выключен")
+            return True
+
+        if self._dev_mode and DEV_MODE_EXIT_PHRASE in low:
+            self._output.print_info("[DevMode] Выход из приложения")
+            if self._on_exit is not None:
+                self._on_exit()
+            else:
+                self._say("Выход не настроен")
+            return True
+
+        return False
+
+    def _enqueue_opencode(self, text: str, raw: bool = False) -> None:
+        """Ставит текст в фоновую очередь console opencode.
+
+        raw=True — dev-режим: текст передаётся модели без BASE_PROMPT-обёртки.
+        """
         if self._opencode is None:
             self._output.print_error("[OpenCode] Раннер не настроен")
             return
-        self._opencode_queue.put(text)
+        self._opencode_queue.put((text, raw))
         self._ensure_opencode_worker()
 
     def _drain_opencode_queue(self) -> None:
@@ -169,19 +224,21 @@ class Orchestrator:
     def _opencode_worker_loop(self) -> None:
         """Фоновый воркер: обрабатывает запросы из очереди."""
         while True:
-            text = self._opencode_queue.get()
+            text, raw = self._opencode_queue.get()
             started = time.monotonic()
             try:
                 self._opencode_active = True
+                label = " (dev)" if raw else ""
                 self._output.print_info(
-                    f"[OpenCode] Выполняю в фоне: «{text[:60]}...»"
-                    if len(text) > 60 else f"[OpenCode] Выполняю: «{text}»"
+                    f"[OpenCode] Выполняю в фоне{label}: «{text[:60]}...»"
+                    if len(text) > 60 else f"[OpenCode] Выполняю{label}: «{text}»"
                 )
                 if self._abort_playback.is_set():
                     self._output.print_debug(
                         "[OpenCode] Запрос отменён (стоп)")
                     continue
-                answer = self._opencode.run(text, abort_event=self._abort_playback)
+                answer = self._opencode.run(
+                    text, abort_event=self._abort_playback, raw=raw)
                 if self._abort_playback.is_set():
                     self._output.print_debug(
                         "[OpenCode] Ответ отменён (стоп)")

@@ -168,6 +168,7 @@ class TranscriptionWorker:
             stop_words=STOP_WORDS,
             suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
             intent=intent,
+            on_exit=self._dev_mode_exit,
         )
 
         # Алиасы (база соответствий П6.0, всегда активны — детерминированы)
@@ -263,6 +264,12 @@ class TranscriptionWorker:
     def _process_text(self, text: str) -> None:
         """Обрабатывает распознанный текст через оркестратор."""
         self._orchestrator.process_text(text)
+
+    def _dev_mode_exit(self) -> None:
+        """Выход из приложения по голосовой команде (режим разработки)."""
+        self._output.print_info("[DevMode] Выход из приложения")
+        self.stop()
+        os._exit(0)
 
     def stop(self):
         self._running.clear()

@@ -59,7 +59,11 @@ def _find_opencode_exe() -> Optional[str]:
 
 
 class OpenCodeCliRunner:
-    """Запускает console opencode в cli/ с текстом команды пользователя."""
+    """Запускает console opencode в cli/ с текстом команды пользователя.
+
+    В dev-режиме (raw=True) opencode запускается из корня проекта (REPO_ROOT)
+    и получает текст пользователя напрямую, без BASE_PROMPT-обёртки.
+    """
 
     def __init__(
         self,
@@ -80,25 +84,36 @@ class OpenCodeCliRunner:
         return base + ["run", "--standalone", "--model", self._model, prompt]
 
     def run(self, text: str,
-            abort_event: Optional[threading.Event] = None) -> Optional[str]:
+            abort_event: Optional[threading.Event] = None,
+            raw: bool = False,
+            verbose: Optional[bool] = None) -> Optional[str]:
         """Выполняет команду через console opencode и возвращает текст ответа.
 
+        raw=False: рабочий каталог cli/, текст оборачивается в BASE_PROMPT.
+        raw=True (dev-режим): рабочий каталог корень проекта, текст передаётся
+        модели без обёртки. verbose=True (по умолчанию = raw) — вывод CLI
+        стримится в консоль построчно в реальном времени и итог возвращается
+        без шумовой фильтрации, чтобы был виден сырой ответ и ошибки агента.
         Возвращает None при провале запуска, таймауте или отмене (стоп).
         """
+        if verbose is None:
+            verbose = raw
         text = (text or "").strip()
         if not text:
             return None
-        if not os.path.isdir(self._cli_dir):
+        run_dir = REPO_ROOT if raw else self._cli_dir
+        if not os.path.isdir(run_dir):
             self._output.print_error(
-                f"[OpenCode] Папка cli не найдена: {self._cli_dir}")
+                f"[OpenCode] Рабочая папка не найдена: {run_dir}")
             return None
-        prompt = BASE_PROMPT.format(text=text)
+        prompt = text if raw else BASE_PROMPT.format(text=text)
         cmd = self._build_command(prompt)
         self._output.print_info(
-            f"[OpenCode] Запуск: opencode run --model {self._model} ...")
+            f"[OpenCode] Запуск: opencode run --model {self._model} "
+            f"(cwd: {run_dir}{', raw' if raw else ''})")
 
         kwargs = {
-            "cwd": self._cli_dir,
+            "cwd": run_dir,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,
             "text": True,
@@ -128,6 +143,11 @@ class OpenCodeCliRunner:
                     if not line:
                         break
                     chunks.append(line)
+                    if verbose:
+                        text_line = _strip_ansi(line).rstrip("\r\n")
+                        if text_line.strip():
+                            self._output.print_info(
+                                f"[OpenCode>>] {text_line}")
             except Exception:
                 pass
 
@@ -144,6 +164,7 @@ class OpenCodeCliRunner:
                     if time.monotonic() >= deadline:
                         self._output.print_error(
                             f"[OpenCode] Таймаут {int(self._timeout)}с")
+                        self._dump_partial(chunks, verbose)
                         return None
                     time.sleep(0.2)
                     continue
@@ -164,7 +185,27 @@ class OpenCodeCliRunner:
         if abort_event is not None and abort_event.is_set():
             self._output.print_info("[OpenCode] Ответ отменён (стоп)")
             return None
+        if verbose:
+            # Dev-режим: без шумовой фильтрации, чтобы было видно,
+            # что именно отвечает opencode и где ошибки.
+            return _strip_ansi("".join(chunks)).strip() or None
         return self._clean("".join(chunks))
+
+    def _dump_partial(self, chunks: list[str], verbose: bool) -> None:
+        """Показывает накопленный вывод CLI при таймауте (dev-режим)."""
+        raw = _strip_ansi("".join(chunks))
+        if not raw.strip():
+            return
+        if verbose:
+            self._output.print_info(
+                "[OpenCode] Вывод до таймаута:")
+            for line in raw.splitlines():
+                text_line = line.rstrip("\r\n")
+                if text_line.strip():
+                    self._output.print_info(f"[OpenCode>>] {text_line}")
+        else:
+            self._output.print_debug(
+                f"[OpenCode] Вывод до таймаута:\n{raw}")
 
     def _clean(self, output: str) -> str:
         """Причёсывает вывод: ANSI, пустые подсказки, мусорные строки.
