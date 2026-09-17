@@ -110,6 +110,39 @@ class TestProviderManager:
         assert client._history_limit == 7
         assert client._base_url == "http://example.com"
 
+    def test_get_client_merges_options_defaults(self, tmp_path):
+        """Поле options из конфига провайдера передаётся в конструктор."""
+        providers = [
+            {
+                "id": "race",
+                "name": "Race(omni+lmstudio)",
+                "module": "lib.providers.race",
+                "class": "RaceClient",
+                "options": {"omni_model": "auto/best-fast"},
+            }
+        ]
+        path = _write_config(tmp_path, active="race", providers=providers)
+        manager = ProviderManager(path)
+        client = manager.get_client(history_limit=5)
+        assert client._omni._model == "auto/best-fast"
+        assert client._history_limit == 5
+
+    def test_get_client_kwargs_override_options(self, tmp_path):
+        """Явные kwargs перекрывают options из конфига."""
+        providers = [
+            {
+                "id": "race",
+                "name": "Race(omni+lmstudio)",
+                "module": "lib.providers.race",
+                "class": "RaceClient",
+                "options": {"omni_model": "auto/best-fast"},
+            }
+        ]
+        path = _write_config(tmp_path, active="race", providers=providers)
+        manager = ProviderManager(path)
+        client = manager.get_client(omni_model="custom/model")
+        assert client._omni._model == "custom/model"
+
     def test_get_client_unknown_active_raises(self, tmp_path):
         """Активный id без записи в providers вызывает ValueError."""
         path = _write_config(tmp_path, active="ghost", providers=_DEFAULT_PROVIDERS)

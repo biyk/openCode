@@ -17,7 +17,10 @@
             "id": "race",
             "name": "Race(omni+lmstudio)",
             "class": "RaceClient",
-            "module": "lib.providers.race"
+            "module": "lib.providers.race",
+            "options": {
+                "omni_model": "auto/best-fast"
+            }
         }
     ]
 }

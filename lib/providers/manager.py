@@ -68,6 +68,10 @@ class ProviderManager:
 
         module = importlib.import_module(provider_config["module"])
         client_class = getattr(module, provider_config["class"])
-        client = client_class(**kwargs)
+        # Опции из конфига провайдера (поле "options") — дефолты для
+        # конструктора; явные kwargs из кода имеют приоритет.
+        merged_kwargs = dict(provider_config.get("options", {}))
+        merged_kwargs.update(kwargs)
+        client = client_class(**merged_kwargs)
         self._providers[self._active_provider_id] = client
         return client
