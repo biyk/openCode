@@ -3,7 +3,7 @@
 Пайплайн: commands.json (дословно+алиасы) → mini-LLM (intent) →
 console opencode (opencode-cli со скиллами). Плюс режим разработки:
 «режим разработки» включает pass-through всех фраз в модель напрямую,
-«стоп будильник» внутри dev-режима завершает приложение.
+«будильник» внутри dev-режима завершает приложение.
 """
 
 import time
@@ -635,7 +635,7 @@ class TestOrchestrator:
             abort_event=orch._abort_playback, raw=True)
 
     def test_dev_mode_stop_alarm_exits(self, mocker):
-        """«стоп будильник» в dev-режиме вызывает on_exit."""
+        """«будильник» в dev-режиме вызывает on_exit."""
         exited = {}
         on_exit = mocker.MagicMock(side_effect=lambda: exited.update(done=True))
         orch = self._make(mocker, on_exit=on_exit)
@@ -646,7 +646,7 @@ class TestOrchestrator:
         orch._matcher.has_trigger.assert_not_called()
 
     def test_dev_mode_stop_alarm_ignored_when_off(self, mocker):
-        """Вне dev-режима «стоп будильник» идёт обычным путём, без on_exit."""
+        """Вне dev-режима «будильник» идёт обычным путём, без on_exit."""
         on_exit = mocker.MagicMock()
         orch = self._make(mocker, on_exit=on_exit)
         orch._matcher.has_trigger.return_value = True

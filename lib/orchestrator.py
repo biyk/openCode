@@ -21,7 +21,7 @@ from lib.opencode_cli import OpenCodeCliRunner
 
 # Управляющие фразы режима разработки (детерминированы, без матчера).
 DEV_MODE_ENABLE_PHRASE = "режим разработки"
-DEV_MODE_EXIT_PHRASE = "стоп будильник"
+DEV_MODE_EXIT_PHRASE = "будильник"
 
 
 class Orchestrator:
@@ -161,7 +161,7 @@ class Orchestrator:
     def _handle_dev_mode_controls(self, text: str) -> bool:
         """Управляющие фразы режима разработки.
 
-        «режим разработки» — включить/выключить, «стоп будильник» внутри
+        «режим разработки» — включить/выключить, «будильник» внутри
         dev-режима — полный выход из приложения (on_exit). Возвращает True,
         если фраза была управляющей и обработана здесь.
         """
