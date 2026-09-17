@@ -1,9 +1,12 @@
 """Оркестратор обработки голосового ввода (детерминированное ядро).
 
-Решает, на каком уровне обрабатывать распознанный текст: стоп-слово во время
-озвучки, готовая команда, скилл или запрос к LLM. Сюда же подключаются будущие слои
-(мини-LLM, большая LLM, модель-контролёр), не затрагивая ядро
-распознавания в main.py.
+Решает, на каком из трёх уровней обрабатывать распознанный текст:
+1. commands.json (дословное совпадение + алиасы),
+2. mini-LLM (интеллектуальный классификатор команд),
+3. console opencode (opencode-cli в cli/, использует скиллы).
+
+Большой чат LLM убран: фолбэк уходит в консольный opencode, который сам
+выполняет команду и озвучивает результат через скилл speak-answer.
 """
 
 import queue
@@ -14,9 +17,7 @@ from typing import Any, Callable, Optional
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
 from lib.output import TranscriptionOutput
-from lib.plans import PlansHandler
-from lib.reminders import ReminderHandler
-from lib.skills import SkillRegistry
+from lib.opencode_cli import OpenCodeCliRunner
 
 
 class Orchestrator:
@@ -26,7 +27,6 @@ class Orchestrator:
         self,
         matcher: CommandMatcher,
         output: TranscriptionOutput,
-        llm: Any,
         tts: Any,
         stop_words: frozenset[str] = frozenset(
             ("стоп", "останови", "stop", "хватит", "прекрати")
@@ -34,30 +34,25 @@ class Orchestrator:
         suppress_after: float = 0.5,
         clear_speech_buffer: Optional[Callable[[], None]] = None,
         intent: Any = None,
-        skills: Optional[SkillRegistry] = None,
         aliases: Optional[AliasStore] = None,
-        reminders: Optional[ReminderHandler] = None,
-        plans: Optional[PlansHandler] = None,
+        opencode: Optional[OpenCodeCliRunner] = None,
     ) -> None:
         self._matcher = matcher
         self._output = output
-        self._llm = llm
         self._tts = tts
         self._stop_words = stop_words
         self._suppress_after = suppress_after
         self._clear_speech_buffer = clear_speech_buffer or (lambda: None)
         self._intent = intent or None
-        self._skills = skills or None
         self._aliases = aliases or None
-        self._reminders = reminders or None
-        self._plans = plans or None
+        self._opencode = opencode or None
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
         self._last_resolution: Optional[tuple[str, str]] = None
-        self._llm_queue: queue.Queue[Optional[str]] = queue.Queue()
-        self._llm_worker: Optional[threading.Thread] = None
-        self._llm_active = False
+        self._opencode_queue: queue.Queue[Optional[str]] = queue.Queue()
+        self._opencode_worker: Optional[threading.Thread] = None
+        self._opencode_active = False
 
     @property
     def speaking(self) -> bool:
@@ -81,8 +76,8 @@ class Orchestrator:
         if self._speaking:
             self.maybe_abort(text)
             return
-        if self._llm_active and self.maybe_abort(text):
-            # Пока LLM думает, стоп-слово только отменяет ожидаемый ответ
+        if self._opencode_active and self.maybe_abort(text):
+            # Пока opencode думает, стоп-слово только отменяет ожидаемый ответ
             return
         if not self._matcher.has_trigger(text):
             self._output.print_text(text)
@@ -91,12 +86,6 @@ class Orchestrator:
         self._output.print_text(text)
         # 0. Мета-команды обучения алиасов («запомни»/«забудь»).
         if self._aliases is not None and self._handle_memory_command(text):
-            return
-        # 0.5. Напоминания («напомни через 3 часа ...») — в Google Calendar.
-        if self._reminders is not None and self._handle_reminder(text):
-            return
-        # 0.7. Планы на день («что у меня сейчас по планам») — из календаря.
-        if self._plans is not None and self._handle_plans(text):
             return
         # 1. Дословное совпадение — запускаем сразу.
         literal_id = self._matcher.find_literal_id(text)
@@ -122,8 +111,7 @@ class Orchestrator:
                     self._matcher.execute_by_id(alias_id)
                     return
                 blocked = [(alias_id, missing)]
-        # 2. Не дословно — пусть разбирается LLM: отдаём ей триггеры,
-        #    команды, статусы и заблокированных кандидатов.
+        # 2. Не дословно — мини-LLM классификатор команд.
         if self._intent is not None:
             detected = self._intent.detect(text, self._llm_context(blocked))
             if detected is not None:
@@ -142,81 +130,79 @@ class Orchestrator:
                     f"[Mini] Команда «{detected}» не найдена"
                 )
                 return
-        # Проверка скиллов (после intent, до LLM)
-        if self._skills is not None:
-            skill_name = self._skills.match(text)
-            if skill_name is not None:
-                self._output.print_info(f"[Skill] Распознан скилл: {skill_name}")
-                if self._skills.execute(skill_name):
-                    self._output.print_text(f"Скилл выполнен: {skill_name}")
-                    return
-                self._output.print_error(f"[Skill] Ошибка исполнения: {skill_name}")
-                return
         self._output.print_debug(
-            f"[LLM Decision] Trigger found, no command match, no intent match, no skill match. "
-            f"Sending to LLM. Text: {text}"
+            f"[OpenCode Decision] No literal, no alias, no intent match. "
+            f"Sending to opencode-cli. Text: {text}"
         )
-        self._output.print_info("... отправка запроса LLM (фон)")
-        self._enqueue_llm(text)
+        self._output.print_info("... отправка запроса в opencode-cli (фон)")
+        self._enqueue_opencode(text)
 
-    def _enqueue_llm(self, text: str) -> None:
-        """Ставит текст в фоновую очередь LLM."""
-        self._llm_queue.put(text)
-        self._ensure_llm_worker()
+    def _enqueue_opencode(self, text: str) -> None:
+        """Ставит текст в фоновую очередь console opencode."""
+        if self._opencode is None:
+            self._output.print_error("[OpenCode] Раннер не настроен")
+            return
+        self._opencode_queue.put(text)
+        self._ensure_opencode_worker()
 
-    def _drain_llm_queue(self) -> None:
-        """Выбрасывает накопленные, но ещё не обработанные запросы LLM."""
+    def _drain_opencode_queue(self) -> None:
+        """Выбрасывает накопленные, но ещё не обработанные запросы opencode."""
         discarded = 0
         while True:
             try:
-                self._llm_queue.get_nowait()
+                self._opencode_queue.get_nowait()
                 discarded += 1
             except Exception:
                 break
         if discarded:
-            self._output.print_debug(f"[LLM] Отброшено запросов: {discarded}")
+            self._output.print_debug(
+                f"[OpenCode] Отброшено запросов: {discarded}")
 
-    def _ensure_llm_worker(self) -> None:
+    def _ensure_opencode_worker(self) -> None:
         """Запускает воркер, если он ещё не создан."""
-        if self._llm_worker is not None:
+        if self._opencode_worker is not None:
             return
-        self._llm_worker = threading.Thread(
-            target=self._llm_worker_loop, daemon=True)
-        self._llm_worker.start()
+        self._opencode_worker = threading.Thread(
+            target=self._opencode_worker_loop, daemon=True)
+        self._opencode_worker.start()
 
-    def _llm_worker_loop(self) -> None:
+    def _opencode_worker_loop(self) -> None:
         """Фоновый воркер: обрабатывает запросы из очереди."""
         while True:
-            text = self._llm_queue.get()
+            text = self._opencode_queue.get()
+            started = time.monotonic()
             try:
-                self._llm_active = True
+                self._opencode_active = True
+                self._output.print_info(
+                    f"[OpenCode] Выполняю в фоне: «{text[:60]}...»"
+                    if len(text) > 60 else f"[OpenCode] Выполняю: «{text}»"
+                )
                 if self._abort_playback.is_set():
-                    self._output.print_debug("[LLM] Запрос отменён (стоп)")
+                    self._output.print_debug(
+                        "[OpenCode] Запрос отменён (стоп)")
                     continue
-                answer = self._llm.ask(text)
+                answer = self._opencode.run(text, abort_event=self._abort_playback)
                 if self._abort_playback.is_set():
-                    self._output.print_debug("[LLM] Ответ отменён (стоп)")
+                    self._output.print_debug(
+                        "[OpenCode] Ответ отменён (стоп)")
                     continue
                 if not answer:
-                    self._output.print_error("[LLM] Ошибка ответа")
-                    self._output.print_text(text)
+                    self._output.print_error(
+                        "[OpenCode] Пустой ответ агента (возможно, таймаут "
+                        "или opencode не смог выполнить команду)")
                     continue
-                self._output.print_debug(f"[LLM] Ответ: {answer}")
-                # Ждём, пока предыдущая озвучка не закончится (одна голосовая
-                # линия), чтобы ответы не накладывались друг на друга.
-                while self._speaking and not self._abort_playback.is_set():
-                    time.sleep(0.05)
-                if self._abort_playback.is_set():
-                    self._output.print_debug("[LLM] Ответ отменён (стоп)")
-                    continue
-                self._speaking = True
-                self._abort_playback.clear()
-                self._speak_async(answer)
+                elapsed = time.monotonic() - started
+                # Результат — в консоль (только читаемый итог), подробности — в лог
+                self._output.print_info(
+                    f"[OpenCode] Итог ({elapsed:.0f}с): {answer}")
+                self._output.print_debug(
+                    f"[OpenCode] Ответ (сводка): {answer}")
             except Exception as e:
-                self._output.print_error(f"[LLM] Ошибка фонового запроса: {e}")
+                self._output.print_error(
+                    f"[OpenCode] Ошибка фонового запроса: {e}")
             finally:
-                self._llm_active = False
-                self._llm_queue.task_done()
+                self._opencode_active = False
+                self._opencode_queue.task_done()
 
     def _remember_candidate(self, text: str, cmd_id: str,
                             literal_id: Optional[str]) -> None:
@@ -307,57 +293,6 @@ class Orchestrator:
         else:
             self._say("Такого не помню")
 
-    def _handle_reminder(self, text: str) -> bool:
-        """Обрабатывает напоминания. Возвращает True, если текст — напоминание."""
-        assert self._reminders is not None
-        if not self._reminders.is_reminder(text):
-            return False
-        self._output.print_info("[Reminder] Распознано напоминание")
-        spec = self._reminders.create(text)
-        if spec is None:
-            self._say("Не поняла, что напомнить")
-            return True
-        event_id = self._reminders.add_event(spec)
-        if event_id is None:
-            self._output.print_error("[Google] Ошибка создания напоминания")
-            if not self._reminders.auth_ready():
-                self._say("Для напоминаний нужна авторизация Google. "
-                          "Скажи \"авторизация\".")
-            else:
-                self._say("Не получилось создать напоминание — проверь "
-                          "авторизацию Google")
-            return True
-        when_str = spec.when.strftime("%d.%m %H:%M")
-        message = f"Напомню {when_str}: {spec.text}"
-        self._output.print_info(f"[Google] Создано: {message} (event {event_id})")
-        self._say(message)
-        return True
-
-    def _handle_plans(self, text: str) -> bool:
-        """Обрабатывает запрос планов. Возвращает True, если это он."""
-        assert self._plans is not None
-        if not self._plans.is_plans_query(text):
-            return False
-        self._output.print_info("[Plans] Запрос планов распознан")
-        if not self._plans.auth_ready():
-            self._say("Для планов нужна авторизация Google. "
-                      "Скажи \"авторизация\".")
-            return True
-        task = self._plans.current_task()
-        if task is None:
-            self._say("По планам сейчас ничего нет")
-            return True
-        summary = task.get("summary") or "задача"
-        start = task.get("start")
-        if start is not None:
-            time_str = start.strftime("%H:%M")
-            message = f"Сейчас по планам: {summary} в {time_str}"
-        else:
-            message = f"Сейчас по планам: {summary}"
-        self._output.print_info(f"[Plans] Актуальная задача: {message}")
-        self._say(message)
-        return True
-
     def _llm_context(self,
                      blocked: list[tuple[str, list[str]]]) -> dict:
         """Контекст для LLM-классификатора: триггеры, команды, статусы."""
@@ -382,12 +317,12 @@ class Orchestrator:
         self._speak_async(message)
 
     def maybe_abort(self, text: str) -> bool:
-        """Прерывает озвучку или ожидающий ответ LLM, если есть стоп-слово.
+        """Прерывает озвучку или ожидающий ответ opencode, если есть стоп-слово.
 
         Возвращает True, если процесс был прерван. Используется для
         финальных и частичных результатов распознавания.
         """
-        if not self._speaking and not self._llm_active:
+        if not self._speaking and not self._opencode_active:
             return False
         tokens = text.lower().split()
         if not any(token in self._stop_words for token in tokens):
@@ -396,7 +331,7 @@ class Orchestrator:
         if self._speaking:
             self._output.print_info("[TTS] Озвучка прервана")
         else:
-            self._output.print_info("[LLM] Ожидаемый ответ отменён")
+            self._output.print_info("[OpenCode] Ожидаемый ответ отменён")
         return True
 
     def _speak_async(self, answer: str) -> None:
@@ -418,6 +353,6 @@ class Orchestrator:
         self._clear_speech_buffer()
 
     def stop(self) -> None:
-        """Прерывает активное воспроизведение TTS и очищает очередь LLM."""
+        """Прерывает активное воспроизведение TTS и очищает очередь opencode."""
         self._abort_playback.set()
-        self._drain_llm_queue()
+        self._drain_opencode_queue()

@@ -42,6 +42,8 @@ python main.py
 - `lib/google_calendar.py` — reminders are **Calendar events** (not Tasks). Uses OAuth (`credentials.json` + `token.json`, token in .gitignore).
 - `lib/reminders.py` — «напомни мне …» parsing is deterministic; if time missing → **+60 минут**.
 - `lib/google_calendar.py` checks token scope by reading `token.json` scopes; if `calendar.events` missing → starts interactive consent.
+- `lib/google_tasks.py` — **tasks** («добавь задачу …») are items in Google Tasks (default list `@default`), created via `lib/tasks.py::TaskHandler`. Uses the same `token.json`; scope `tasks` + `calendar.events` requested together so re-auth does not break reminders.
+- Feature flag: `google.tasks.enabled` in `targets/<host>/commands.json` (wired in `main.py`), orchestrator step 0.6 in `lib/orchestrator.py`.
 
 ## 4. Audio + stop words
 - `TranscriptionWorker` keeps recording mic audio while TTS plays (stop-word recognition stays active).

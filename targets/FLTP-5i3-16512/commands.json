@@ -65,10 +65,8 @@
         "enabled": true,
         "include_media": true
     },
-    "google": {
-        "enabled": true
-    },
-    "skills": {
-        "enabled": true
+    "opencode_cli": {
+        "enabled": true,
+        "model": "omnirouter/auto/tools"
     }
 }

@@ -19,7 +19,7 @@ This is the exact behavior of `PlansHandler` in `lib/plans.py`, triggered by phr
 Read the current task directly (handles auth check):
 
 ```python
-python -c "
+cd C:\Users\b5\Desktop\voice; python -c "
 from lib.plans import PlansHandler
 h = PlansHandler()
 print('auth_ready:', h.auth_ready())
@@ -30,7 +30,7 @@ print('task:', h.current_task())
 Or list pending events to double-check:
 
 ```powershell
-python -m lib.google_calendar list --limit 10
+cd C:\Users\b5\Desktop\voice; python -m lib.google_calendar list --limit 10
 ```
 
 ## Notes

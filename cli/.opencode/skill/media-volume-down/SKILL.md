@@ -19,7 +19,7 @@ This is the exact action behind the voice command `volumedown` in `targets/FLTP-
 Run the volume-down script for the active host:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "targets/FLTP-5i3-16512/commands/volumedown.ps1"
+cd C:\Users\b5\Desktop\voice; powershell -ExecutionPolicy Bypass -File "targets/FLTP-5i3-16512/commands/volumedown.ps1"
 ```
 
 Verify that the host matches `platform.node()`; if the host differs, locate the script under `targets/<node>/commands/` or fall back to the default `targets/commands.json` definition.

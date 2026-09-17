@@ -19,14 +19,14 @@ This is the exact action behind the voice commands `youtube_news` and `news` (se
 Play the "новости" query directly:
 
 ```powershell
-python -m lib.browser_control youtube-play "новости"
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control youtube-play "новости"
 ```
 
 For the full `news` sequence, run the two steps in order:
 
 ```powershell
-python -m lib.browser_control open-url "https://youtube.com"
-python -m lib.browser_control youtube-play "новости"
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control open-url "https://youtube.com"
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control youtube-play "новости"
 ```
 
 ## Notes

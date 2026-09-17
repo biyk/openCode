@@ -472,10 +472,7 @@ class TestMainEntryPoint:
             def get_intent_config(self):
                 return {}
 
-            def get_skills_config(self):
-                return {}
-
-            def get_google_config(self):
+            def get_opencode_cli_config(self):
                 return {}
 
             def match_config(self):

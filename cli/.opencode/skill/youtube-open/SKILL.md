@@ -17,14 +17,14 @@ This is the exact action behind the voice command `openyoutube` in `targets/FLTP
 ## How to execute
 
 ```powershell
-python -m lib.browser_control open-url "https://youtube.com"
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control open-url "https://youtube.com"
 ```
 
 Check readiness first if needed:
 
 ```powershell
-python -m lib.browser_control status
-python -m lib.browser_control tabs
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control status
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control tabs
 ```
 
 ## Notes

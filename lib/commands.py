@@ -172,6 +172,10 @@ class CommandMatcher:
         """Возвращает конфигурацию скиллов."""
         return self._data.get("skills", {})
 
+    def get_opencode_cli_config(self) -> dict:
+        """Возвращает конфигурацию фолбэка в console opencode."""
+        return self._data.get("opencode_cli", {})
+
     def get_google_config(self) -> dict:
         """Возвращает конфигурацию интеграции Google (calendar/tasks)."""
         return self._data.get("google", {})

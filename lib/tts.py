@@ -1,6 +1,8 @@
+import base64
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -314,3 +316,44 @@ class TextToSpeech:
             self._speak_and_play_single(text, on_finished, abort_event)
         else:
             self._speak_and_play_pipeline(text, on_finished, abort_event)
+
+
+def _decode_arg(raw: str) -> str:
+    """Декодирует аргумент CLI: --b64:<base64> или обычный текст.
+
+    base64 позволяет передать кириллицу и кавычки в python -m lib.tts
+    без проблем кодировки консоли Windows (cp1251 vs utf-8).
+    """
+    raw = raw.strip()
+    if raw.startswith("--b64:") or raw.startswith("--b64="):
+        payload = raw.split(":", 1)[1] if ":" in raw[:6] else raw[6:]
+        try:
+            return base64.b64decode(payload).decode("utf-8")
+        except Exception:
+            return raw
+    return raw
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """CLI: `python -m lib.tts "текст"` или `python -m lib.tts --b64:…`.
+
+    Аргументами служат фразы для озвучки; безопасно работает со
+    встроенными кавычками и кириллицей через base64.
+    """
+    args = argv if argv is not None else sys.argv[1:]
+    if not args:
+        print("usage: python -m lib.tts <текст> | --b64:<base64>")
+        return 2
+    text = " ".join(_decode_arg(a) for a in args)
+    try:
+        TextToSpeech().speak_and_play(text)
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:
+        print(f"[TTS] CLI: ошибка озвучки: {e}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

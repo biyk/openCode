@@ -19,7 +19,7 @@ This is the exact behavior of `ReminderHandler` in `lib/reminders.py` + `GoogleC
 From Python:
 
 ```python
-python -c "
+cd C:\Users\b5\Desktop\voice; python -c "
 from lib.reminders import ReminderHandler
 h = ReminderHandler()
 spec = h.create('напомни через 3 часа постирать бельё')

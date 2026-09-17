@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from lib.tts import TextToSpeech
+from lib.tts import TextToSpeech, _decode_arg, main
 
 
 class TestTextToSpeech:
@@ -581,3 +581,42 @@ class TestTextToSpeech:
         called = []
         tts.speak_and_play("", lambda: called.append(1))
         assert called == [1]
+
+
+class TestDecodeArg:
+    """Декодирование аргумента CLI озвучки."""
+
+    def test_plain_text_passthrough(self):
+        """Обычный текст без префикса возвращается как есть."""
+        assert _decode_arg("Задача выполнена") == "Задача выполнена"
+
+    def test_b64_with_quotes_and_cyrillic(self):
+        """Base64 сохраняет кавычки и кириллицу (проблема cp1251-консоли)."""
+        import base64
+        phrase = 'Нет задачи "починить лампочку" в списке'
+        arg = "--b64:" + base64.b64encode(phrase.encode("utf-8")).decode("ascii")
+        assert _decode_arg(arg) == phrase
+
+    def test_b64_bad_payload_falls_back(self):
+        """Некорректный base64 («123» не валиден) возвращает строку как есть."""
+        assert _decode_arg("--b64:123") == "--b64:123"
+
+
+class TestMainCli:
+    """CLI: python -m lib.tts."""
+
+    def test_no_args_returns_2(self):
+        assert main([]) == 2
+
+    @patch("lib.tts.TextToSpeech.speak_and_play")
+    def test_plain_arg_spoken(self, mock_speak):
+        assert main(["Задача выполнена"]) == 0
+        mock_speak.assert_called_once_with("Задача выполнена")
+
+    @patch("lib.tts.TextToSpeech.speak_and_play")
+    def test_b64_arg_decoded_and_spoken(self, mock_speak):
+        import base64
+        phrase = '"починить" лампочку'
+        arg = "--b64:" + base64.b64encode(phrase.encode("utf-8")).decode("ascii")
+        assert main([arg]) == 0
+        mock_speak.assert_called_once_with(phrase)

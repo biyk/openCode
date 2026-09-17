@@ -46,14 +46,11 @@ from lib.logger import Logger  # noqa: E402
 from lib.tts import TextToSpeech  # noqa: E402
 from lib.config_loader import get_device_commands_path  # noqa: E402
 from lib.orchestrator import Orchestrator  # noqa: E402
-from lib.skills import SkillRegistry, get_skills_dir  # noqa: E402
+from lib.opencode_cli import OpenCodeCliRunner  # noqa: E402
 from lib.intent import IntentClassifier  # noqa: E402
 from lib.media import is_media_playing  # noqa: E402
 from lib.status import StatusStore  # noqa: E402
 from lib.aliases import AliasStore  # noqa: E402
-from lib.reminders import ReminderHandler  # noqa: E402
-from lib.plans import PlansHandler  # noqa: E402
-from lib.google_calendar import GoogleCalendar  # noqa: E402
 from lib.providers.manager import ProviderManager  # noqa: E402
 
 import sounddevice as sd  # noqa: E402
@@ -167,34 +164,26 @@ class TranscriptionWorker:
         self._orchestrator = Orchestrator(
             matcher=self._matcher,
             output=self._output,
-            llm=self._llm,
             tts=self._tts,
             stop_words=STOP_WORDS,
             suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
             intent=intent,
-            skills=None,  # будет инициализирован ниже если включен
         )
-
-        # Skills (после создания оркестратора, чтобы skills имел доступ к output через оркестратор)
-        skills_config = self._matcher.get_skills_config()
-        if skills_config.get("enabled"):
-            skills = SkillRegistry(
-                skills_dir=str(get_skills_dir()),
-                logger=self._logger,
-            )
-            self._orchestrator._skills = skills
 
         # Алиасы (база соответствий П6.0, всегда активны — детерминированы)
         self._aliases = AliasStore(
             AliasStore.path_for_commands_file(commands_file))
         self._orchestrator._aliases = self._aliases
 
-        # Напоминания и планы (Google Calendar, флаг google.enabled)
-        google_config = self._matcher.get_google_config()
-        if google_config.get("enabled"):
-            google = GoogleCalendar()
-            self._orchestrator._reminders = ReminderHandler(google=google)
-            self._orchestrator._plans = PlansHandler(google=google)
+        # Фолбэк: console opencode (скиллы из cli/.opencode/skill),
+        # флаг opencode_cli.enabled в commands.json
+        opencode_config = self._matcher.get_opencode_cli_config()
+        if opencode_config.get("enabled"):
+            self._opencode = OpenCodeCliRunner(
+                model=opencode_config.get("model", "omnirouter/auto/tools"),
+                output=self._output,
+            )
+            self._orchestrator._opencode = self._opencode
 
     def audio_callback(self, indata, frames, time_info, status):
         """Обратный вызов sounddevice для каждого блока аудио.
