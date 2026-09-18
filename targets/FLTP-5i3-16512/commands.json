@@ -51,6 +51,18 @@
             "windows": "python -m lib.tasks create \"{{text}}\"",
             "default": "python -m lib.tasks create \"{{text}}\""
         },
+        "calendar-plans": {
+            "linux": "python -m lib.plans",
+            "windows": "python -m lib.plans",
+            "default": "python -m lib.plans",
+            "description": "показать текущее или ближайшее событие календаря"
+        },
+        "task-complete": {
+            "linux": "python -m lib.tasks complete \"{{text}}\"",
+            "windows": "python -m lib.tasks complete \"{{text}}\"",
+            "default": "python -m lib.tasks complete \"{{text}}\"",
+            "description": "отметить задачу выполненной"
+        },
         "diagnose": {
             "linux": "python -m lib.diagnose launch \"{{text}}\"",
             "windows": "python -m lib.diagnose launch \"{{text}}\"",
