@@ -2,14 +2,24 @@
     "triggers": ["пожалуйста", "алиса"],
     "commands": {
         "volumeup": {
-            "linux": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
-            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\"",
-            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\""
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ +{{step}}%",
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\" {{step}}",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumeup.ps1\" {{step}}",
+            "step": {
+                "linux": 10,
+                "windows": 6,
+                "default": 6
+            }
         },
         "volumedown": {
-            "linux": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
-            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\"",
-            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\""
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ -{{step}}%",
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\" {{step}}",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/volumedown.ps1\" {{step}}",
+            "step": {
+                "linux": 10,
+                "windows": 6,
+                "default": 6
+            }
         },
         "playpause": {
             "linux": "playerctl play-pause",
@@ -57,6 +67,16 @@
         "openyoutube": ["открой ютуб", "запусти ютуб", "включи ютуб"],
         "youtube_news": ["новости ютуб", "новости на ютубе"],
         "news": ["включи новости", "покажи новости", "запусти новости"]
+    },
+    "settings": {
+        "volumeup": {
+            "немного": {"step": 0.5},
+            "сильно": {"step": 2.0}
+        },
+        "volumedown": {
+            "немного": {"step": 0.5},
+            "сильно": {"step": 2.0}
+        }
     },
     "llm": {
         "history_limit": 10

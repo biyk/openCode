@@ -4,8 +4,16 @@
         "алиса"
     ],
     "commands": {
-        "volumeup": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
-        "volumedown": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
+        "volumeup": {
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ +{{step}}%",
+            "default": "pactl set-sink-volume @DEFAULT_SINK@ +{{step}}%",
+            "step": 10
+        },
+        "volumedown": {
+            "linux": "pactl set-sink-volume @DEFAULT_SINK@ -{{step}}%",
+            "default": "pactl set-sink-volume @DEFAULT_SINK@ -{{step}}%",
+            "step": 10
+        },
         "playpause": "playerctl play-pause",
         "stop": "playerctl stop"
     },
@@ -35,6 +43,16 @@
             "остановить",
             "выключи"
         ]
+    },
+    "settings": {
+        "volumeup": {
+            "немного": {"step": 0.5},
+            "сильно": {"step": 2.0}
+        },
+        "volumedown": {
+            "немного": {"step": 0.5},
+            "сильно": {"step": 2.0}
+        }
     },
     "llm": {
         "history_limit": 10

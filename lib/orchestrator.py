@@ -12,6 +12,7 @@
 import queue
 import threading
 import time
+from collections import deque
 from typing import Any, Callable, Optional
 
 from lib.aliases import AliasStore
@@ -22,6 +23,10 @@ from lib.opencode_cli import OpenCodeCliRunner
 # Управляющие фразы режима разработки (детерминированы, без матчера).
 DEV_MODE_ENABLE_PHRASE = "режим разработки"
 DEV_MODE_EXIT_PHRASE = "будильник"
+
+# Сколько последних строк потока держим для поиска команды уровня
+# commands.json (концепция «трёх строк»: над ключом / с ключом / после ключа).
+COMMAND_WINDOW_SIZE = 4
 
 
 class Orchestrator:
@@ -60,6 +65,8 @@ class Orchestrator:
         self._opencode_queue: queue.Queue[tuple[str, bool]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
+        self._window: deque[str] = deque(
+            maxlen=COMMAND_WINDOW_SIZE)
 
     @property
     def dev_mode(self) -> bool:
@@ -100,27 +107,42 @@ class Orchestrator:
                 "[DevMode] Фраза передана в модель напрямую")
             self._enqueue_opencode(text, raw=True)
             return
-        if not self._matcher.has_trigger(text):
-            self._output.print_text(text)
-            return
-        # Сначала выводим распознанный текст (с триггером) в консоль и лог
+        # Сначала выводим распознанный текст в консоль и лог
         self._output.print_text(text)
         # 0. Мета-команды обучения алиасов («запомни»/«забудь»).
-        if self._aliases is not None and self._handle_memory_command(text):
+        if (self._aliases is not None and self._matcher.has_trigger(text)
+                and self._handle_memory_command(text)):
             return
-        # 1. Дословное совпадение — запускаем сразу.
-        literal_id = self._matcher.find_literal_id(text)
+        # 1. Команды commands.json — концепция «трёх строк».
+        self._window.append(text)
+        cmd_id, settings, wait = self._matcher.find_command(
+            list(self._window))
+        if wait:
+            # Ключ есть, команды вокруг него нет — ждём следующую строку.
+            self._output.print_debug(
+                "[Command] Ключ без команды — ждём следующую строку")
+            return
         blocked: list[tuple[str, list[str]]] = []
-        if literal_id is not None:
-            missing = self._matcher.missing_requires(literal_id)
+        if cmd_id is not None:
+            missing = self._matcher.missing_requires(cmd_id)
             if not missing:
                 self._output.print_info(
-                    f"[Command] Распознана команда: {literal_id}")
-                self._matcher.execute_by_id(literal_id)
+                    f"[Command] Распознана команда: {cmd_id}"
+                    + (f" (настройки: {', '.join(settings)})"
+                       if settings else ""))
+                self._execute_with_settings(cmd_id, settings)
+                self._window.clear()
                 return
-            blocked = [(literal_id, missing)]
+            blocked = [(cmd_id, missing)]
+            self._window.clear()
+        # Команды из commands.json нет (или она заблокирована) — дальше
+        # старые уровни: алиасы/intent/opencode (переделываются позже).
+        if not self._matcher.has_trigger(text):
+            return
+        literal_id = cmd_id  # найденная (даже заблокированная) команда
         # 1.5. Известное коверканье из базы алиасов — без вызова LLM.
-        elif self._aliases is not None:
+        # Переделывается позже; пока работает как раньше (когда шага 1 нет).
+        if cmd_id is None and self._aliases is not None:
             core = self._matcher.core_phrase(text)
             alias_id = self._aliases.resolve(core)
             if alias_id is not None:
@@ -157,6 +179,14 @@ class Orchestrator:
         )
         self._output.print_info("... отправка запроса в opencode-cli (фон)")
         self._enqueue_opencode(text)
+
+    def _execute_with_settings(self, cmd_id: str,
+                               settings: list[str]) -> None:
+        """Выполняет команду с настройками (если они есть)."""
+        if settings:
+            self._matcher.execute_by_id(cmd_id, tuple(settings))
+        else:
+            self._matcher.execute_by_id(cmd_id)
 
     def _handle_dev_mode_controls(self, text: str) -> bool:
         """Управляющие фразы режима разработки.

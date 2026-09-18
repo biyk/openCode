@@ -125,6 +125,122 @@ class TestCommandMatcher:
         matcher = CommandMatcher(temp_commands_file)
         assert matcher.find_literal_id("громче") is None
 
+    def _full_cfg(self):
+        """Конфиг с командами громкости/паузы/стопа для тестов концепции."""
+        import tempfile
+        import json
+
+        def _write():
+            path = tempfile.mktemp(suffix=".json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "triggers": ["пожалуйста", "алиса"],
+                    "commands": {
+                        "volumeup": {
+                            "linux": "pactl +10%",
+                            "windows": "echo volumeup",
+                            "default": "echo volumeup",
+                        },
+                        "volumedown": {
+                            "linux": "pactl -10%",
+                            "windows": "echo volumedown",
+                            "default": "echo volumedown",
+                        },
+                        "playpause": "echo playpause",
+                        "stop": "echo stop",
+                    },
+                    "match": {
+                        "volumeup": ["громче", "сделай громче"],
+                        "volumedown": ["тише", "сделай тише"],
+                        "playpause": ["пауза", "плей"],
+                        "stop": ["стоп", "остановить", "выключи"],
+                    },
+                }, f)
+            return path
+        return _write
+
+    def test_find_command_key_with_command_same_line(self, temp_commands_file):
+        """[Алиса] _сделай громче_ — команда в строке ключа."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_command(["алиса сделай громче"]) == (
+            "volumeup", [], False)
+
+    def test_find_command_command_before_key_previous_line(self):
+        """_выключи_ / [Пожалуйста] — команда над ключом."""
+        matcher = CommandMatcher(self._full_cfg()())
+        assert matcher.find_command([
+            "как же меня это достало", "выключи", "пожалуйста"
+        ]) == ("stop", [], False)
+
+    def test_find_command_command_after_key_next_line(self, temp_commands_file):
+        """[Алиса] в строке, команда — следующей строкой."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_command(["какая же ты тупая алиса"]) == (
+            None, [], True)
+        assert matcher.find_command([
+            "какая же ты тупая алиса", "сделай громче немного"
+        ]) == ("volumeup", ["немного"], False)
+
+    def test_find_command_settings_strong(self, temp_commands_file):
+        """{сильно} удваивает шаг громкости."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_command(["алиса сделай громче сильно"]) == (
+            "volumeup", ["сильно"], False)
+
+    def test_find_command_fuzzy_match_above_threshold(self):
+        """Фраза близкая к шаблону (≥90%) распознаётся (не дословно)."""
+        matcher = CommandMatcher(self._full_cfg()())
+        assert matcher.find_command(["пожалуйста сделой громче"]) == (
+            "volumeup", [], False)
+
+    def test_find_command_fuzzy_below_threshold_rejected(self):
+        """Совпадение ниже 90% — мимо (ложный вызов), не угадывать."""
+        matcher = CommandMatcher(self._full_cfg()())
+        assert matcher.find_command(["пожалуйста сделаыми громче"]) == (
+            None, [], True)
+
+    def test_find_command_no_command_around_key(self):
+        """Ключ без команды вокруг — ложный вызов."""
+        matcher = CommandMatcher(self._full_cfg()())
+        assert matcher.find_command(["але все плохо"]) == (None, [], False)
+
+    def test_find_command_no_command_when_key_last_line_wait(
+            self, temp_commands_file):
+        """Ключ последний, команды нет — ждём следующую строку."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_command(["да блин", "какая же ты тупая алиса"]) == (
+            None, [], True)
+
+    def test_find_command_settings_multiplier_applied(self, tmp_path, mocker):
+        """Настройки меняют {{step}} через секцию settings."""
+        import tempfile
+        import json
+        mocker.patch("lib.commands.platform.system", return_value="Linux")
+        path = tempfile.mktemp(suffix=".json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "triggers": ["пожалуйста", "алиса"],
+                    "commands": {
+                        "volumeup": {
+                            "linux": "pactl +{{step}}%",
+                            "default": "pactl +{{step}}%",
+                            "step": 10
+                        }
+                    },
+                    "match": {"volumeup": ["громче", "сделай громче"]},
+                    "settings": {"volumeup": {
+                        "немного": {"step": 0.5},
+                        "сильно": {"step": 2.0}
+                    }},
+                }, f)
+            matcher = CommandMatcher(path)
+            assert matcher.get_command("volumeup") == "pactl +10%"
+            assert matcher.get_command("volumeup", ("немного",)) == "pactl +5%"
+            assert matcher.get_command("volumeup", ("сильно",)) == "pactl +20%"
+        finally:
+            os.unlink(path)
+
     def test_has_trigger_detects_trigger(self, temp_commands_file):
         matcher = CommandMatcher(temp_commands_file)
         assert matcher.has_trigger("пожалуйста громче") is True

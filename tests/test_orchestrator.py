@@ -26,7 +26,7 @@ class TestOrchestrator:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_literal_id.return_value = None
+            orch._matcher.find_command.return_value = (None, [], False)
             orch._matcher.missing_requires.return_value = []
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
@@ -103,7 +103,7 @@ class TestOrchestrator:
         """Дословная команда с триггером выполняется (id в print_info)."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.find_command.return_value = ("playpause", [], False)
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста пауза")
@@ -112,6 +112,81 @@ class TestOrchestrator:
         orch._output.print_text.assert_called_once_with("пожалуйста пауза")
         orch._output.print_info.assert_any_call(
             "[Command] Распознана команда: playpause")
+
+    def test_process_text_command_with_settings(self, mocker):
+        """Команда со настройкой выполняется с ней (execute_by_id)."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_command.return_value = (
+            "volumeup", ["немного"], False)
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("алиса сделай громче немного")
+        orch._matcher.execute_by_id.assert_called_once_with(
+            "volumeup", ("немного",))
+        orch._output.print_info.assert_any_call(
+            "[Command] Распознана команда: volumeup (настройки: немного)")
+
+    def test_process_text_command_blocked_clears_window(self, mocker):
+        """Заблокированная команда очищает окно и идёт в intent."""
+        intent = mocker.MagicMock()
+        intent.detect.return_value = None
+        orch = self._make(mocker, intent=intent)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.missing_requires.return_value = ["media"]
+        orch._matcher.status_snapshot.return_value = {"media": False}
+        orch.process_text("пожалуйста включи")
+        assert len(orch._window) == 0
+        text, context = intent.detect.call_args.args
+        assert context["blocked"] == [("playpause", ["media"])]
+
+    def test_process_text_wait_holds_for_next_line(self, mocker):
+        """wait=True — ничего не выполняем, ждём следующую строку."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_command.return_value = (None, [], True)
+        orch._matcher.missing_requires.return_value = []
+        orch.process_text("какая же ты тупая алиса")
+        orch._matcher.execute_by_id.assert_not_called()
+        orch._output.print_text.assert_called_once_with("какая же ты тупая алиса")
+        orch._matcher.find_command.assert_called_once_with(["какая же ты тупая алиса"])
+
+    def test_process_text_window_grows_across_lines(self, mocker):
+        """Окно строк накапливается: команда находит письмо по ключу."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_command.return_value = (None, [], True)
+        orch._matcher.missing_requires.return_value = []
+        orch.process_text("какая же ты тупая алиса")
+        orch._matcher.find_command.return_value = ("stop", [], False)
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("выключи")
+        orch._matcher.execute_by_id.assert_called_once_with("stop")
+        calls = [c.args[0] for c in orch._matcher.find_command.call_args_list]
+        assert calls == [
+            ["какая же ты тупая алиса"],
+            ["какая же ты тупая алиса", "выключи"],
+        ]
+
+    def test_process_text_command_found_clears_window(self, mocker):
+        """После выполнения команды окно строк очищается."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = True
+        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.missing_requires.return_value = []
+        orch._matcher.execute_by_id.return_value = True
+        orch.process_text("пожалуйста пауза")
+        assert len(orch._window) == 0
+
+    def test_process_text_no_trigger_and_no_command_returns(self, mocker):
+        """Строка без триггера и без команды просто печатается."""
+        orch = self._make(mocker)
+        orch._matcher.has_trigger.return_value = False
+        orch._matcher.find_command.return_value = (None, [], False)
+        orch.process_text("привет мир")
+        orch._output.print_text.assert_called_once_with("привет мир")
+        orch._matcher.execute_by_id.assert_not_called()
 
     def test_process_text_command_absent_goes_to_opencode(self, mocker):
         """Без дословной команды текст уходит в opencode-cli в фоне."""
@@ -134,7 +209,7 @@ class TestOrchestrator:
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.find_command.return_value = ("playpause", [], False)
         orch._matcher.missing_requires.return_value = ["media"]
         orch._matcher.status_snapshot.return_value = {"media": False}
         orch.process_text("пожалуйста включи")
@@ -151,7 +226,7 @@ class TestOrchestrator:
         intent.detect.return_value = "openyoutube"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста включи и ютюб")
         intent.detect.assert_called_once()
@@ -163,7 +238,7 @@ class TestOrchestrator:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста расскажи")
@@ -190,7 +265,7 @@ class TestOrchestrator:
         opencode.run.return_value = None
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста что-то")
@@ -205,7 +280,7 @@ class TestOrchestrator:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста сделай кромку")
@@ -220,7 +295,7 @@ class TestOrchestrator:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста сделай кромку")
         text, context = intent.detect.call_args.args
@@ -241,7 +316,7 @@ class TestOrchestrator:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.execute_by_id.return_value = False
         orch.process_text("пожалуйста сделай кромку")
         orch._matcher.execute_by_id.assert_called_once_with("volumeup")
@@ -258,7 +333,7 @@ class TestOrchestrator:
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста неизвестный запрос")
@@ -276,7 +351,7 @@ class TestOrchestrator:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.find_command.return_value = ("playpause", [], False)
         orch._matcher.missing_requires.return_value = ["media"]
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
@@ -291,7 +366,7 @@ class TestOrchestrator:
         intent.detect.return_value = "openyoutube"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.execute_by_id.return_value = False
         orch._matcher.missing_requires.return_value = ["vpn"]
         orch._matcher.need_message.return_value = "Включи VPN вручную"
@@ -316,7 +391,7 @@ class TestOrchestrator:
             "включи и ютюб": {"command": "openyoutube", "hits": 0,
                               "confirmed": True}}, "pending": {}})
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.core_phrase.return_value = "включи и ютюб"
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
@@ -330,7 +405,7 @@ class TestOrchestrator:
         orch = self._make(mocker)
         orch._aliases = self._aliases(tmp_path)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "openyoutube"
+        orch._matcher.find_command.return_value = ("openyoutube", [], False)
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch._matcher.core_phrase.return_value = "открой ютуб"
@@ -348,7 +423,7 @@ class TestOrchestrator:
             "включи и ютюб": {"command": "openyoutube", "hits": 0,
                               "confirmed": True}}, "pending": {}})
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.core_phrase.return_value = "включи и ютюб"
         orch._matcher.missing_requires.return_value = ["vpn"]
         orch.process_text("алиса включи и ютюб пожалуйста")
@@ -416,7 +491,7 @@ class TestOrchestrator:
         orch = self._make(mocker, intent=intent)
         orch._aliases = self._aliases(tmp_path)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.core_phrase.return_value = "включи и ютюб"
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("алиса включи и ютюб пожалуйста")
@@ -514,7 +589,7 @@ class TestOrchestrator:
         opencode = mocker.MagicMock()
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.find_command.return_value = ("playpause", [], False)
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch._opencode_active = True
@@ -529,7 +604,7 @@ class TestOrchestrator:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста расскажи")
@@ -545,7 +620,7 @@ class TestOrchestrator:
         opencode.run.return_value = "Запоздавший ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.side_effect = [False, True]
         orch.process_text("пожалуйста расскажи")
@@ -623,7 +698,7 @@ class TestOrchestrator:
         orch = self._make(mocker, opencode=opencode)
         orch._dev_mode = True
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = "playpause"
+        orch._matcher.find_command.return_value = ("playpause", [], False)
         orch._matcher.missing_requires.return_value = []
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
@@ -650,7 +725,7 @@ class TestOrchestrator:
         on_exit = mocker.MagicMock()
         orch = self._make(mocker, on_exit=on_exit)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_literal_id.return_value = None
+        orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.core_phrase.return_value = DEV_MODE_EXIT_PHRASE
         orch.process_text(DEV_MODE_EXIT_PHRASE)
         on_exit.assert_not_called()
