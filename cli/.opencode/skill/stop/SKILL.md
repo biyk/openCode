@@ -1,5 +1,5 @@
 ---
-name: media-stop
+name: stop
 description: Stop (or pause as fallback) the active media playback on the voice-control host (Windows). Use when the user asks to stop, halt, or switch off media, or says "стоп", "остановить", "выключи".
 license: MIT
 compatibility: opencode

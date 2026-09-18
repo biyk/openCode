@@ -1,5 +1,5 @@
 ---
-name: media-volume-up
+name: volumeup
 description: Increase the system volume on the voice-control host (Windows). Use when the user asks to turn the volume up, make it louder, increase volume, or says "громче", "сделай громче", "увеличь громкость", "громкость вверх".
 license: MIT
 compatibility: opencode

@@ -1,5 +1,5 @@
 ---
-name: media-play-pause
+name: playpause
 description: Toggle media playback play/pause on the voice-control host (Windows). Use when the user asks to pause, play, resume, or toggle media, or says "пауза", "плей", "играй", "включи", "дальше".
 license: MIT
 compatibility: opencode

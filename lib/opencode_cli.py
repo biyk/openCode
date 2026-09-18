@@ -2,7 +2,7 @@
 
 Когда команда не совпала дословно с commands.json и mini-LLM не нашёл её,
 текст уходит в консольный opencode, который запускается в папке cli/ и
-подхватывает скиллы из cli/.opencode/skill/ (media-volume-up, task-add и
+подхватывает скиллы из cli/.opencode/skill/ (volumeup, task-add и
 др.). Ответ агента печатается в лог; озвучку результата делает сам агент
 через скилл speak-answer.
 """

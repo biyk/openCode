@@ -41,12 +41,12 @@ voice/
 ├── models/                 # Vosk models (auto-downloaded)
 ├── .opencode/              # opencode config
 │   └── skill/              # Voice-command duplicates:
-│       ├── media-volume-up/        #   volumeup
-│       ├── media-volume-down/      #   volumedown
-│       ├── media-play-pause/       #   playpause
-│       ├── media-stop/             #   stop
-│       ├── youtube-open/           #   openyoutube
-│       ├── youtube-news/           #   youtube_news / news
+│       ├── volumeup/             #   volumeup
+│       ├── volumedown/             #   volumedown
+│       ├── playpause/              #   playpause
+│       ├── stop/                   #   stop
+│       ├── openyoutube/            #   openyoutube
+│       ├── youtube_news/           #   youtube_news / news
 │       ├── calendar-plans/         #   PlansHandler
 │       ├── calendar-reminder/      #   ReminderHandler
 │       └── browser-automation/     #   generic browser skill

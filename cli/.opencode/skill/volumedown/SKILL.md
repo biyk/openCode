@@ -1,5 +1,5 @@
 ---
-name: media-volume-down
+name: volumedown
 description: Decrease the system volume on the voice-control host (Windows). Use when the user asks to turn the volume down, make it quieter, lower the volume, or says "тише", "сделай тише", "уменьши громкость", "громкость вниз".
 license: MIT
 compatibility: opencode

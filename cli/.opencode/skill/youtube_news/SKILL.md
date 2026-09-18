@@ -1,5 +1,5 @@
 ---
-name: youtube-news
+name: youtube_news
 description: Play news videos on YouTube via CDP on the voice-control host. Use when the user asks to play/show news on YouTube, or says "новости ютуб", "новости на ютубе", "включи новости", "покажи новости".
 license: MIT
 compatibility: opencode
