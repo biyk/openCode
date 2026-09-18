@@ -26,11 +26,11 @@ def main():
         from lib.google_calendar import GoogleCalendar
         cal = GoogleCalendar()
         cal.authorize()
-        print("✅ Авторизация успешна!")
-        print("📅 Напоминания снова работают. Вы можете создавать напоминания.")
+        print("[OK] Авторизация успешна!")
+        print("Напоминания снова работают. Вы можете создавать напоминания.")
     except Exception as e:
-        print(f"❌ Авторизация не удалась: {e}")
-        print("⚠️  Попробуйте снова позже или проверьте, что у вас есть доступ к Google.")
+        print(f"[FAIL] Авторизация не удалась: {e}")
+        print("Попробуйте снова позже или проверьте доступ к Google.")
 
 
 if __name__ == "__main__":

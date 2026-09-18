@@ -1,11 +1,16 @@
 # Voice Control Project - Agent Guidelines
 
-## 0. Version gate (NOW)
+## 0. Git commits — ТОЛЬКО ПО ЯВНОЙ КОМАНДЕ
+- **Коммитить, пушить, делать PR запрещено без явной команды пользователя.** Сначала показать результат и ждать подтверждения.
+- Исключение: авто-коммиты от хуков (`.git/hooks/post-commit` bump-версии и т.п.) — их создаёт сам хук, агент их не инициирует.
+- Если пользователь не просил коммит — не вызывать `git commit` / `git push` / `git add` ДАЖЕ если кажется, что задача завершена.
+
+## 1. Version gate (NOW)
 - `main.py` periodically checks that **app version** (`lib/__init__.py::__version__`) equals **project version** (`VERSION`).
 - On mismatch the process must exit (hard exit from the version checker thread via `os._exit(1)`).
 - If tests fail or voice behaviour changed: verify `lib/version_gate.py` + `lib/version_checker.py` first.
 
-## 1. Build / Lint / Test Commands
+## 2. Build / Lint / Test Commands
 
 ```bash
 # Install dependencies
@@ -34,40 +39,40 @@ flake8 --max-line-length=100 .
 python main.py
 ```
 
-## 2. Architecture (wiring)
+## 3. Architecture (wiring)
 - `main.py` — entry point. Main loop: Vosk STT → `_fix_encoding` → `_process_text` → `Orchestrator.process_text`.
 - `lib/orchestrator.py` — deterministic core; reminders are created via `ReminderHandler`.
 
-## 3. Google Calendar reminders (only)
+## 4. Google Calendar reminders (only)
 - `lib/google_calendar.py` — reminders are **Calendar events** (not Tasks). Uses OAuth (`credentials.json` + `token.json`, token in .gitignore).
 - `lib/reminders.py` — «напомни мне …» parsing is deterministic; if time missing → **+60 минут**.
 - `lib/google_calendar.py` checks token scope by reading `token.json` scopes; if `calendar.events` missing → starts interactive consent.
 - `lib/google_tasks.py` — **tasks** («добавь задачу …») are items in Google Tasks (default list `@default`), created via `lib/tasks.py::TaskHandler`. Uses the same `token.json`; scope `tasks` + `calendar.events` requested together so re-auth does not break reminders.
 - Feature flag: `google.tasks.enabled` in `targets/<host>/commands.json` (wired in `main.py`), orchestrator step 0.6 in `lib/orchestrator.py`.
 
-## 4. Audio + stop words
+## 5. Audio + stop words
 - `TranscriptionWorker` keeps recording mic audio while TTS plays (stop-word recognition stays active).
 - Stop abort: `abort_event` is supported across TTS + playback.
 
-## 5. Windows gotchas
+## 6. Windows gotchas
 - `_fix_encoding` must not recode already-valid UTF-8 from Vosk.
 - Abort/stop words and encoding issues are common causes of "it didn't stop" reports.
 
-## 6. LLM providers
+## 7. LLM providers
 - Active provider: `race` (OmniRouter + LM Studio, first non-empty wins).
 
-## 7. Style & testing conventions
+## 8. Style & testing conventions
 - Tests in `tests/` only; mock external deps.
 - Run tests with `python -m pytest` (Windows import path).
 
-## 8. Version management & git hooks
+## 9. Version management & git hooks
 - `VERSION` file holds semantic version (major.minor.patch).
 - `lib/__init__.py` holds `__version__` (updated by bump script).
 - `scripts/bump_version.py` increments version (patch/minor/major).
 - `.git/hooks/pre-commit` runs `pytest` + `flake8` (aborts on failure).
 - `.git/hooks/post-commit` auto-bumps version and creates bump commit (`--no-verify` to avoid loop).
 
-## 9. Концепция голосовых команд (commands.json) — ЕДИНСТВЕННО ВЕРНАЯ
+## 10. Концепция голосовых команд (commands.json) — ЕДИНСТВЕННО ВЕРНАЯ
 
 Первый уровень обработки — `commands.json`. Вся распознанная речь —
 это **поток строк** (каждый законченный фрагмент STT = строка).

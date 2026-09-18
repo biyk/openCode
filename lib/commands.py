@@ -85,12 +85,19 @@ class CommandMatcher:
 
         Настройки {немного}/{сильно} меняют числовые параметры
         (например {{step}}): множитель из секции "settings".
+        Плейсхолдер {{text}} подставляет свободный текст — все слова,
+        идущие после команды (для calendar-reminder/task-add).
+        Кавычки вокруг {{text}} ставит сам шаблон; двойные кавычки
+        внутри текста вырезаются, чтобы не разорвать shell-команду.
         """
         commands = self._data.get("commands", {})
         cmd = commands.get(cmd_id)
         if cmd is None:
             return None
         if not isinstance(cmd, dict):
+            if "{{text}}" in cmd:
+                text = " ".join(settings).replace('"', "").strip()
+                return cmd.replace("{{text}}", text)
             return cmd
         system = platform.system().lower()
         template = cmd.get(system) or cmd.get("default")
@@ -113,6 +120,9 @@ class CommandMatcher:
             token = "{{" + name + "}}"
             if token in template:
                 template = template.replace(token, _fmt_number(value))
+        if "{{text}}" in template:
+            text = " ".join(settings).replace('"', "").strip()
+            template = template.replace("{{text}}", text)
         return template
 
     def core_phrase(self, text: str) -> str:

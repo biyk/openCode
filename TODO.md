@@ -1,5 +1,9 @@
 # TODO
 
+* \[ ] Починить авторизацию гугла
+* \[ ] Сделать задачи по расписанию
+* \[ ] Сделать фаллбэк команд
+
 ## Самообучающийся ассистент — план внедрения (АКТИВНАЯ ЗАДАЧА)
 
 Концепция и архитектура: `WORKFLOW.md`. Исследование аналогов: WORKFLOW.md §9.
@@ -15,37 +19,10 @@
 
 ### Чек-лист (по порядку исполнения)
 
-1. [x] **П1. Выделение оркестратора (рефакторинг без изменения поведения)**
-   - `lib/orchestrator.py`: перенести логику `_process_text` и диспетчеризацию
-     команда→LLM; `main.py` остаётся тонким. Существующая логика
-     (триггеры, стоп-слова, suppress-окно, `_speak_async`, execute/LLM).
-   - Тесты переносятся/дополняются, 100% сохраняется.
-   - П1.1 (багфикс): стоп-слово через `PartialResult` + `Reset` (коммит 84c42a6).
-
-2. [x] **П2. Мини-слой за флагом (ошибки распознавания)**
-   - Итоговая реализация (после фидбэка): `lib/intent.py` `IntentClassifier` +
-     флаг `intent.enabled=false` (+`intent.include_media`) в конфиге.
-   - Вместо fuzzy: LLM-классификация через омни-роутер (модель auto/fast) из списка
-     доступных команд; точное дословное совпадение команды исполняется сразу.
-- Распознанная команда исполняется, LLM-диалог не вызывается; нет соответствия →
-      обычный LLM. Флаг медиа (`lib/media.py` + `bin/media_state.ps1`) подсказывает
-      классификатору, играет ли сейчас медиа. TDD + 100%.
-   - П2.2 (багфиксы): грамматический распознаватель стоп-слов (`KaldiRecognizer`
-     с grammar из STOP_WORDS) в run() — ловит «стоп» на фоне громкой озвучки;
-     фикс WinError 32 в `_play_file` (unlink занятого mp3).
-   - П2.3 (кодировка): `chcp 65001` + `_fix_encoding` (cp866→utf-8) для чистых логов
-     на Windows; 99% покрытие (4 строки платформенного кода).
-
 3. [ ] **П3. Реестр скиллов (статический, детерминированный)**
    - Манифесты `targets/<host>/skills/<skill>.json` (phrases/params/steps),
      загрузчик + диспетчер шагов + санитизация параметров.
    - Флаг `skills.enabled=false`. Пример скилла «открой ютуб» + тесты (TDD).
-
-4. [ ] **П4. Вызов большой LLM через OpenCode CLI (изоляция)**
-   - `lib/opencode.py`: subprocess `opencode run ... --model <combo>`,
-     таймаут, сбор stdout/stderr, обработка ошибок (mock в тестах).
-   - Интеграция: результат большой LLM **показывается пользователю**
-     (print/озвучка) и НЕ выполняется автоматически. Флаг `big.enabled=false`.
 
 5. [ ] **П5. Модель-контролёр (интерфейс + критерии)**
    - `lib/controller.py`: обёртка над действиями большой LLM; режимы
@@ -54,18 +31,6 @@
    - По умолчанию — `ask_user` для любых действий записи/выполнения.
 
 6. [ ] **П6. Цикл самообучения (TDD) под флагом + подтверждение**
-   - **П6.0. База соответствий (алиасы) — ГОТОВО:**
-     `lib/aliases.py` (`AliasStore`: `targets/<host>/aliases.json`,
-     `{core: {command, hits, confirmed}}` + `pending`, hot-reload;
-     резолвятся только `confirmed: true`); порядок в `process_text`:
-     literal → aliases (`[Alias]`, `bump()`) → intent → skills → chat;
-     дословный шаблон бьёт алиас; алиасы уважают `requires`.
-     Обучение: явное «запомни [X это Y]» (confirm/add) / «забудь X»;
-     успешные недословные intent-резолвы auto-пишутся в `pending`
-     (`confirmed: false`); автовключения нет. Seed FLTP:
-     «включи и ютюб»→openyoutube, «паузы»→playpause.
-     Тесты: `tests/test_aliases.py` (20) + 9 интеграционных;
-     415 passed, flake8 чист.
    - Большая LLM предлагает: {match-фразы, команда/скилл, тест}.
    - Показ пользователю → подтверждение → тест в `tests/` → pytest →
      только при зелёном — запись в `commands.json` / `skills/`.
@@ -87,36 +52,6 @@
 
 ---
 
-## Исследование аналогов (закрыто, зафиксировано в WORKFLOW.md §9)
-
-- Полных аналогов нет; близкие: SLLMS, kymaman/jarvis, PersonalJarvis,
-  CowAgent, agent-seed, Home Assistant/Rhasspy, nebulento, RouteLLM.
-- Берём идеи: RouteLLM (роутер порога), rapidfuzz (мини-матчер),
-  fast-path SLLMS, «скиллы через ревью/PR» agent-seed.
-
----
-
 ## Планируемые задачи (прочие)
 
 * \[ ] Создать/скопировать файл настроек opencode
-* \[x] **Google Calendar + Tasks (напоминания голосом)** — ГОТОВО:
-  - `lib/google_calendar.py` (OAuth: credentials.json → token.json, refresh),
-    `lib/time_parser.py` (через N часов/минут, завтра в HH:MM, в HH:MM, дни),
-    `lib/reminders.py` (ReminderHandler + LLM-fallback), порядок в
-    process_text: после «запомни/забудь», до literal-матчинга.
-  - «напомни мне через 3 часа X» → Task в «Список по умолчанию» +
-    Calendar-событие на это время (popup за 10 мин).
-  - Флаг `google.enabled` в commands.json; credentials.json/token.json
-    в .gitignore. 401 passed, flake8 чист.
-  - Что дальше: чтение («что у меня сегодня»), удаление, повторные
-    напоминания, выбор списка/календаря, длительность события.
-
----
-
-## Не связано (из прежнего прогресса)
-- AGENTS.md обновлён: актуальны `triggers` из commands.json (не `LLM_TRIGGER`),
-  омни-модель `auto`, стоп-слова/abort/suppress в разделе Architecture/Windows.
-- README обновлён, но НЕ закоммичен (проверить `git status`).
-- `.idea/`, `targets/FLTP-5i3-16512/commands/` — untracked, не коммитить без запроса.
-- Коммиты: `e942aef` (триггеры), `d7b0984` (печать слов), `bb9b097`,
-  `77a759c`. Впереди origin на 6 коммитов.

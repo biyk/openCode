@@ -40,6 +40,21 @@
             "linux": "python -m lib.browser_control youtube-play \"новости\"",
             "windows": "python -m lib.browser_control youtube-play \"новости\"",
             "default": "python -m lib.browser_control youtube-play \"новости\""
+        },
+        "calendar-reminder": {
+            "linux": "python -m lib.reminders \"{{text}}\"",
+            "windows": "python -m lib.reminders \"{{text}}\"",
+            "default": "python -m lib.reminders \"{{text}}\""
+        },
+        "task-add": {
+            "linux": "python -m lib.tasks create \"{{text}}\"",
+            "windows": "python -m lib.tasks create \"{{text}}\"",
+            "default": "python -m lib.tasks create \"{{text}}\""
+        },
+        "diagnose": {
+            "linux": "python -m lib.diagnose launch \"{{text}}\"",
+            "windows": "python -m lib.diagnose launch \"{{text}}\"",
+            "default": "python -m lib.diagnose launch \"{{text}}\""
         }
     },
     "requires": {
@@ -66,7 +81,36 @@
         "stop": ["стоп", "остановить", "выключи"],
         "openyoutube": ["открой ютуб", "запусти ютуб", "включи ютуб"],
         "youtube_news": ["новости ютуб", "новости на ютубе"],
-        "news": ["включи новости", "покажи новости", "запусти новости"]
+        "news": ["включи новости", "покажи новости", "запусти новости"],
+        "calendar-reminder": [
+            "напомни",
+            "напомни мне",
+            "напомнишь",
+            "напомним",
+            "поставь напоминание",
+            "создай напоминание",
+            "добавь напоминание"
+        ],
+        "task-add": [
+            "создай задачу",
+            "создай задача",
+            "добавь задачу",
+            "добавь задача",
+            "создать задачу",
+            "добавить задачу",
+            "запиши задачу",
+            "запиши в задачи",
+            "добавь в задачи",
+            "новая задача"
+        ],
+        "diagnose": [
+            "анализ",
+            "диагностика",
+            "проверь логи",
+            "проверь ошибки",
+            "найди ошибки",
+            "найди ошибку"
+        ]
     },
     "settings": {
         "volumeup": {

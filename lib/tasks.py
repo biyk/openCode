@@ -17,7 +17,7 @@ import sys
 from difflib import SequenceMatcher
 from typing import Optional
 
-from lib.google_tasks import GoogleTasks
+from lib.google_tasks import GoogleOAuthError, GoogleTasks
 
 # Порог нечёткого совпадения названий (difflib ratio). Ошибки Vosk
 # превращают «подчинить лампочку в ванной» в «починить лампочку ванной»,
@@ -212,6 +212,13 @@ class TaskHandler:
         """Готовы ли авторизация и scope для Google Tasks."""
         return self._google.is_ready()
 
+    def authorize(self) -> None:
+        """Обновляет доступ (refresh) или проходит интерактивный OAuth.
+
+        Бросает GoogleOAuthError, если авторизоваться не удалось.
+        """
+        self._google.authorize()
+
 
 def _normalize(text: str) -> str:
     """Приводит название к единому виду для сравнения."""
@@ -238,25 +245,47 @@ def _decode_arg(raw: str) -> str:
 
 
 def main(argv: Optional[list] = None) -> int:
-    """CLI: `python -m lib.tasks complete <фраза>` или `... --b64:<base64>`.
+    """CLI: `python -m lib.tasks complete <фраза>` / `create <фраза>`
+    (или `... --b64:<base64>`).
 
-    Выполняет задачу по названию (complete_matching) и печатает отчёт в
-    stdout. Используется скиллом task-complete в консольном opencode —
-    единая короткая команда вместо фрагмента python -c внутри скилла.
+    complete — выполняет задачу по названию (complete_matching) и печатает
+    отчёт в stdout. Используется скиллом task-complete в консольном
+    opencode — единая короткая команда вместо фрагмента python -c.
+    create — создаёт задачу (текст после триггера — название) в списке
+    по умолчанию. Используется командой task-add из commands.json.
+    Коды: 0 — ок, 1 — ошибка API, 2 — неверные аргументы,
+    3 — пустая фраза или нет авторизации Tasks.
     """
     args = argv if argv is not None else sys.argv[1:]
-    if not args:
-        print("usage: python -m lib.tasks complete <фраза> | --b64:<base64>")
-        return 2
-    if args[0] != "complete":
-        print(f"usage: python -m lib.tasks complete <фраза>; unknown: {args[0]}")
+    if not args or args[0] not in ("complete", "create"):
+        print("usage: python -m lib.tasks complete <фраза> | "
+              "create <фраза> | --b64:<base64>")
         return 2
     if len(args) < 2:
-        print("usage: python -m lib.tasks complete <фраза>")
+        print(f"usage: python -m lib.tasks {args[0]} <фраза>")
         return 2
     phrase = " ".join(_decode_arg(a) for a in args[1:])
     try:
         handler = TaskHandler()
+        if args[0] == "create":
+            title = handler.create(phrase)
+            if not title:
+                print("Пустая фраза — нечего создавать")
+                return 3
+            try:
+                # Протухший токен обновляется здесь же (refresh); без
+                # авторизации — интерактивный OAuth в браузере.
+                handler.authorize()
+            except GoogleOAuthError as e:
+                print(f"[Google] Нет авторизации Tasks: {e}")
+                return 3
+            task_id = handler.add_task(title)
+            if not task_id:
+                print("Не удалось создать задачу")
+                return 1
+            print("task:", title)
+            print("task_id:", task_id)
+            return 0
         title = handler.complete_parse(phrase) or ""
         if not title:
             print("title: <пусто>")

@@ -28,7 +28,14 @@ print('task_id:', h.add_task(title))
 "
 ```
 
-There is no dedicated CLI subcommand for tasks — use the handler above. Auth is required (`token.json` with `tasks` scope; the consent also requests `calendar.events` so reminders keep working).
+There is a dedicated CLI subcommand for creating tasks (used by the
+`task-add` voice command in `commands.json`):
+
+```powershell
+cd C:\Users\b5\Desktop\voice; python -m lib.tasks create "создай задачу купить хлеб"
+```
+
+It prints `task: <название>` and `task_id: <id>`. Auth is required (`token.json` with `tasks` scope; the consent also requests `calendar.events` so reminders keep working).
 
 ## Notes
 

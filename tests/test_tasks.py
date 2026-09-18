@@ -399,3 +399,73 @@ class TestCompleteCli:
         assert code == 0
         assert '"method": "fuzzy"' in out
         assert '"title": "подчинить лампочку в ванной"' in out
+
+    def _google_create(self, task_id="task-9", auth=True):
+        from lib.google_tasks import GoogleOAuthError
+
+        class G:
+            def create_task(self, title, notes=None):
+                return task_id
+
+            def is_ready(self):
+                return auth
+
+            def authorize(self):
+                if not auth:
+                    raise GoogleOAuthError("нет consent")
+        return G()
+
+    def test_main_create_task(self, capsys):
+        """CLI создаёт задачу: create <фраза> → task_id, код 0."""
+        import lib.tasks as tasks_module
+        tasks_module.TaskHandler = lambda google=None: TaskHandler(
+            google=google or self._google_create())
+        try:
+            code = main(["create", "создай задачу убраться у кошки"])
+        finally:
+            tasks_module.TaskHandler = TaskHandler
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "task: убраться у кошки" in out
+        assert "task_id: task-9" in out
+
+    def test_main_create_empty_phrase(self, capsys):
+        """Пустая фраза после триггера — код 3."""
+        import lib.tasks as tasks_module
+        tasks_module.TaskHandler = lambda google=None: TaskHandler(
+            google=google or self._google_create())
+        try:
+            code = main(["create", "создай задачу"])
+        finally:
+            tasks_module.TaskHandler = TaskHandler
+        assert code == 3
+
+    def test_main_create_no_auth(self, capsys):
+        """Нет авторизации Tasks — код 3."""
+        import lib.tasks as tasks_module
+        noauth = self._google_create(auth=False)
+        tasks_module.TaskHandler = lambda google=None: TaskHandler(
+            google=noauth)
+        try:
+            code = main(["create", "создай задачу купить хлеб"])
+        finally:
+            tasks_module.TaskHandler = TaskHandler
+        out = capsys.readouterr().out
+        assert code == 3
+        assert "авторизации" in out
+
+    def test_main_create_api_failure(self, capsys):
+        """API вернуло None — код 1."""
+        import lib.tasks as tasks_module
+        tasks_module.TaskHandler = lambda google=None: TaskHandler(
+            google=google or self._google_create(task_id=None))
+        try:
+            code = main(["create", "создай задачу купить хлеб"])
+        finally:
+            tasks_module.TaskHandler = TaskHandler
+        assert code == 1
+
+    def test_main_unknown_subcommand(self, capsys):
+        """Неизвестная подкоманда — usage, код 2."""
+        assert main(["удали", "что-то"]) == 2
+        assert "usage" in capsys.readouterr().out

@@ -87,3 +87,51 @@ class TestLogger:
         history = logger.get_llm_history()
         assert len(history) == 1
         assert history[0]["role"] == "user"
+
+
+class TestLatestLogs:
+    """Хелперы для диагностики: поиск логов, хвост, история чата."""
+
+    def _write(self, tmp_path, name, content, mtime):
+        import os
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        os.utime(path, (mtime, mtime))
+        return str(path)
+
+    def test_latest_logs_picks_newest(self, tmp_path):
+        from lib.logger import latest_logs
+        old = self._write(tmp_path, "commands_old.log", "a\n", 1000.0)
+        new = self._write(tmp_path, "commands_new.log", "b\n", 2000.0)
+        self._write(tmp_path, "llm_x.log", "[USER] hi\n", 1500.0)
+        self._write(tmp_path, "notes.txt", "x\n", 3000.0)
+        cmd, llm = latest_logs(str(tmp_path))
+        assert cmd == new
+        assert llm.endswith("llm_x.log")
+        assert old != cmd
+
+    def test_latest_logs_missing(self, tmp_path):
+        from lib.logger import latest_logs
+        assert latest_logs(str(tmp_path / "nodir")) == (None, None)
+        assert latest_logs(str(tmp_path)) == (None, None)
+
+    def test_tail_lines(self, tmp_path):
+        from lib.logger import tail_lines
+        path = self._write(
+            tmp_path, "f.log", "l1\n\nl2\nl3\n", 1000.0)
+        assert tail_lines(path, 2) == ["l2", "l3"]
+        assert tail_lines(str(tmp_path / "nope.log"), 5) == []
+
+    def test_read_llm_history(self, tmp_path):
+        from lib.logger import read_llm_history
+        path = self._write(
+            tmp_path, "llm.log",
+            "[USER] вопрос\n[ASSISTANT] ответ\nмусор\n[USER] ещё\n",
+            1000.0)
+        history = read_llm_history(path, limit=10)
+        assert history == [
+            {"role": "user", "content": "вопрос"},
+            {"role": "assistant", "content": "ответ"},
+            {"role": "user", "content": "ещё"},
+        ]
+        assert len(read_llm_history(path, limit=2)) == 1

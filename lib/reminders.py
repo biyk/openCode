@@ -13,7 +13,7 @@ import re
 from datetime import timedelta
 from typing import Optional
 
-from lib.google_calendar import GoogleCalendar
+from lib.google_calendar import GoogleCalendar, GoogleOAuthError
 from lib.time_parser import ReminderSpec, TimeParseError, TimeParser
 
 TRIGGER_PHRASES = (
@@ -106,3 +106,52 @@ class ReminderHandler:
     def auth_ready(self) -> bool:
         """Готовы ли авторизация и scope для Calendar."""
         return self._google.is_ready()
+
+    def authorize(self) -> None:
+        """Обновляет доступ (refresh) или проходит интерактивный OAuth.
+
+        Протухший access-токен молча обновляется по refresh_token;
+        без токена/сколпов — открывается браузер для согласия.
+        Бросает GoogleOAuthError, если авторизоваться не удалось.
+        """
+        self._google.authorize()
+
+
+def main(argv=None) -> int:
+    """CLI: `python -m lib.reminders "<фраза>"`.
+
+    Разбирает фразу через ReminderHandler (время + текст; без времени —
+    +60 минут), создаёт событие в Google Calendar и печатает отчёт.
+    Используется командой calendar-reminder из commands.json.
+    Коды: 0 — создано, 1 — ошибка API, 2 — нет фразы, 3 — пустая
+    фраза или нет авторизации Calendar.
+    """
+    import sys
+
+    args = argv if argv is not None else sys.argv[1:]
+    if not args:
+        print('usage: python -m lib.reminders "<фраза>"')
+        return 2
+    handler = ReminderHandler()
+    spec = handler.create(" ".join(args))
+    if spec is None:
+        print("Пустая фраза — нечего напоминать")
+        return 3
+    try:
+        # Протухший токен обновляется здесь же (refresh); без
+        # авторизации — интерактивный OAuth в браузере.
+        handler.authorize()
+    except GoogleOAuthError as e:
+        print(f"[Google] Нет авторизации Calendar: {e}")
+        return 3
+    event_id = handler.add_event(spec)
+    if not event_id:
+        print("Не удалось создать напоминание")
+        return 1
+    print(f"reminder: {spec.text} @ {spec.when.isoformat()}")
+    print(f"event_id: {event_id}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

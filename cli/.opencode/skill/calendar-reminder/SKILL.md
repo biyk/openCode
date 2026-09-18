@@ -28,7 +28,14 @@ print('event_id:', h.add_event(spec))
 "
 ```
 
-There is no dedicated CLI subcommand for reminders — use the handler above. Auth is required (`token.json` with `calendar.events`).
+There is a dedicated CLI subcommand for reminders (used by the
+`calendar-reminder` voice command in `commands.json`):
+
+```powershell
+cd C:\Users\b5\Desktop\voice; python -m lib.reminders "через 3 часа постирать бельё"
+```
+
+It prints `reminder: <текст> @ <время>` and `event_id: <id>`. Auth is required (`token.json` with `calendar.events`).
 
 ## Notes
 

@@ -86,7 +86,8 @@ class OpenCodeCliRunner:
     def run(self, text: str,
             abort_event: Optional[threading.Event] = None,
             raw: bool = False,
-            verbose: Optional[bool] = None) -> Optional[str]:
+            verbose: Optional[bool] = None,
+            timeout: Optional[float] = None) -> Optional[str]:
         """Выполняет команду через console opencode и возвращает текст ответа.
 
         raw=False: рабочий каталог cli/, текст оборачивается в BASE_PROMPT.
@@ -94,10 +95,13 @@ class OpenCodeCliRunner:
         модели без обёртки. verbose=True (по умолчанию = raw) — вывод CLI
         стримится в консоль построчно в реальном времени и итог возвращается
         без шумовой фильтрации, чтобы был виден сырой ответ и ошибки агента.
+        timeout — лимит одной попытки в секундах (по умолчанию self._timeout;
+        диагностике нужно больше).
         Возвращает None при провале запуска, таймауте или отмене (стоп).
         """
         if verbose is None:
             verbose = raw
+        limit = timeout if timeout is not None else self._timeout
         text = (text or "").strip()
         if not text:
             return None
@@ -154,7 +158,7 @@ class OpenCodeCliRunner:
         reader = threading.Thread(target=_reader, daemon=True)
         reader.start()
 
-        deadline = time.monotonic() + self._timeout
+        deadline = time.monotonic() + limit
         try:
             while True:
                 if abort_event is not None and abort_event.is_set():
@@ -163,7 +167,7 @@ class OpenCodeCliRunner:
                 if reader.is_alive() and proc.poll() is None:
                     if time.monotonic() >= deadline:
                         self._output.print_error(
-                            f"[OpenCode] Таймаут {int(self._timeout)}с")
+                            f"[OpenCode] Таймаут {int(limit)}с")
                         self._dump_partial(chunks, verbose)
                         return None
                     time.sleep(0.2)
