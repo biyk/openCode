@@ -7,7 +7,7 @@
         },
         "паузы": {
             "command": "playpause",
-            "hits": 7,
+            "hits": 10,
             "confirmed": true
         }
     },
