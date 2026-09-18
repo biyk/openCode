@@ -16,7 +16,7 @@ This is the exact action behind the voice command `stop` in `targets/FLTP-5i3-16
 
 ## How to execute
 
-Run the media-stop script for the active host:
+Run the stop script for the active host:
 
 ```powershell
 cd C:\Users\b5\Desktop\voice; powershell -ExecutionPolicy Bypass -File "targets/FLTP-5i3-16512/commands/mediastop.ps1"
