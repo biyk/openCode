@@ -1,5 +1,5 @@
 ---
-name: youtube-open
+name: openyoutube
 description: Open the YouTube homepage in the browser via CDP on the voice-control host. Use when the user asks to open, launch, or start YouTube, or says "открой ютуб", "запусти ютуб", "включи ютуб".
 license: MIT
 compatibility: opencode
