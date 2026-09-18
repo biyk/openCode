@@ -69,6 +69,22 @@
             "default": "python -m lib.diagnose launch \"{{text}}\""
         }
     },
+    "descriptions": {
+        "volumeup": "увеличить громкость",
+        "volumedown": "уменьшить громкость",
+        "playpause": "play/pause медиа",
+        "stop": "остановить медиа",
+        "openyoutube": "открыть YouTube",
+        "youtube_news": "искать и играть новости на YouTube",
+        "news": "YouTube + новости",
+        "calendar-reminder": "напоминание = событие Google Calendar",
+        "task-add": "задача в Google Tasks (@default)",
+        "diagnose": "анализ последнего лога и чата, автофикс; супервизор WORKING.MD, watchdog 600 секунд, откат git, до 5 попыток; detached, голосовой цикл не блокируется",
+        "calendar-plans": "текущее событие из календаря",
+        "task-complete": "отметить задачу выполненной",
+        "browser-automation": "универсальный браузер (инструмент)",
+        "speak-answer": "озвучка результата (сервисный)"
+    },
     "requires": {
         "playpause": ["media_session"],
         "stop": ["media_session"],
