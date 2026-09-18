@@ -25,7 +25,7 @@ launches you with the raw user text:
 1. `commands.json` (repo root `targets/FLTP-5i3-16512/commands.json`) literal `match` phrases — executed by the app itself, not by you.
 2. mini-LLM intent (same `match` ids, garbled speech) — the app, not you.
 3. **You**: anything that fell through. Your skills map spoken intents to concrete actions:
-   - media volume/session: `media-volume-up/down`, `media-stop`, `media-play-pause`
+   - media volume/session: `volumeup/volumedown`, `media-stop`, `media-play-pause`
    - browser: `youtube-open`, `youtube-news`, `browser-automation`
    - google: `calendar-reminder`, `calendar-plans`, `task-add`, `task-complete`
    - voice the outcome: `speak-answer`
