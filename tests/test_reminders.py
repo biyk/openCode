@@ -194,19 +194,27 @@ class TestRemindersMain:
         return Fake()
 
     def test_main_creates_event(self, capsys):
-        """Фраза с временем — событие создано, код 0."""
+        """Фраза с временем — событие создано, код 0, озвучка «Готово»."""
         import lib.reminders as rem_module
         spec = ReminderSpec(
             when=datetime(2026, 9, 15, 11, 0), text="позвонить маме")
         real = self._patch_handler(self._fake(spec=spec))
+        voiced = []
+        fake_tts = type("T", (), {
+            "speak_and_play": lambda self, text: voiced.append(text),
+        })()
+        real_tts = rem_module.TextToSpeech
+        rem_module.TextToSpeech = lambda *a, **k: fake_tts
         try:
             code = main(["через час позвонить маме"])
         finally:
             rem_module.ReminderHandler = real
+            rem_module.TextToSpeech = real_tts
         out = capsys.readouterr().out
         assert code == 0
         assert "reminder: позвонить маме" in out
         assert "event_id: event-1" in out
+        assert voiced == ["Готово"]
 
     def test_main_no_args_usage(self, capsys):
         """Без фразы — usage, код 2."""

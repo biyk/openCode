@@ -44,6 +44,8 @@ STALE_LIMIT_SEC = 600.0
 ATTEMPT_TIMEOUT_SEC = 1800.0
 POLL_INTERVAL_SEC = 15.0
 MAX_ATTEMPTS = 5
+TEST_TIMEOUT_SEC = 300
+TEST_TAIL_LINES = 30
 
 TRIGGER_PHRASES = (
     "анализ",
@@ -58,13 +60,15 @@ MSG_DIRTY = "Сначала зафиксируй изменения в гит, �
 MSG_BUSY = "Диагностика уже идёт"
 MSG_START = "Начинаю диагностику. Слежу за прогрессом"
 MSG_STALE = "Агент завис, откатываю изменения и запускаю заново"
+MSG_TESTS_FAIL = "Тесты не прошли, откатываю изменения и запускаю заново"
 MSG_DONE = "Диагностика завершена"
 MSG_FAIL = "Диагностика не завершена после всех попыток"
 MSG_NO_LOGS = "Нет логов для диагностики"
 
 
 def build_prompt(log_path: str, log_tail: list[str],
-                 messages: list[dict], focus: str) -> str:
+                 messages: list[dict], focus: str,
+                 extra: str = "") -> str:
     """Текст задачи агенту: лог + чат + протокол WORKING.MD."""
     lines = [
         "Ты — агент диагностики голосового ассистента.",
@@ -83,7 +87,12 @@ def build_prompt(log_path: str, log_tail: list[str],
         "Протокол: в начале создай файл WORKING.MD в корне репозитория "
         "и отмечай в нём текущий статус выполнения; после выполнения "
         "УДАЛИ за собой файл WORKING.MD.",
+        "После удаления WORKING.MD будут запущены тесты "
+        "(python -m pytest tests/ -q); если они не пройдут — изменения "
+        "откатят и задача вернётся тебе заново.",
     ]
+    if extra:
+        lines += ["Результат прошлого запуска:", extra]
     return "\n".join(lines)
 
 
@@ -163,6 +172,21 @@ def rollback_changes(repo_root: Optional[str] = None) -> None:
         pass
 
 
+def run_tests(repo_root: Optional[str] = None) -> tuple[bool, str]:
+    """Прогоняет pytest. Возвращает (прошли, хвост вывода)."""
+    repo_root = repo_root or REPO_ROOT
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/", "-q"],
+            cwd=repo_root, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=TEST_TIMEOUT_SEC)
+    except Exception as e:
+        return False, f"запуск тестов не удался: {e}"
+    out = (proc.stdout + proc.stderr).strip()
+    tail = "\n".join(out.splitlines()[-TEST_TAIL_LINES:])
+    return proc.returncode == 0, tail
+
+
 class DiagnoseSupervisor:
     """Супервизор фоновой диагностики (вотчдог + повторы)."""
 
@@ -230,8 +254,13 @@ class DiagnoseSupervisor:
                 abort.set()
                 return
 
-    def _attempt(self, prompt: str) -> str:
-        """Одна попытка: 'ok' | 'stale' | 'fail'."""
+    def _attempt(self, prompt: str) -> tuple[str, str]:
+        """Одна попытка: (результат, хвост вывода тестов).
+
+        Результат: 'ok' | 'stale' | 'fail'. WORKING.MD пропал —
+        прогоняем тесты: зелёные — 'ok', красные — 'fail' с хвостом
+        вывода для следующей попытки.
+        """
         try:
             os.unlink(self._workfile())
         except OSError:
@@ -252,10 +281,14 @@ class DiagnoseSupervisor:
             abort.set()
             watcher.join(timeout=5)
         if state["stale"]:
-            return "stale"
-        if answer and not os.path.exists(self._workfile()):
-            return "ok"
-        return "fail"
+            return "stale", ""
+        if not answer or os.path.exists(self._workfile()):
+            return "fail", ""
+        self._output.print_info("[Diagnose] Агент завершил, запускаю тесты")
+        passed, tail = run_tests(self._repo)
+        if passed:
+            return "ok", ""
+        return "fail", tail
 
     def supervise(self, focus: str = "") -> int:
         """Полный цикл: lock уже занят вызывающим. Возвращает код."""
@@ -267,16 +300,22 @@ class DiagnoseSupervisor:
             self._say(MSG_NO_LOGS)
             return 4
         log_path, tail, messages = collected
-        prompt = build_prompt(log_path, tail, messages, focus)
         self._say(MSG_START)
+        extra = ""
         for attempt in range(1, self._max_attempts + 1):
-            result = self._attempt(prompt)
+            prompt = build_prompt(log_path, tail, messages, focus, extra)
+            result, test_out = self._attempt(prompt)
             if result == "ok":
                 self._say(MSG_DONE)
                 return 0
             if attempt >= self._max_attempts:
                 break
-            self._say(f"{MSG_STALE} (попытка {attempt})")
+            if result == "stale":
+                self._say(f"{MSG_STALE} (попытка {attempt})")
+                extra = ""
+            else:
+                self._say(f"{MSG_TESTS_FAIL} (попытка {attempt})")
+                extra = test_out
             try:
                 rollback_changes(self._repo)
             except Exception as e:

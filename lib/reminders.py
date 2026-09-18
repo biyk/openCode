@@ -15,6 +15,7 @@ from typing import Optional
 
 from lib.google_calendar import GoogleCalendar, GoogleOAuthError
 from lib.time_parser import ReminderSpec, TimeParseError, TimeParser
+from lib.tts import TextToSpeech
 
 TRIGGER_PHRASES = (
     "напомним",
@@ -150,6 +151,10 @@ def main(argv=None) -> int:
         return 1
     print(f"reminder: {spec.text} @ {spec.when.isoformat()}")
     print(f"event_id: {event_id}")
+    try:
+        TextToSpeech().speak_and_play("Готово")
+    except Exception as e:
+        print(f"[Voice] Озвучка не удалась: {e}")
     return 0
 
 

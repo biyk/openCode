@@ -416,18 +416,26 @@ class TestCompleteCli:
         return G()
 
     def test_main_create_task(self, capsys):
-        """CLI создаёт задачу: create <фраза> → task_id, код 0."""
+        """CLI создаёт задачу: create <фраза> → task_id, код 0, «Готово»."""
         import lib.tasks as tasks_module
         tasks_module.TaskHandler = lambda google=None: TaskHandler(
             google=google or self._google_create())
+        voiced = []
+        fake_tts = type("T", (), {
+            "speak_and_play": lambda self, text: voiced.append(text),
+        })()
+        real_tts = tasks_module.TextToSpeech
+        tasks_module.TextToSpeech = lambda *a, **k: fake_tts
         try:
             code = main(["create", "создай задачу убраться у кошки"])
         finally:
             tasks_module.TaskHandler = TaskHandler
+            tasks_module.TextToSpeech = real_tts
         out = capsys.readouterr().out
         assert code == 0
         assert "task: убраться у кошки" in out
         assert "task_id: task-9" in out
+        assert voiced == ["Готово"]
 
     def test_main_create_empty_phrase(self, capsys):
         """Пустая фраза после триггера — код 3."""

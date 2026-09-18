@@ -9,6 +9,7 @@ from lib.diagnose import (
     MSG_DONE,
     MSG_FAIL,
     MSG_NO_LOGS,
+    MSG_TESTS_FAIL,
     TRIGGER_PHRASES,
     DiagnoseSupervisor,
     acquire_lock,
@@ -18,6 +19,7 @@ from lib.diagnose import (
     main,
     release_lock,
     rollback_changes,
+    run_tests,
 )
 
 
@@ -51,7 +53,7 @@ class FakeRunner:
             verbose=None, timeout=None):
         self.calls.append({
             "raw": raw, "timeout": timeout,
-            "has_prompt": bool(prompt),
+            "prompt": prompt,
         })
         if self.mode == "ok":
             # Агент по протоколу: создал, отметил, удалил.
@@ -101,6 +103,18 @@ class TestBuildPrompt:
     def test_prompt_empty_focus(self):
         prompt = build_prompt("p", [], [], "")
         assert "Фокус: всё" in prompt
+
+    def test_prompt_extra(self):
+        """Хвост прошлого запуска прикладывается к промпту."""
+        prompt = build_prompt("p", [], [], "", "FAILED test_x")
+        assert "Результат прошлого запуска:" in prompt
+        assert "FAILED test_x" in prompt
+
+    def test_prompt_mentions_tests(self):
+        """Агент знает: после WORKING.MD — тесты, провал — возврат."""
+        prompt = build_prompt("p", [], [], "")
+        assert "pytest" in prompt
+        assert "WORKING.MD" in prompt
 
 
 class TestGitDirty:
@@ -201,11 +215,31 @@ class TestSupervise:
         runner = FakeRunner(str(tmp_path), mode="ok")
         sup, said = _supervisor(tmp_path, runner)
         mocker.patch("lib.diagnose.git_status_dirty", return_value=False)
+        mocker.patch("lib.diagnose.run_tests",
+                     return_value=(True, "12 passed"))
         _write_logs(os.path.join(str(tmp_path), "logs"))
         assert sup.supervise("громкость") == 0
         assert len(runner.calls) == 1
         assert runner.calls[0]["raw"] is True
         assert any(MSG_DONE in s for s in said)
+
+    def test_tests_fail_rolls_back_and_retries(self, tmp_path, mocker):
+        """WORKING.MD пропал, но тесты красные — откат + хвост в промпте."""
+        runner = FakeRunner(str(tmp_path), mode="ok")
+        sup, said = _supervisor(tmp_path, runner, max_attempts=2)
+        mocker.patch("lib.diagnose.git_status_dirty", return_value=False)
+        mocker.patch("lib.diagnose.run_tests",
+                     return_value=(False, "FAILED test_x - boom"))
+        rolled = []
+        mocker.patch("lib.diagnose.rollback_changes",
+                     side_effect=lambda *a: rolled.append(1))
+        _write_logs(os.path.join(str(tmp_path), "logs"))
+        assert sup.supervise("") == 1
+        assert len(runner.calls) == 2
+        assert len(rolled) == 1
+        assert any(MSG_TESTS_FAIL in s for s in said)
+        assert "FAILED test_x" not in runner.calls[0]["prompt"]
+        assert "FAILED test_x" in runner.calls[1]["prompt"]
 
     def test_stale_retries_then_fails(self, tmp_path, mocker):
         runner = FakeRunner(str(tmp_path), mode="hang")
@@ -213,6 +247,8 @@ class TestSupervise:
             tmp_path, runner, stale_limit=0.0, poll_interval=0.01,
             max_attempts=2)
         mocker.patch("lib.diagnose.git_status_dirty", return_value=False)
+        mocker.patch("lib.diagnose.run_tests",
+                     return_value=(True, ""))
         rolled = []
         mocker.patch("lib.diagnose.rollback_changes",
                      side_effect=lambda *a: rolled.append(1))
@@ -226,6 +262,8 @@ class TestSupervise:
         runner = FakeRunner(str(tmp_path), mode="fail")
         sup, said = _supervisor(tmp_path, runner, max_attempts=2)
         mocker.patch("lib.diagnose.git_status_dirty", return_value=False)
+        mocker.patch("lib.diagnose.run_tests",
+                     return_value=(True, ""))
         rolled = []
         mocker.patch("lib.diagnose.rollback_changes",
                      side_effect=lambda *a: rolled.append(1))
@@ -233,6 +271,37 @@ class TestSupervise:
         assert sup.supervise("") == 1
         assert len(runner.calls) == 2
         assert len(rolled) == 1
+
+
+class TestRunTests:
+    """Хелпер прогона pytest: коды, хвост, падение запуска."""
+
+    def test_passed(self, mocker):
+        proc = mocker.MagicMock()
+        proc.returncode = 0
+        proc.stdout = "12 passed\n"
+        proc.stderr = ""
+        mocker.patch("lib.diagnose.subprocess.run", return_value=proc)
+        passed, tail = run_tests("/repo")
+        assert passed is True
+        assert "12 passed" in tail
+
+    def test_failed(self, mocker):
+        proc = mocker.MagicMock()
+        proc.returncode = 1
+        proc.stdout = "FAILED test_x\n1 failed\n"
+        proc.stderr = ""
+        mocker.patch("lib.diagnose.subprocess.run", return_value=proc)
+        passed, tail = run_tests("/repo")
+        assert passed is False
+        assert "FAILED test_x" in tail
+
+    def test_launch_error(self, mocker):
+        mocker.patch("lib.diagnose.subprocess.run",
+                     side_effect=OSError("no python"))
+        passed, tail = run_tests("/repo")
+        assert passed is False
+        assert tail != ""
 
 
 class TestMain:

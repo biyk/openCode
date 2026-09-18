@@ -18,6 +18,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 
 from lib.google_tasks import GoogleOAuthError, GoogleTasks
+from lib.tts import TextToSpeech
 
 # Порог нечёткого совпадения названий (difflib ratio). Ошибки Vosk
 # превращают «подчинить лампочку в ванной» в «починить лампочку ванной»,
@@ -285,6 +286,10 @@ def main(argv: Optional[list] = None) -> int:
                 return 1
             print("task:", title)
             print("task_id:", task_id)
+            try:
+                TextToSpeech().speak_and_play("Готово")
+            except Exception as e:
+                print(f"[Voice] Озвучка не удалась: {e}")
             return 0
         title = handler.complete_parse(phrase) or ""
         if not title:
