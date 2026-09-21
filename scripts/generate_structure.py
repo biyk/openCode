@@ -1,10 +1,10 @@
-"""Генератор STRUCTURE.md по манифесту описаний .structure.json.
+"""Генератор STRUCTURE.md по плоскому манифесту описаний .structure.json.
 
-Скрипт читает манифест описаний (файлы/каталоги + русские комментарии),
-сравнивает его с индексом git (только staged-файлы) и рендерит дерево
-проекта в STRUCTURE.md. Если в манифесте не хватает описания для какого-то
-отслеживаемого файла или каталога — скрипт завершается с ошибкой, не
-изменяя STRUCTURE.md.
+Манифест — объект вида {"путь": "русское описание"} для файлов и каталогов.
+Скрипт сравнивает описания с файлами из индекса git (tracked + untracked,
+исключая EXCLUDED_NAMES/EXCLUDED_DIRS из check_tooltips) и рендерит дерево
+проекта в STRUCTURE.md. Обязательны описания только файлов; для каталогов
+фallback не требуется.
 
 Режимы:
   --check   только проверить, что STRUCTURE.md актуален (0/1)
@@ -14,12 +14,16 @@
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    from check_tooltips import EXCLUDED_DIRS, EXCLUDED_NAMES
+except ImportError:
+    from scripts.check_tooltips import EXCLUDED_DIRS, EXCLUDED_NAMES
 
 
 class StructureError(Exception):
@@ -38,13 +42,13 @@ def _normalize_path(path: Any) -> str:
     return value
 
 
-def _is_excluded(path: str, exclusions: set[str]) -> bool:
+def _is_excluded(path: str) -> bool:
     normalized = _normalize_path(path)
-    for pattern in exclusions:
-        normalized_pattern = _normalize_path(pattern)
-        if fnmatch.fnmatchcase(normalized, normalized_pattern):
-            return True
-    return False
+    name = Path(normalized).name
+    if name in EXCLUDED_NAMES:
+        return True
+    parts = Path(normalized).parts
+    return any(part in EXCLUDED_DIRS for part in parts)
 
 
 def _has_russian_description(description: Any) -> bool:
@@ -56,90 +60,44 @@ def _has_russian_description(description: Any) -> bool:
 def _description_for(
     descriptions: dict[str, Any],
     path: str,
-    fallback: str,
 ) -> str:
     description = descriptions.get(path)
     if not _has_russian_description(description):
-        return fallback
+        return ""
     return str(description).strip()
 
 
 def validate_manifest(
     manifest: dict[str, Any],
     expected_files: set[str],
-    expected_directories: set[str],
-    exclusions: set[str],
+    repo_path: Any,
 ) -> list[str]:
-    """Валидирует манифест описаний.
+    """Валидирует плоский манифест описаний.
 
-    Проверяет, что все ожидаемые файлы и каталоги имеют русское описание,
-    что в манифесте нет неизвестных путей и что индекс не содержит
-    исключённых путей.
+    Обязательно описание для каждого файла из индекса. Каталоги не обязаны
+    иметь описание. В манифесте не должно быть неизвестных путей.
 
     Возвращает список ошибок (пустой, если всё ок).
     """
+    repo = Path(repo_path)
     errors: list[str] = []
-    files = manifest.get("files", {})
-    directories = manifest.get("directories", {})
-
-    if not isinstance(files, dict):
-        errors.append("раздел files должен быть объектом")
-        files = {}
-    if not isinstance(directories, dict):
-        errors.append("раздел directories должен быть объектом")
-        directories = {}
-    if not isinstance(exclusions, (list, set, tuple)):
-        errors.append("раздел exclusions должен быть списком")
-        exclusions = set()
-
-    normalized_files = {
-        _normalize_path(path): description
-        for path, description in files.items()
-    }
-    normalized_directories = {
-        _normalize_path(path): description
-        for path, description in directories.items()
-    }
 
     for path in sorted(expected_files):
         normalized = _normalize_path(path)
-        if _is_excluded(normalized, exclusions):
-            errors.append(f"путь исключён из структуры: {normalized}")
-            continue
-        if normalized not in normalized_files:
+        if normalized not in manifest:
             errors.append(f"описание отсутствует для файла: {normalized}")
-        elif not _has_russian_description(normalized_files[normalized]):
+        elif not _has_russian_description(manifest[normalized]):
             errors.append(f"описание для файла {normalized} не на русском языке")
 
-    for path in sorted(expected_directories):
+    for path in sorted(manifest):
         normalized = _normalize_path(path)
-        if _is_excluded(normalized, exclusions):
-            errors.append(f"путь исключён из структуры: {normalized}")
-            continue
-        if normalized not in normalized_directories:
-            errors.append(f"описание отсутствует для каталога: {normalized}")
-        elif not _has_russian_description(normalized_directories[normalized]):
-            errors.append(f"описание для каталога {normalized} не на русском языке")
-
-    for path in sorted(normalized_files):
-        if not path:
+        if not normalized:
             errors.append("пустой путь в манифесте")
             continue
-        if _is_excluded(path, exclusions):
-            errors.append(f"путь исключён из структуры: {path}")
+        if _is_excluded(normalized):
             continue
-        if path not in expected_files:
-            errors.append(f"путь не найден в индексе: {path}")
-
-    for path in sorted(normalized_directories):
-        if not path:
-            errors.append("пустой путь каталога в манифесте")
-            continue
-        if _is_excluded(path, exclusions):
-            errors.append(f"путь исключён из структуры: {path}")
-            continue
-        if path not in expected_directories:
-            errors.append(f"путь не найден в структуре: {path}")
+        if not (repo / normalized).exists():
+            errors.append(f"путь не найден на диске: {normalized}")
 
     return errors
 
@@ -155,89 +113,40 @@ def render_structure(
     directories = {_normalize_path(path) for path in directories}
     root_name = root_name.replace("\\", "/").rstrip("/")
 
-    files_by_parent: dict[str, list[str]] = {}
-    directories_by_parent: dict[str, list[str]] = {}
-    for path in files:
-        parent = path.rpartition("/")[0]
-        files_by_parent.setdefault(parent, []).append(path)
-    for path in directories:
-        if path == ".":
+    children_dirs: dict[str, list[str]] = {}
+    children_files: dict[str, list[str]] = {}
+    for directory in directories:
+        if directory == ".":
             continue
-        parent = path.rpartition("/")[0]
-        directories_by_parent.setdefault(parent, []).append(path)
+        parent = directory.rpartition("/")[0] or "."
+        children_dirs.setdefault(parent, []).append(directory)
+    for path in files:
+        parent = path.rpartition("/")[0] or "."
+        children_files.setdefault(parent, []).append(path)
 
-    for child_files in files_by_parent.values():
-        child_files.sort()
-    for child_directories in directories_by_parent.values():
-        child_directories.sort()
+    root_description = _description_for(manifest, ".")
+    root_line = root_name + (f"  # {root_description}" if root_description else "")
+    lines = [root_line]
 
-    fallback_description = f"Описание каталога {root_name}"
+    def append_entry(prefix: str, connector: str, path: str, is_directory: bool) -> None:
+        name = path.rpartition("/")[2] if "/" in path else path
+        label = f"{name}/" if is_directory else name
+        description = _description_for(manifest, path)
+        suffix = f"  # {description}" if description else ""
+        lines.append(f"{prefix}{connector}{label}{suffix}")
 
-    lines = [
-        f"{root_name}/  # Описание: "
-        f"{_description_for(manifest.get('directories', {}), '.', fallback_description)}."
-    ]
-
-    def render_node(path: str, prefix: str) -> None:
-        children = directories_by_parent.get(path, []) + files_by_parent.get(path, [])
-        children.sort(key=lambda item: (item not in directories_by_parent.get(path, []), item))
-        for index, child in enumerate(children):
-            is_last = index == len(children) - 1
+    def walk(parent: str, prefix: str) -> None:
+        entries = [(path, True) for path in sorted(children_dirs.get(parent, []))]
+        entries += [(path, False) for path in sorted(children_files.get(parent, []))]
+        for index, (path, is_directory) in enumerate(entries):
+            is_last = index == len(entries) - 1
             connector = "└── " if is_last else "├── "
-            is_directory = child in directories_by_parent.get(path, [])
-            child_path = f"{path}/{child}" if path != "." else child
+            append_entry(prefix, connector, path, is_directory)
             if is_directory:
-                description = _description_for(
-                    manifest.get("directories", {}),
-                    child_path,
-                    f"Описание каталога {child_path}",
-                )
-                lines.append(f"{prefix}{connector}{child}/  # Описание: {description}")
                 next_prefix = prefix + ("    " if is_last else "│   ")
-                if child in directories_by_parent.get(child_path, []) or any(
-                    directory.startswith(f"{child_path}/")
-                    for directory in directories
-                ):
-                    render_node(child_path, next_prefix)
-            else:
-                description = _description_for(
-                    manifest.get("files", {}),
-                    child_path,
-                    f"Описание файла {child_path}",
-                )
-                lines.append(
-                    f"{prefix}{connector}{child.split('/')[-1]}  # Описание: {description}"
-                )
+                walk(path, next_prefix)
 
-    root_children = (
-        directories_by_parent.get(".", []) + files_by_parent.get(".", [])
-    )
-    root_children.sort(key=lambda item: (item not in directories_by_parent.get(".", []), item))
-    for index, child in enumerate(root_children):
-        is_last = index == len(root_children) - 1
-        connector = "└── " if is_last else "├── "
-        is_directory = child in directories_by_parent.get(".", [])
-        child_path = child
-        if is_directory:
-            description = _description_for(
-                manifest.get("directories", {}),
-                child_path,
-                f"Описание каталога {child_path}",
-            )
-            lines.append(f"{connector}{child}/  # Описание: {description}")
-            next_prefix = "    " if is_last else "│   "
-            if child in directories_by_parent.get(child_path, []):
-                render_node(child_path, next_prefix)
-        else:
-            description = _description_for(
-                manifest.get("files", {}),
-                child_path,
-                f"Описание файла {child_path}",
-            )
-            lines.append(
-                f"{connector}{child.split('/')[-1]}  # Описание: {description}"
-            )
-
+    walk(".", "")
     return "\n".join(lines)
 
 
@@ -251,8 +160,13 @@ def render_document(current: str, expected: str) -> str:
     end_idx = current.find(end_marker)
     if start_idx != -1 and end_idx != -1:
         prefix = current[:start_idx].rstrip()
-        suffix = current[end_idx:]
-        return f"{prefix}\n\n{region}\n{suffix}"
+        suffix = current[end_idx + len(end_marker):]
+        result = f"{prefix}\n\n{region}" if prefix else region
+        if suffix.strip():
+            result += "\n" + suffix.strip() + "\n"
+        else:
+            result += "\n"
+        return result
 
     separator = "\n\n" if current.strip() else ""
     return current.rstrip() + separator + region + "\n"
@@ -290,7 +204,7 @@ def get_inferred_directories(files: set[str]) -> set[str]:
 
 
 def build_structure(
-    tmp_path: Any,
+    repo_path: Any,
     manifest_path: Any,
 ) -> str:
     """Строит содержимое STRUCTURE.md из манифеста."""
@@ -300,22 +214,20 @@ def build_structure(
 
     with manifest_file.open(encoding="utf-8") as file:
         manifest = json.load(file)
+    if not isinstance(manifest, dict):
+        raise StructureError(f"{manifest_path}: ожидается объект на верхнем уровне")
 
-    exclusions = set(manifest.get("exclusions", set()))
     files = {
-        path for path in collect_index(tmp_path)
-        if not _is_excluded(path, exclusions)
+        path for path in collect_index(repo_path)
+        if not _is_excluded(path)
     }
-    directories = {
-        path for path in get_inferred_directories(files)
-        if not _is_excluded(path, exclusions)
-    }
+    directories = get_inferred_directories(files)
 
-    errors = validate_manifest(manifest, files, directories, exclusions)
+    errors = validate_manifest(manifest, files, repo_path)
     if errors:
         raise StructureError("; ".join(errors))
 
-    root = tmp_path.name if hasattr(tmp_path, "name") else "voice"
+    root = Path(repo_path).resolve().name
     return render_structure(root, manifest, files, directories)
 
 
