@@ -171,9 +171,11 @@ def render_structure(
     for child_directories in directories_by_parent.values():
         child_directories.sort()
 
+    fallback_description = f"Описание каталога {root_name}"
+
     lines = [
         f"{root_name}/  # Описание: "
-        f"{_description_for(manifest.get('directories', {}), '.', f'Описание каталога {root_name}')}."
+        f"{_description_for(manifest.get('directories', {}), '.', fallback_description)}."
     ]
 
     def render_node(path: str, prefix: str) -> None:
