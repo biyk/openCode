@@ -427,6 +427,8 @@ class TestTranscriptionWorker:
 
         worker._output.print_error.assert_called_once()
         worker._output.print_stopped.assert_called_once()
+        error_msg = worker._output.print_error.call_args[0][0]
+        assert "boom" in str(error_msg)
 
 
 class TestMainEntryPoint:
