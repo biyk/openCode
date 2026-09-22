@@ -11,6 +11,7 @@
     python -m lib.browser_control eval "https://youtube.com" "document.title"
     python -m lib.browser_control click "https://youtube.com" "button.ytp-play-button"
     python -m lib.browser_control youtube-play "музыка для кодинга"
+    python -m lib.browser_control youtube-first
 """
 
 import json
@@ -44,6 +45,18 @@ _YOUTUBE_SELECTORS = {
     "player": "button.ytp-play-button",
     "result": "ytd-video-renderer a#video-title, ytd-video-renderer #video-title",
 }
+
+_YOUTUBE_FIRST_VIDEO_SCRIPT = (
+    "(function(){"
+    "var items = document.querySelectorAll('ytd-rich-item-renderer');"
+    "for (var i = 0; i < items.length; i++) {"
+    "  if (items[i].querySelector('ytd-ad-slot-renderer')) continue;"
+    "  var a = items[i].querySelector('a[href*=\"/watch?v=\"]');"
+    "  if (a && a.href) return a.href;"
+    "}"
+    "return '';"
+    "})()"
+)
 
 
 def _http_request(url: str, data: Optional[dict] = None) -> dict:
@@ -304,6 +317,46 @@ def youtube_play(query: str, port: int = DEFAULT_PORT) -> bool:
     return youtube_play_first_result(tab, port)
 
 
+_YOUTUBE_FIRST_VIDEO_TIMEOUT = 30.0
+_YOUTUBE_EXTENSIONS_SETTLE = 3.0
+
+
+def _youtube_first_video_link(tab: dict) -> str:
+    """Первая ссылка на видео из ленты (рекламные элементы пропускаются)."""
+    ok, value = eval_js(tab, _YOUTUBE_FIRST_VIDEO_SCRIPT)
+    if ok and isinstance(value, str):
+        return value
+    return ""
+
+
+def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
+    """Открывает главную ютуба, ждёт загрузку ленты и расширений,
+    затем открывает первое видео."""
+    tab = open_url("https://youtube.com", port)
+    if not tab:
+        print("[Browser] Не удалось открыть ютуб")
+        return False
+    _activate(tab, port)
+    deadline = time.time() + _YOUTUBE_FIRST_VIDEO_TIMEOUT
+    link = ""
+    while time.time() < deadline:
+        link = _youtube_first_video_link(tab)
+        if link:
+            break
+        time.sleep(1)
+    if not link:
+        print("[Browser] Список видео не загрузился за "
+              f"{_YOUTUBE_FIRST_VIDEO_TIMEOUT:.0f} секунд")
+        return False
+    time.sleep(_YOUTUBE_EXTENSIONS_SETTLE)
+    ok, _ = eval_js(tab, f"window.location.href = {json.dumps(link)}")
+    if not ok:
+        print("[Browser] Не удалось открыть первое видео")
+        return False
+    print(f"[Browser] Открыто первое видео: {link}")
+    return True
+
+
 def _cmd_status(port: int) -> int:
     if is_running(port):
         print(f"[Browser] Браузер работает на порту {port}")
@@ -380,6 +433,10 @@ def main(argv: Optional[list] = None) -> int:
         return _cmd_click(args[0], args[1], port)
     if cmd == "youtube-play":
         return _cmd_youtube_play(" ".join(args), port)
+    if cmd == "youtube-first":
+        if youtube_open_first(port):
+            return 0
+        return 1
     print(f"[Browser] Неизвестная команда: {cmd}")
     return 1
 

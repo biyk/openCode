@@ -10,14 +10,14 @@ metadata:
 
 ## What I do
 
-Open `https://youtube.com` in a new browser tab using the repo's CDP helper (`lib/browser_control.py`), which starts Brave with a remote-debugging port if needed.
+Open a YouTube tab in the CDP browser (creating it if needed, otherwise switching to an already-open one), then wait until the homepage video list loads, let browser extensions finish running, and finally open the first (non-ad) video from that list.
 
 This is the exact action behind the voice command `openyoutube` in `targets/FLTP-5i3-16512/commands.json`.
 
 ## How to execute
 
 ```powershell
-cd C:\Users\b5\Desktop\voice; python -m lib.browser_control open-url "https://youtube.com"
+cd C:\Users\b5\Desktop\voice; python -m lib.browser_control youtube-first
 ```
 
 Check readiness first if needed:
@@ -32,4 +32,4 @@ cd C:\Users\b5\Desktop\voice; python -m lib.browser_control tabs
 - Requires the `vpn` status to be active (`requires: ["vpn"]`).
 - Sets `provides: ["browser_youtube"]` after success.
 - The browser opens a dedicated CDP profile inside the repo (`.voice-cdp-profile-9222`) using Brave.
-- Exit code 0 = opened OK; 1 = failed (browser not found or CDP didn't answer).
+- Exit code 0 = opened OK; 1 = failed (browser not found or the list didn't load in time).

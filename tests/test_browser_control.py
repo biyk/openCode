@@ -211,6 +211,34 @@ class TestYoutube:
         mocker.patch("lib.browser_control.youtube_search", return_value=None)
         assert bc.youtube_play("музыка") is False
 
+    def test_youtube_open_first_success(self, mocker):
+        """youtube_open_first открывает первое видео после загрузки списка."""
+        tab = {"id": "1"}
+        mocker.patch("lib.browser_control.open_url", return_value=tab)
+        mocker.patch("lib.browser_control._activate")
+        mocker.patch("lib.browser_control._youtube_first_video_link",
+                     side_effect=["", "", "https://www.youtube.com/watch?v=abc"])
+        mocker.patch("lib.browser_control._YOUTUBE_FIRST_VIDEO_TIMEOUT", 30.0)
+        mocker.patch("lib.browser_control._YOUTUBE_EXTENSIONS_SETTLE", 0.0)
+        mocker.patch("lib.browser_control.eval_js", return_value=(True, ""))
+        assert bc.youtube_open_first() is True
+
+    def test_youtube_open_first_no_link(self, mocker):
+        """youtube_open_first возвращает False без ссылки на видео."""
+        tab = {"id": "1"}
+        mocker.patch("lib.browser_control.open_url", return_value=tab)
+        mocker.patch("lib.browser_control._activate")
+        mocker.patch("lib.browser_control._youtube_first_video_link",
+                     return_value="")
+        mocker.patch("lib.browser_control._YOUTUBE_FIRST_VIDEO_TIMEOUT", 0.1)
+        mocker.patch("lib.browser_control.eval_js", return_value=(True, ""))
+        assert bc.youtube_open_first() is False
+
+    def test_youtube_open_first_no_tab(self, mocker):
+        """youtube_open_first возвращает False без вкладки."""
+        mocker.patch("lib.browser_control.open_url", return_value=None)
+        assert bc.youtube_open_first() is False
+
 
 class TestWaitSelector:
     """Тесты для wait_for_selector."""

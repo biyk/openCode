@@ -32,9 +32,9 @@
             "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/mediastop.ps1\""
         },
         "openyoutube": {
-            "linux": "python -m lib.browser_control open-url \"https://youtube.com\"",
-            "windows": "python -m lib.browser_control open-url \"https://youtube.com\"",
-            "default": "python -m lib.browser_control open-url \"https://youtube.com\""
+            "linux": "python -m lib.browser_control youtube-first",
+            "windows": "python -m lib.browser_control youtube-first",
+            "default": "python -m lib.browser_control youtube-first"
         },
         "youtube_news": {
             "linux": "python -m lib.browser_control youtube-play \"новости\"",
