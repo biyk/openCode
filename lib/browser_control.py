@@ -1,7 +1,8 @@
 """Управление браузером через CDP (remote debugging).
 
 Модуль позволяет открывать вкладки и выполнять JavaScript на любой
-вкладке без лишних слоёв: только HTTP + WebSocket CDP.
+вкладке без лишних слоёв: только HTTP + WebSocket CDP. Если сайт уже
+открыт во вкладке — open-url переключается на неё, а не создаёт новую.
 
 Использование из команд:
     python -m lib.browser_control status
@@ -37,8 +38,6 @@ DEFAULT_PORT = 9222
 _COMMON_WINDOWS_PATHS = [
     Path(r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"),
     Path(r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe"),
-    Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
-    Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
 ]
 
 _YOUTUBE_SELECTORS = {
@@ -78,14 +77,20 @@ def is_running(port: int = DEFAULT_PORT) -> bool:
 
 
 def _find_browser_exe() -> Optional[str]:
-    """Ищет исполняемый файл браузера."""
-    found = shutil.which("brave-browser") or shutil.which("brave") or shutil.which("chrome")
+    """Ищет исполняемый файл Brave."""
+    found = shutil.which("brave-browser") or shutil.which("brave")
     if found:
         return found
     for path in _COMMON_WINDOWS_PATHS:
         if path.exists():
             return str(path)
     return None
+
+
+def _profile_dir(port: int = DEFAULT_PORT) -> Path:
+    """Каталог профиля браузера внутри репозитория."""
+    root = Path(__file__).resolve().parent.parent
+    return root / f".voice-cdp-profile-{port}"
 
 
 def ensure_browser(port: int = DEFAULT_PORT) -> bool:
@@ -96,10 +101,10 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
 
     exe = _find_browser_exe()
     if not exe:
-        print("[Browser] Браузер (Brave/Chrome) не найден")
+        print("[Browser] Brave не найден")
         return False
 
-    profile = Path.home() / f".voice-cdp-profile-{port}"
+    profile = _profile_dir(port)
     profile.mkdir(exist_ok=True)
     print(f"[Browser] Запуск {exe} с debug-портом {port}")
     subprocess.Popen(
@@ -123,10 +128,39 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     return False
 
 
+def _hostname(url: str) -> str:
+    """Хост из url без www и в нижнем регистре, '' если определить не удалось."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except ValueError:
+        return ""
+    host = host.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _tab_for_site(tabs: list, url: str) -> Optional[dict]:
+    """Возвращает открытую вкладку с тем же сайтом (без учёта www)."""
+    target = _hostname(url)
+    if not target:
+        return None
+    for tab in tabs:
+        if _hostname(tab.get("url", "")) == target:
+            return tab
+    return None
+
+
 def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Открывает url в новой вкладке, возвращает вкладку."""
+    """Открывает url в новой вкладке; если вкладка с тем же сайтом уже
+    открыта — переключается на неё вместо создания новой."""
     if not ensure_browser(port):
         return None
+    existing = _tab_for_site(_list_tabs(port), url)
+    if existing:
+        _activate(existing, port)
+        print(f"[Browser] Переключено на открытую вкладку: {existing.get('url')}")
+        return existing
     try:
         q = urllib.parse.quote(url, safe="")
         req = urllib.request.Request(

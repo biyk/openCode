@@ -112,8 +112,10 @@ class TestOpenUrl:
     """Тесты для open_url."""
 
     def test_open_url_called(self, mocker):
-        """open_url открывает новую вкладку через PUT."""
+        """open_url открывает новую вкладку через PUT, если нет открытой."""
         mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[])
+        mocker.patch("lib.browser_control._activate")
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{"id": "2", "url": "https://youtube.com"}'
         mock_urlopen = mocker.patch("lib.browser_control.urllib.request.urlopen")
@@ -123,6 +125,18 @@ class TestOpenUrl:
         req = mock_urlopen.call_args[0][0]
         assert req.method == "PUT"
         assert "json/new" in req.full_url
+
+    def test_open_url_switches_to_existing(self, mocker):
+        """Если вкладка с тем же сайтом уже открыта — переключается не неё."""
+        existing = {"id": "1", "url": "https://www.youtube.com/watch?v=abc"}
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[existing])
+        mock_activate = mocker.patch("lib.browser_control._activate")
+        mock_urlopen = mocker.patch("lib.browser_control.urllib.request.urlopen")
+        tab = bc.open_url("https://youtube.com")
+        assert tab is existing
+        mock_activate.assert_called_once_with(existing, 9222)
+        mock_urlopen.assert_not_called()
 
     def test_open_url_browser_fail(self, mocker):
         """Если браузер не запустился — вкладка не открывается."""

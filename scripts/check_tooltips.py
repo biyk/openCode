@@ -46,6 +46,8 @@ def _is_excluded(path: str) -> bool:
     name = Path(path).name
     if name in EXCLUDED_NAMES:
         return True
+    if name.startswith(".voice-cdp-profile-"):
+        return True
     parts = Path(path).parts
     return any(part in EXCLUDED_DIRS for part in parts)
 

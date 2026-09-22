@@ -9,6 +9,7 @@ __pycache__/
 venv/
 models/
 logs/
+.voice-cdp-profile-*/
 **/node_modules/
 temp/
 temp*.txt

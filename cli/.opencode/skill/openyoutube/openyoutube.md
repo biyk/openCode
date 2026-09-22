@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-Open `https://youtube.com` in a new browser tab using the repo's CDP helper (`lib/browser_control.py`), which starts Brave/Chrome with a remote-debugging port if needed.
+Open `https://youtube.com` in a new browser tab using the repo's CDP helper (`lib/browser_control.py`), which starts Brave with a remote-debugging port if needed.
 
 This is the exact action behind the voice command `openyoutube` in `targets/FLTP-5i3-16512/commands.json`.
 
@@ -31,5 +31,5 @@ cd C:\Users\b5\Desktop\voice; python -m lib.browser_control tabs
 
 - Requires the `vpn` status to be active (`requires: ["vpn"]`).
 - Sets `provides: ["browser_youtube"]` after success.
-- The browser opens a dedicated CDP profile (`~/.voice-cdp-profile-9222`); uses Brave first, Chrome as fallback.
+- The browser opens a dedicated CDP profile inside the repo (`.voice-cdp-profile-9222`) using Brave.
 - Exit code 0 = opened OK; 1 = failed (browser not found or CDP didn't answer).
