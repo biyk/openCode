@@ -159,6 +159,8 @@ def _tab_for_site(tabs: list, url: str) -> Optional[dict]:
     if not target:
         return None
     for tab in tabs:
+        if tab.get("type", "page") not in ("page", ""):
+            continue
         if _hostname(tab.get("url", "")) == target:
             return tab
     return None
@@ -319,6 +321,15 @@ def youtube_play(query: str, port: int = DEFAULT_PORT) -> bool:
 
 _YOUTUBE_FIRST_VIDEO_TIMEOUT = 30.0
 _YOUTUBE_EXTENSIONS_SETTLE = 3.0
+_YOUTUBE_RESUME_SCRIPT = (
+    "(function(){"
+    "var v = document.querySelector('video');"
+    "if (!v) return 'no-video';"
+    "var p = v.play();"
+    "if (p && p.catch) p.catch(function(){});"
+    "return 'playing';"
+    "})()"
+)
 
 
 def _youtube_first_video_link(tab: dict) -> str:
@@ -329,13 +340,29 @@ def _youtube_first_video_link(tab: dict) -> str:
     return ""
 
 
-def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
-    """Открывает главную ютуба, ждёт загрузку ленты и расширений,
-    затем открывает первое видео."""
-    tab = open_url("https://youtube.com", port)
-    if not tab:
-        print("[Browser] Не удалось открыть ютуб")
-        return False
+def _youtube_is_watch(url: str) -> bool:
+    """True, если url — страница ролика (/watch или /shorts)."""
+    path = urllib.parse.urlparse(url).path.lower()
+    return "/watch" in path or path.startswith("/shorts")
+
+
+def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
+    """Переключается на вкладку и запускает уже открытое видео."""
+    _activate(tab, port)
+    ok, value = eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
+    if ok and value == "playing":
+        print("[Browser] Запущено текущее видео")
+        return True
+    clicked, _ = click(tab, _YOUTUBE_SELECTORS["player"])
+    if clicked:
+        print("[Browser] Запущено текущее видео")
+        return True
+    print("[Browser] Не удалось запустить текущее видео")
+    return False
+
+
+def _youtube_wait_and_open_first(tab: dict, port: int = DEFAULT_PORT) -> bool:
+    """Ждёт ленту на вкладке и открывает первое не-рекламное видео."""
     _activate(tab, port)
     deadline = time.time() + _YOUTUBE_FIRST_VIDEO_TIMEOUT
     link = ""
@@ -355,6 +382,36 @@ def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
         return False
     print(f"[Browser] Открыто первое видео: {link}")
     return True
+
+
+def _youtube_page_tabs(port: int = DEFAULT_PORT) -> list:
+    """Обычные (не service worker) вкладки youtube.com."""
+    found = []
+    for tab in _list_tabs(port):
+        if tab.get("type", "page") not in ("page", ""):
+            continue
+        if _hostname(tab.get("url", "")) == "youtube.com":
+            found.append(tab)
+    return found
+
+
+def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
+    """Нет вкладки ютуба — открыть главную и первое видео.
+    Есть вкладка с роликом — запустить его. Иначе — первое из ленты."""
+    if not ensure_browser(port):
+        print("[Browser] Не удалось открыть ютуб")
+        return False
+    pages = _youtube_page_tabs(port)
+    watch = next((t for t in pages if _youtube_is_watch(t.get("url", ""))), None)
+    if watch:
+        return _youtube_resume_current(watch, port)
+    if pages:
+        return _youtube_wait_and_open_first(pages[0], port)
+    tab = open_url("https://youtube.com", port)
+    if not tab:
+        print("[Browser] Не удалось открыть ютуб")
+        return False
+    return _youtube_wait_and_open_first(tab, port)
 
 
 def _cmd_status(port: int) -> int:

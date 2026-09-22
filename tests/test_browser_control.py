@@ -212,8 +212,10 @@ class TestYoutube:
         assert bc.youtube_play("музыка") is False
 
     def test_youtube_open_first_success(self, mocker):
-        """youtube_open_first открывает первое видео после загрузки списка."""
-        tab = {"id": "1"}
+        """youtube_open_first открывает первое видео, если вкладок ютуба нет."""
+        tab = {"id": "1", "url": "https://www.youtube.com/"}
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[])
         mocker.patch("lib.browser_control.open_url", return_value=tab)
         mocker.patch("lib.browser_control._activate")
         mocker.patch("lib.browser_control._youtube_first_video_link",
@@ -225,7 +227,9 @@ class TestYoutube:
 
     def test_youtube_open_first_no_link(self, mocker):
         """youtube_open_first возвращает False без ссылки на видео."""
-        tab = {"id": "1"}
+        tab = {"id": "1", "url": "https://www.youtube.com/"}
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[])
         mocker.patch("lib.browser_control.open_url", return_value=tab)
         mocker.patch("lib.browser_control._activate")
         mocker.patch("lib.browser_control._youtube_first_video_link",
@@ -236,8 +240,69 @@ class TestYoutube:
 
     def test_youtube_open_first_no_tab(self, mocker):
         """youtube_open_first возвращает False без вкладки."""
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[])
         mocker.patch("lib.browser_control.open_url", return_value=None)
         assert bc.youtube_open_first() is False
+
+    def test_youtube_open_first_resumes_watch(self, mocker):
+        """Если вкладка с роликом уже открыта — запускает текущее видео."""
+        existing = {
+            "id": "1",
+            "type": "page",
+            "url": "https://www.youtube.com/watch?v=abc",
+        }
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[existing])
+        mock_open = mocker.patch("lib.browser_control.open_url")
+        mocker.patch("lib.browser_control._activate")
+        mocker.patch("lib.browser_control.eval_js", return_value=(True, "playing"))
+        assert bc.youtube_open_first() is True
+        mock_open.assert_not_called()
+
+    def test_youtube_open_first_home_opens_first(self, mocker):
+        """Главная ютуба уже открыта — открывает первое видео из ленты."""
+        existing = {"id": "1", "type": "page", "url": "https://www.youtube.com/"}
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch("lib.browser_control._list_tabs", return_value=[existing])
+        mock_open = mocker.patch("lib.browser_control.open_url")
+        mocker.patch("lib.browser_control._activate")
+        mocker.patch(
+            "lib.browser_control._youtube_first_video_link",
+            return_value="https://www.youtube.com/watch?v=abc",
+        )
+        mocker.patch("lib.browser_control._YOUTUBE_EXTENSIONS_SETTLE", 0.0)
+        mocker.patch("lib.browser_control.eval_js", return_value=(True, ""))
+        assert bc.youtube_open_first() is True
+        mock_open.assert_not_called()
+
+    def test_youtube_open_first_prefers_watch_over_home(self, mocker):
+        """При главной и ролике — запускает ролик, не трогая ленту."""
+        home = {"id": "1", "type": "page", "url": "https://www.youtube.com/"}
+        watch = {
+            "id": "2",
+            "type": "page",
+            "url": "https://www.youtube.com/watch?v=abc",
+        }
+        worker = {
+            "id": "3",
+            "type": "service_worker",
+            "url": "https://www.youtube.com/sw.js",
+        }
+        mocker.patch("lib.browser_control.ensure_browser", return_value=True)
+        mocker.patch(
+            "lib.browser_control._list_tabs",
+            return_value=[worker, home, watch],
+        )
+        mock_open = mocker.patch("lib.browser_control.open_url")
+        mock_wait = mocker.patch("lib.browser_control._youtube_wait_and_open_first")
+        mock_resume = mocker.patch(
+            "lib.browser_control._youtube_resume_current", return_value=True
+        )
+        assert bc.youtube_open_first() is True
+        mock_resume.assert_called_once_with(watch, 9222)
+        mock_wait.assert_not_called()
+        mock_open.assert_not_called()
 
 
 class TestWaitSelector:

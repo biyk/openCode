@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-Open a YouTube tab in the CDP browser (creating it if needed, otherwise switching to an already-open one), then wait until the homepage video list loads, let browser extensions finish running, and finally open the first (non-ad) video from that list.
+If no YouTube tab is open: open youtube.com, wait for the homepage list and extensions, then open the first (non-ad) video. If a YouTube watch tab is already open: switch to it and play the current video. If only the homepage is open: open the first video from the list.
 
 This is the exact action behind the voice command `openyoutube` in `targets/FLTP-5i3-16512/commands.json`.
 
@@ -32,4 +32,4 @@ cd C:\Users\b5\Desktop\voice; python -m lib.browser_control tabs
 - Requires the `vpn` status to be active (`requires: ["vpn"]`).
 - Sets `provides: ["browser_youtube"]` after success.
 - The browser opens a dedicated CDP profile inside the repo (`.voice-cdp-profile-9222`) using Brave.
-- Exit code 0 = opened OK; 1 = failed (browser not found or the list didn't load in time).
+- Exit code 0 = opened/played OK; 1 = failed (browser not found, list didn't load, or play failed).
