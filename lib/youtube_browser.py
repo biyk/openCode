@@ -5,6 +5,7 @@ import time
 import urllib.parse
 from typing import Optional
 
+from lib import cdp_client as cdc
 from lib.cdp_client import DEFAULT_PORT
 
 _YOUTUBE_SELECTORS = {
@@ -39,13 +40,14 @@ _YOUTUBE_EXTENSIONS_SETTLE = 3.0
 
 
 def _bc():
+    """Ленивый доступ к browser_control (только open_url/ensure_browser)."""
     from lib import browser_control as bc
     return bc
 
 
 def _youtube_first_video_link(tab: dict) -> str:
     """Первая ссылка на видео из ленты (реклама пропускается)."""
-    ok, value = _bc().eval_js(tab, _YOUTUBE_FIRST_VIDEO_SCRIPT)
+    ok, value = cdc.eval_js(tab, _YOUTUBE_FIRST_VIDEO_SCRIPT)
     if ok and isinstance(value, str):
         return value
     return ""
@@ -59,13 +61,12 @@ def _youtube_is_watch(url: str) -> bool:
 
 def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Переключается на вкладку и запускает уже открытое видео."""
-    bc = _bc()
-    bc._activate(tab, port)
-    ok, value = bc.eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
+    cdc._activate(tab, port)
+    ok, value = cdc.eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
     if ok and value == "playing":
         print("[Browser] Запущено текущее видео")
         return True
-    clicked, _ = bc.click(tab, _YOUTUBE_SELECTORS["player"])
+    clicked, _ = cdc.click(tab, _YOUTUBE_SELECTORS["player"])
     if clicked:
         print("[Browser] Запущено текущее видео")
         return True
@@ -75,21 +76,20 @@ def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
 
 def _youtube_wait_and_open_first(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Ждёт ленту на вкладке и открывает первое не-рекламное видео."""
-    bc = _bc()
-    bc._activate(tab, port)
-    deadline = time.time() + bc._YOUTUBE_FIRST_VIDEO_TIMEOUT
+    cdc._activate(tab, port)
+    deadline = time.time() + _YOUTUBE_FIRST_VIDEO_TIMEOUT
     link = ""
     while time.time() < deadline:
-        link = bc._youtube_first_video_link(tab)
+        link = _youtube_first_video_link(tab)
         if link:
             break
         time.sleep(1)
     if not link:
         print("[Browser] Список видео не загрузился за "
-              f"{bc._YOUTUBE_FIRST_VIDEO_TIMEOUT:.0f} секунд")
+              f"{_YOUTUBE_FIRST_VIDEO_TIMEOUT:.0f} секунд")
         return False
-    time.sleep(bc._YOUTUBE_EXTENSIONS_SETTLE)
-    ok, _ = bc.eval_js(tab, f"window.location.href = {json.dumps(link)}")
+    time.sleep(_YOUTUBE_EXTENSIONS_SETTLE)
+    ok, _ = cdc.eval_js(tab, f"window.location.href = {json.dumps(link)}")
     if not ok:
         print("[Browser] Не удалось открыть первое видео")
         return False
@@ -99,12 +99,11 @@ def _youtube_wait_and_open_first(tab: dict, port: int = DEFAULT_PORT) -> bool:
 
 def _youtube_page_tabs(port: int = DEFAULT_PORT) -> list:
     """Обычные (не service worker) вкладки youtube.com."""
-    bc = _bc()
     found = []
-    for tab in bc._list_tabs(port):
+    for tab in cdc._list_tabs(port):
         if tab.get("type", "page") not in ("page", ""):
             continue
-        if bc._hostname(tab.get("url", "")) == "youtube.com":
+        if cdc._hostname(tab.get("url", "")) == "youtube.com":
             found.append(tab)
     return found
 
@@ -123,26 +122,24 @@ def youtube_search(query: str, port: int = DEFAULT_PORT) -> Optional[dict]:
 
 def youtube_play_first_result(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Кликает первый результат поиска и жмёт плей."""
-    bc = _bc()
-    bc._activate(tab, port)
-    bc.wait_for_selector(tab, _YOUTUBE_SELECTORS["result"])
-    ok, value = bc.click(tab, _YOUTUBE_SELECTORS["result"])
+    cdc._activate(tab, port)
+    cdc.wait_for_selector(tab, _YOUTUBE_SELECTORS["result"])
+    ok, value = cdc.click(tab, _YOUTUBE_SELECTORS["result"])
     if not ok:
         print(f"[Browser] Не удалось выбрать ролик: {value}")
         return False
     time.sleep(5)
-    bc.click(tab, _YOUTUBE_SELECTORS["player"])
+    cdc.click(tab, _YOUTUBE_SELECTORS["player"])
     return True
 
 
 def youtube_play(query: str, port: int = DEFAULT_PORT) -> bool:
     """Полный сценарий: открыть ютуб, найти ролик, запустить."""
-    bc = _bc()
-    tab = bc.youtube_search(query, port)
+    tab = youtube_search(query, port)
     if not tab:
         print("[Browser] Не удалось открыть ютуб")
         return False
-    return bc.youtube_play_first_result(tab, port)
+    return youtube_play_first_result(tab, port)
 
 
 def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
@@ -152,15 +149,15 @@ def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
     if not bc.ensure_browser(port):
         print("[Browser] Не удалось открыть ютуб")
         return False
-    pages = bc._youtube_page_tabs(port)
-    watch = next((t for t in pages if bc._youtube_is_watch(t.get("url", ""))),
+    pages = _youtube_page_tabs(port)
+    watch = next((t for t in pages if _youtube_is_watch(t.get("url", ""))),
                  None)
     if watch:
-        return bc._youtube_resume_current(watch, port)
+        return _youtube_resume_current(watch, port)
     if pages:
-        return bc._youtube_wait_and_open_first(pages[0], port)
+        return _youtube_wait_and_open_first(pages[0], port)
     tab = bc.open_url("https://youtube.com", port)
     if not tab:
         print("[Browser] Не удалось открыть ютуб")
         return False
-    return bc._youtube_wait_and_open_first(tab, port)
+    return _youtube_wait_and_open_first(tab, port)

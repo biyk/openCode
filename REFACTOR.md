@@ -1,5 +1,58 @@
 # ПЛАН РЕФАКТОРИНГА
 
+## ПРОГРЕСС (2026-09-23)
+
+Фаза 1.1 (browser_control) и деление тестов завершены, все проверки зелёные
+(627 passed, flake8 чист). Текущие размеры:
+- lib/browser_control.py: 194 (CLI + ensure_browser/open_url поверх модулей)
+- lib/cdp_client.py: 160 (CDP-примитивы + eval_js/click/wait_for_selector)
+- lib/youtube_browser.py: 163 (сценарии YouTube)
+- tests/test_cdp_client.py: 127, tests/test_youtube_browser.py: 129,
+  tests/test_browser_control.py: 115 (запуск/вкладки/CLI)
+- lib/status.py переключён на `from lib.cdp_client import ...`
+
+Ключевые решения: youtube_browser обращается к CDP через атрибуты модуля
+`cdc.*` (моки `lib.cdp_client.*` работают), ленивый `_bc()` остался только
+для open_url/ensure_browser — циклических импортов нет. Фасад `__all__`
+из browser_control удалён за ненадобностью.
+
+Осталось: lib/orchestrator.py (445) → command_processor/state_manager;
+крупные тесты (test_commands 667, test_orchestrator 666, test_tts 520,
+test_main 472). Перед коммитом: `git add` новых файлов, затем
+`generate_structure.py --write` (генератор читает индекс git).
+
+## ПРОГРЕСС-2 (2026-09-23): ВСЕ ФАЙЛЫ ≤200 СТРОК
+
+Готово полностью (627 passed, flake8 чист, все хуки зелёные):
+
+lib/ (было → стало):
+- orchestrator.py 445 → 196 + memory 114 + opencode 80 + speech 84
+  (миксины; `process_text`/`_speak_async` остались из-за моков
+  `lib.orchestrator.time/threading` в тестах)
+- skills.py 221 → 160 + skill_actions 69
+- status.py 293 → 198 + checkers 57 + poll 53
+- tasks.py 309 → 148 + parse 79 + complete 98
+- time_parser.py 279 → 93 + strategies 192
+- opencode_cli.py 286 → 188 + output 106
+- google_calendar.py 298 → 180 + events 125
+  (GoogleOAuthError переехал в events с реэкспортом)
+- commands.py 350 → 170 + match 125 + config 69
+- tts.py 359 → 107 + engines 79 + playback 194
+- diagnose.py 382 → 186 + supervisor 150 + cli 63
+  (доступ через `_dg.*`, CLI — ленивый guard)
+- main.py 313 → 58 + transcription_worker 200 + vosk_model 56
+
+tests/: все разбиты скриптом `split_tests.py` (дословный перенос методов,
+проверка полноты учётом, моки — на новые пути). test_diagnose_cli,
+test_main_* и test_tts_* дополнительно правились под новые пути.
+
+Метод: миксины для классов (API и `self.*` не меняются), прямые модули
+для чистых функций; моки — через атрибуты модулей (`cdc.*`, `_dg.*`).
+Вне скоупа остались scripts/*.py (>200, тулза) и main.py-уровень.
+
+Перед коммитом: `git add` новых файлов, затем
+`generate_structure.py --write` (генератор читает индекс git).
+
 ## ТЕКУЩЕЕ СОСТОЯНИЕ
 
 ### Основные файлы, превышающие 200 строк

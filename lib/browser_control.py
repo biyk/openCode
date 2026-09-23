@@ -22,62 +22,20 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-import websocket
 from pathlib import Path
 from typing import Optional
 
 from lib.cdp_client import (
     DEFAULT_PORT,
     _activate,
-    _hostname,
-    _http_request,
     _list_tabs,
     _tab_for_site,
-    _ws_for,
-    find_tab,
+    click,
+    eval_js,
     is_running,
     wait_for_tab,
 )
-from lib.youtube_browser import (
-    _YOUTUBE_EXTENSIONS_SETTLE,
-    _YOUTUBE_FIRST_VIDEO_TIMEOUT,
-    _youtube_first_video_link,
-    _youtube_is_watch,
-    _youtube_page_tabs,
-    _youtube_resume_current,
-    _youtube_wait_and_open_first,
-    youtube_open_first,
-    youtube_play,
-    youtube_play_first_result,
-    youtube_search,
-)
-
-# Стабильный фасад: тесты, status.py и youtube_browser обращаются
-# к CDP-примитивам и YouTube-сценариям через lib.browser_control.
-__all__ = [
-    "DEFAULT_PORT",
-    "_YOUTUBE_EXTENSIONS_SETTLE",
-    "_YOUTUBE_FIRST_VIDEO_TIMEOUT",
-    "_activate",
-    "_hostname",
-    "_http_request",
-    "_list_tabs",
-    "_tab_for_site",
-    "_ws_for",
-    "_youtube_first_video_link",
-    "_youtube_is_watch",
-    "_youtube_page_tabs",
-    "_youtube_resume_current",
-    "_youtube_wait_and_open_first",
-    "find_tab",
-    "is_running",
-    "wait_for_tab",
-    "websocket",
-    "youtube_open_first",
-    "youtube_play",
-    "youtube_play_first_result",
-    "youtube_search",
-]
+from lib.youtube_browser import youtube_open_first, youtube_play
 
 if sys.platform == "win32":
     try:
@@ -98,16 +56,7 @@ def _find_browser_exe() -> Optional[str]:
     found = shutil.which("brave-browser") or shutil.which("brave")
     if found:
         return found
-    for path in _COMMON_WINDOWS_PATHS:
-        if path.exists():
-            return str(path)
-    return None
-
-
-def _profile_dir(port: int = DEFAULT_PORT) -> Path:
-    """Каталог профиля браузера внутри репозитория."""
-    root = Path(__file__).resolve().parent.parent
-    return root / f".voice-cdp-profile-{port}"
+    return next((str(p) for p in _COMMON_WINDOWS_PATHS if p.exists()), None)
 
 
 def ensure_browser(port: int = DEFAULT_PORT) -> bool:
@@ -119,7 +68,7 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     if not exe:
         print("[Browser] Brave не найден")
         return False
-    profile = _profile_dir(port)
+    profile = Path(__file__).resolve().parent.parent / f".voice-cdp-profile-{port}"
     profile.mkdir(exist_ok=True)
     print(f"[Browser] Запуск {exe} с debug-портом {port}")
     subprocess.Popen(
@@ -154,9 +103,7 @@ def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
         return existing
     try:
         q = urllib.parse.quote(url, safe="")
-        req = urllib.request.Request(
-            f"http://localhost:{port}/json/new?{q}", method="PUT"
-        )
+        req = urllib.request.Request(f"http://localhost:{port}/json/new?{q}", method="PUT")
         with urllib.request.urlopen(req, timeout=5) as resp:
             tab = json.loads(resp.read().decode("utf-8"))
         print(f"[Browser] Открыта вкладка: {url}")
@@ -164,65 +111,6 @@ def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
     except Exception as e:
         print(f"[Browser] Ошибка открытия вкладки {url}: {e}")
         return None
-
-
-def eval_js(tab: dict, script: str) -> tuple[bool, str]:
-    """Выполняет JavaScript на вкладке через Runtime.evaluate."""
-    try:
-        ws = _ws_for(tab)
-        if not ws:
-            return False, "нет webSocketDebuggerUrl"
-        payload = {
-            "id": 1,
-            "method": "Runtime.evaluate",
-            "params": {"expression": script, "returnByValue": True},
-        }
-        ws.send(json.dumps(payload))
-        for _ in range(20):
-            data = json.loads(ws.recv())
-            if data.get("id") != 1:
-                continue
-            result = data.get("result", {})
-            if result.get("exceptionDetails"):
-                ws.close()
-                return False, str(result["exceptionDetails"])
-            value = result.get("result", {}).get("value")
-            ws.close()
-            return True, value if value is not None else ""
-        ws.close()
-        return False, "нет ответа от Runtime.evaluate"
-    except Exception as e:
-        print(f"[Browser] Ошибка eval_js: {e}")
-        return False, str(e)
-
-
-def click(tab: dict, selector: str) -> tuple[bool, str]:
-    """Кликает по первому элементу, подходящему под селектор."""
-    script = (
-        f"(function(){{"
-        f"var el = document.querySelector('{selector}');"
-        f"if (!el) return '__NOT_FOUND__';"
-        f"el.click();"
-        f"return '__CLICKED__';"
-        f"}})()"
-    )
-    ok, value = eval_js(tab, script)
-    if not ok:
-        return False, value
-    if value == "__NOT_FOUND__":
-        return False, f"элемент '{selector}' не найден"
-    return True, value
-
-
-def wait_for_selector(tab: dict, selector: str, timeout: float = 15.0) -> bool:
-    """Ждёт появления элемента по селектору."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ok, value = eval_js(tab, f"!!document.querySelector('{selector}')")
-        if ok and value is True:
-            return True
-        time.sleep(0.5)
-    return False
 
 
 def _cmd_status(port: int) -> int:
@@ -234,8 +122,7 @@ def _cmd_status(port: int) -> int:
 
 
 def _cmd_tabs(port: int) -> int:
-    tabs = _list_tabs(port)
-    for t in tabs:
+    for t in _list_tabs(port):
         print(f"{t.get('id', '?')}  {t.get('title', '')}  {t.get('url', '')}")
     return 0
 
@@ -268,11 +155,9 @@ def _cmd_click(url_part: str, selector: str, port: int) -> int:
 
 
 def _cmd_youtube_play(query: str, port: int) -> int:
-    if youtube_play(query, port):
-        print(f"[Browser] Плей запущен: {query}")
-        return 0
-    print(f"[Browser] Сценарий ютуба не выполнен: {query}")
-    return 1
+    ok = youtube_play(query, port)
+    print(f"[Browser] {'Плей запущен' if ok else 'Сценарий ютуба не выполнен'}: {query}")
+    return 0 if ok else 1
 
 
 def main(argv: Optional[list] = None) -> int:

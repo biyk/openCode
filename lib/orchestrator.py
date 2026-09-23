@@ -17,19 +17,22 @@ from typing import Any, Callable, Optional
 
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
-from lib.output import TranscriptionOutput
 from lib.opencode_cli import OpenCodeCliRunner
-
-# Управляющие фразы режима разработки (детерминированы, без матчера).
-DEV_MODE_ENABLE_PHRASE = "режим разработки"
-DEV_MODE_EXIT_PHRASE = "будильник"
+from lib.orchestrator_memory import OrchestratorMemoryMixin
+from lib.orchestrator_opencode import OrchestratorOpencodeMixin
+from lib.orchestrator_speech import OrchestratorSpeechMixin
+from lib.output import TranscriptionOutput
 
 # Сколько последних строк потока держим для поиска команды уровня
 # commands.json (концепция «трёх строк»: над ключом / с ключом / после ключа).
 COMMAND_WINDOW_SIZE = 4
 
 
-class Orchestrator:
+class Orchestrator(
+    OrchestratorMemoryMixin,
+    OrchestratorOpencodeMixin,
+    OrchestratorSpeechMixin,
+):
     """Детерминированный слой принятия решений для распознанного текста."""
 
     def __init__(
@@ -180,247 +183,6 @@ class Orchestrator:
         self._output.print_info("... отправка запроса в opencode-cli (фон)")
         self._enqueue_opencode(text)
 
-    def _execute_with_settings(self, cmd_id: str,
-                               settings: list[str]) -> None:
-        """Выполняет команду с настройками (если они есть)."""
-        if settings:
-            self._matcher.execute_by_id(cmd_id, tuple(settings))
-        else:
-            self._matcher.execute_by_id(cmd_id)
-
-    def _handle_dev_mode_controls(self, text: str) -> bool:
-        """Управляющие фразы режима разработки.
-
-        «режим разработки» — включить/выключить, «будильник» внутри
-        dev-режима — полный выход из приложения (on_exit). Возвращает True,
-        если фраза была управляющей и обработана здесь.
-        """
-        core = self._matcher.core_phrase(text) if self._aliases is not None \
-            else text.strip()
-        low = (core or text).lower()
-
-        if DEV_MODE_ENABLE_PHRASE in low:
-            self._dev_mode = not self._dev_mode
-            if self._dev_mode:
-                self._output.print_info("[DevMode] Включён")
-                self._say("Режим разработки. Все фразы идут напрямую")
-            else:
-                self._output.print_info("[DevMode] Выключен")
-                self._say("Режим разработки выключен")
-            return True
-
-        if self._dev_mode and DEV_MODE_EXIT_PHRASE in low:
-            self._output.print_info("[DevMode] Выход из приложения")
-            if self._on_exit is not None:
-                self._on_exit()
-            else:
-                self._say("Выход не настроен")
-            return True
-
-        return False
-
-    def _enqueue_opencode(self, text: str, raw: bool = False) -> None:
-        """Ставит текст в фоновую очередь console opencode.
-
-        raw=True — dev-режим: текст передаётся модели без BASE_PROMPT-обёртки.
-        """
-        if self._opencode is None:
-            self._output.print_error("[OpenCode] Раннер не настроен")
-            return
-        self._opencode_queue.put((text, raw))
-        self._ensure_opencode_worker()
-
-    def _drain_opencode_queue(self) -> None:
-        """Выбрасывает накопленные, но ещё не обработанные запросы opencode."""
-        discarded = 0
-        while True:
-            try:
-                self._opencode_queue.get_nowait()
-                discarded += 1
-            except Exception:
-                break
-        if discarded:
-            self._output.print_debug(
-                f"[OpenCode] Отброшено запросов: {discarded}")
-
-    def _ensure_opencode_worker(self) -> None:
-        """Запускает воркер, если он ещё не создан."""
-        if self._opencode_worker is not None:
-            return
-        self._opencode_worker = threading.Thread(
-            target=self._opencode_worker_loop, daemon=True)
-        self._opencode_worker.start()
-
-    def _opencode_worker_loop(self) -> None:
-        """Фоновый воркер: обрабатывает запросы из очереди."""
-        while True:
-            text, raw = self._opencode_queue.get()
-            started = time.monotonic()
-            try:
-                self._opencode_active = True
-                label = " (dev)" if raw else ""
-                self._output.print_info(
-                    f"[OpenCode] Выполняю в фоне{label}: «{text[:60]}...»"
-                    if len(text) > 60 else f"[OpenCode] Выполняю{label}: «{text}»"
-                )
-                if self._abort_playback.is_set():
-                    self._output.print_debug(
-                        "[OpenCode] Запрос отменён (стоп)")
-                    continue
-                answer = self._opencode.run(
-                    text, abort_event=self._abort_playback, raw=raw)
-                if self._abort_playback.is_set():
-                    self._output.print_debug(
-                        "[OpenCode] Ответ отменён (стоп)")
-                    continue
-                if not answer:
-                    self._output.print_error(
-                        "[OpenCode] Пустой ответ агента (возможно, таймаут "
-                        "или opencode не смог выполнить команду)")
-                    continue
-                elapsed = time.monotonic() - started
-                # Результат — в консоль (только читаемый итог), подробности — в лог
-                self._output.print_info(
-                    f"[OpenCode] Итог ({elapsed:.0f}с): {answer}")
-                self._output.print_debug(
-                    f"[OpenCode] Ответ (сводка): {answer}")
-            except Exception as e:
-                self._output.print_error(
-                    f"[OpenCode] Ошибка фонового запроса: {e}")
-            finally:
-                self._opencode_active = False
-                self._opencode_queue.task_done()
-
-    def _remember_candidate(self, text: str, cmd_id: str,
-                            literal_id: Optional[str]) -> None:
-        """Сохраняет авто-кандидата в pending (только для недословных).
-
-        Дословные фразы учить не нужно — они уже шаблоны. Запоминает
-        последнее разрешение для команды «запомни» без аргументов.
-        """
-        if self._aliases is None:
-            return
-        core = self._matcher.core_phrase(text)
-        self._last_resolution = (core, cmd_id)
-        if literal_id is None and core:
-            self._aliases.add(core, cmd_id, confirmed=False)
-
-    def _known_ids(self) -> set[str]:
-        """Все известные id команд (включая sequences)."""
-        ids = set(self._matcher.match_config())
-        try:
-            ids.update(self._matcher.sequences())
-        except Exception:
-            pass
-        return ids
-
-    def _say(self, message: str) -> None:
-        """Короткое голосовое подтверждение."""
-        self._output.print_info(f"[Memory] {message}")
-        self._speaking = True
-        self._abort_playback.clear()
-        self._speak_async(message)
-
-    def _handle_memory_command(self, text: str) -> bool:
-        """Обрабатывает «запомни»/«забудь». Возвращает True, если это они."""
-        core = self._matcher.core_phrase(text)
-        if not core:
-            return False
-        if core == "запомни" or core.startswith("запомни "):
-            self._remember_voice(core)
-            return True
-        if core == "забудь" or core.startswith("забудь "):
-            self._forget_voice(core)
-            return True
-        return False
-
-    def _remember_voice(self, core: str) -> None:
-        """Голосовое обучение: «запомни» / «запомни X это Y»."""
-        assert self._aliases is not None
-        rest = core[len("запомни"):].strip()
-        if not rest:
-            # Без аргументов — подтвердить последнее разрешение.
-            if self._last_resolution is None:
-                self._say("Нечего запоминать")
-                return
-            phrase, cmd_id = self._last_resolution
-            if self._aliases.resolve(phrase) == cmd_id:
-                self._say("Уже запомнила")
-                return
-            confirmed = self._aliases.confirm(phrase)
-            if confirmed is not None:
-                self._say(f"Запомнила: {phrase} это {confirmed}")
-                return
-            self._aliases.add(phrase, cmd_id, confirmed=True)
-            self._say(f"Запомнила: {phrase} это {cmd_id}")
-            return
-        if " это " in rest:
-            phrase, _, cmd_id = rest.partition(" это ")
-            phrase, cmd_id = phrase.strip(), cmd_id.strip()
-            if not phrase or not cmd_id:
-                self._say("Не поняла, что запомнить")
-                return
-            if cmd_id not in self._known_ids():
-                self._say(f"Не знаю команду {cmd_id}")
-                return
-            self._aliases.add(phrase, cmd_id, confirmed=True)
-            self._say(f"Запомнила: {phrase} это {cmd_id}")
-            return
-        self._say("Скажи: запомни, что именно и какая команда")
-
-    def _forget_voice(self, core: str) -> None:
-        """Голосовое удаление: «забудь X»."""
-        assert self._aliases is not None
-        rest = core[len("забудь"):].strip()
-        if not rest:
-            self._say("Скажи, что забыть")
-            return
-        if self._aliases.forget(rest):
-            self._say(f"Забыла: {rest}")
-        else:
-            self._say("Такого не помню")
-
-    def _llm_context(self,
-                     blocked: list[tuple[str, list[str]]]) -> dict:
-        """Контекст для LLM-классификатора: триггеры, команды, статусы."""
-        return {
-            "triggers": list(self._matcher.triggers),
-            "statuses": self._matcher.status_snapshot(),
-            "requires": self._matcher.requires_map(),
-            "blocked": [(bid, list(missing)) for bid, missing in blocked],
-        }
-
-    def _report_blocked(self, cmd_id: str, missing: list[str]) -> None:
-        """Сообщает, каких статусов не хватает (консоль + голос).
-
-        Вместо молчаливого ухода в LLM пользователь слышит,
-        что нужно сделать (например, «Включи VPN вручную»).
-        """
-        names = ", ".join(missing)
-        self._output.print_error(f"[Blocked] «{cmd_id}»: нет статуса: {names}")
-        message = ". ".join(self._matcher.need_message(n) for n in missing)
-        self._speaking = True
-        self._abort_playback.clear()
-        self._speak_async(message)
-
-    def maybe_abort(self, text: str) -> bool:
-        """Прерывает озвучку или ожидающий ответ opencode, если есть стоп-слово.
-
-        Возвращает True, если процесс был прерван. Используется для
-        финальных и частичных результатов распознавания.
-        """
-        if not self._speaking and not self._opencode_active:
-            return False
-        tokens = text.lower().split()
-        if not any(token in self._stop_words for token in tokens):
-            return False
-        self._abort_playback.set()
-        if self._speaking:
-            self._output.print_info("[TTS] Озвучка прервана")
-        else:
-            self._output.print_info("[OpenCode] Ожидаемый ответ отменён")
-        return True
-
     def _speak_async(self, answer: str) -> None:
         """Запускает озвучку в фоне, оставляя цикл распознавания активным."""
         def _play() -> None:
@@ -432,14 +194,3 @@ class Orchestrator:
                 self._on_speaking_finished()
 
         threading.Thread(target=_play, daemon=True).start()
-
-    def _on_speaking_finished(self) -> None:
-        """Сбрасывает флаг озвучки и ставит окно эхо-затишья."""
-        self._speaking = False
-        self._suppress_until = time.monotonic() + self._suppress_after
-        self._clear_speech_buffer()
-
-    def stop(self) -> None:
-        """Прерывает активное воспроизведение TTS и очищает очередь opencode."""
-        self._abort_playback.set()
-        self._drain_opencode_queue()

@@ -1,11 +1,23 @@
-"""Тесты обёртки Google Tasks (моки API, без сети)."""
+"""Тесты Google Tasks: OAuth-авторизация."""
+
 
 import json
-
 import pytest
 from google.oauth2.credentials import Credentials
-
 from lib.google_tasks import GoogleTasks, GoogleOAuthError
+
+
+def _write_token(path, scopes):
+    """Пишет валидный (не протухший) token.json с заданным scope."""
+    path.write_text(json.dumps({
+        "token": "access_token",
+        "refresh_token": "refresh_token",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": "c",
+        "client_secret": "s",
+        "scopes": scopes,
+        "expiry": "2099-01-01T00:00:00Z",
+    }), encoding="utf-8")
 
 
 class FakeTasksResource:
@@ -62,21 +74,8 @@ class FakeRequest:
         return self._result
 
 
-def _write_token(path, scopes):
-    """Пишет валидный (не протухший) token.json с заданным scope."""
-    path.write_text(json.dumps({
-        "token": "access_token",
-        "refresh_token": "refresh_token",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "client_id": "c",
-        "client_secret": "s",
-        "scopes": scopes,
-        "expiry": "2099-01-01T00:00:00Z",
-    }), encoding="utf-8")
-
-
 class TestAuthorize:
-    """OAuth-флоу."""
+    """OAuth-флоу, scope, готовность."""
 
     def test_authorize_builds_services(self, tmp_path):
         """Успешная авторизация помечает сервис готовым."""
@@ -129,74 +128,3 @@ class TestAuthorize:
             credentials_file=str(tmp_path / "missing.json"))
         with pytest.raises(GoogleOAuthError):
             g._load_or_get_credentials()
-
-
-class TestOperations:
-    """Операции с API."""
-
-    def _google(self):
-        g = GoogleTasks()
-        g._tasks_service = FakeService()
-        g._ready = True
-        return g
-
-    def test_create_task_creates_item_in_default_list(self):
-        """create_task создаёт задачу в списке по умолчанию."""
-        g = self._google()
-        task_id = g.create_task("купить хлеб")
-        assert task_id == "task-1"
-        assert len(g._tasks_service.created) == 1
-        task = g._tasks_service.created[0]
-        assert task["title"] == "купить хлеб"
-        assert "notes" not in task
-
-    def test_create_task_with_notes(self):
-        """create_task передаёт notes, если они заданы."""
-        g = self._google()
-        g.create_task("купить хлеб", notes="бородинский")
-        task = g._tasks_service.created[0]
-        assert task["notes"] == "бородинский"
-
-    def test_create_task_empty_title(self):
-        """Пустой текст → GoogleOAuthError."""
-        g = self._google()
-        with pytest.raises(GoogleOAuthError):
-            g.create_task("  ")
-
-    def test_not_ready_authorizes(self):
-        """Если не ready — authorize() вызывается."""
-        g = self._google()
-        g._ready = False
-        g.authorize = lambda: None
-        g.create_task("тест")
-
-    def test_list_tasks_returns_items(self):
-        """list_tasks возвращает список незавершённых задач."""
-        g = self._google()
-        g.create_task("первая")
-        g.create_task("вторая")
-        tasks = g.list_tasks()
-        assert [t["title"] for t in tasks] == ["первая", "вторая"]
-        assert all(t["status"] == "needsAction" for t in tasks)
-
-    def test_list_tasks_show_completed(self):
-        """list_tasks(show_completed=True) отдаёт и завершённые."""
-        g = self._google()
-        g.create_task("первая")
-        g._tasks_service.tasks()._tasks[0]["status"] = "completed"
-        assert g.list_tasks(show_completed=False) == []
-        assert [t["title"] for t in g.list_tasks(show_completed=True)] == \
-            ["первая"]
-
-    def test_complete_task_marks_done(self):
-        """complete_task проставляет status=completed через patch."""
-        g = self._google()
-        task_id = g.create_task("помыть посуду")
-        updated = g.complete_task(task_id)
-        assert updated["status"] == "completed"
-        assert [t["title"] for t in g.list_tasks()] == []
-
-    def test_complete_task_empty_id_returns_none(self):
-        """Пустой task_id → None без обращения к API."""
-        g = self._google()
-        assert g.complete_task("") is None

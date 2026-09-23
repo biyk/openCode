@@ -1,8 +1,8 @@
-"""Тесты фолбэк-раннера console opencode (lib/opencode_cli.py)."""
+"""Тесты console opencode: поиск exe, запуск."""
+
 
 import threading
 from unittest.mock import MagicMock
-
 from lib.opencode_cli import OpenCodeCliRunner
 
 
@@ -31,6 +31,8 @@ class FakeProc:
 
 
 class TestFindExe:
+    """Поиск исполняемого файла opencode."""
+
     def test_returns_path_when_opencode_on_path(self, mocker):
         mocker.patch(
             "lib.opencode_cli.shutil.which", return_value=r"C:\x\opencode.exe")
@@ -45,7 +47,9 @@ class TestFindExe:
         assert _find_opencode_exe() is None
 
 
-class TestRunner:
+class TestRunnerStart:
+    """Валидация, успешный запуск, abort, таймаут."""
+
     def _runner(self, mocker, **kwargs):
         mocker.patch("lib.opencode_cli._find_opencode_exe", return_value=r"C:\x\opencode.exe")
         return OpenCodeCliRunner(cli_dir=r"C:\cli", output=mocker.MagicMock(), **kwargs)
@@ -116,214 +120,3 @@ class TestRunner:
         mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
         runner = self._runner(mocker)
         assert runner.run("команда") is None
-
-    def test_run_raw_runs_from_repo_root(self, mocker):
-        """dev-режим: cwd — корень проекта, текст без BASE_PROMPT-обёртки."""
-        from lib.opencode_cli import REPO_ROOT
-        proc = FakeProc(["Ответ"])
-        popen = mocker.patch(
-            "lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker)
-        result = runner.run("проверь последние логи и исправь ошибку", raw=True)
-        assert result == "Ответ"
-        cmd = popen.call_args[0][0]
-        assert "--model" in cmd
-        assert cmd[-1] == "проверь последние логи и исправь ошибку"
-        assert "от пользователя поступила команда" not in cmd[-1]
-        assert popen.call_args[1]["cwd"] == REPO_ROOT
-
-    def test_run_default_wraps_in_base_prompt(self, mocker):
-        """Обычный режим: текст оборачивается в BASE_PROMPT, cwd — cli/."""
-        proc = FakeProc(["Ответ"])
-        popen = mocker.patch(
-            "lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker)
-        runner.run("сделай громче")
-        cmd = popen.call_args[0][0]
-        assert "от пользователя поступила команда" in cmd[-1]
-        assert "сделай громче" in cmd[-1]
-        assert popen.call_args[1]["cwd"] == r"C:\cli"
-
-    def test_run_raw_missing_repo_root_returns_none(self, mocker):
-        """missing dir в dev-режиме (свой run_dir) даёт None + ошибку."""
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=False)
-        runner = self._runner(mocker)
-        assert runner.run("что-то", raw=True) is None
-        error = runner._output.print_error.call_args[0][0]
-        assert "Рабочая папка не найдена" in error
-
-    def test_run_verbose_streams_lines_to_console(self, mocker):
-        """verbose=True стримит строки CLI в print_info в реальном времени."""
-        proc = FakeProc(["шаг 1", "\x1b[31mошибка: нет доступа\x1b[0m", "итог"])
-        mocker.patch(
-            "lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker)
-        result = runner.run("проверь", verbose=True)
-        assert result == "шаг 1\nошибка: нет доступа\nитог"
-        streamed = [
-            c.args[0] for c in runner._output.print_info.call_args_list
-        ]
-        assert any(s == "[OpenCode>>] шаг 1" for s in streamed)
-        assert any(s == "[OpenCode>>] ошибка: нет доступа" for s in streamed)
-        assert any(s == "[OpenCode>>] итог" for s in streamed)
-
-    def test_run_raw_implies_verbose(self, mocker):
-        """dev-режим (raw=True) включает стрим без явного verbose."""
-        proc = FakeProc(["сырой ответ <tag>"])
-        mocker.patch(
-            "lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker)
-        result = runner.run("что-то", raw=True)
-        # raw=True → verbose=True по умолчанию: вывод не фильтруется
-        assert "<tag>" in result
-        streamed = [
-            c.args[0] for c in runner._output.print_info.call_args_list
-        ]
-        assert any(s == "[OpenCode>>] сырой ответ <tag>" for s in streamed)
-
-    def test_run_timeout_dumps_partial_output(self, mocker):
-        """При таймауте в dev-режиме показывается накопленный вывод."""
-        import time as _time
-
-        class BlockingProc:
-            """Отдаёт одну строку, затем блокирует ридер (процесс завис)."""
-
-            def __init__(self):
-                self._lines = iter(["начал делать\n"])
-                self.poll_result = None
-                self.returncode_value = 0
-                self.killed = False
-                self.stdout = self
-
-            def readline(self):
-                try:
-                    return next(self._lines)
-                except StopIteration:
-                    _time.sleep(60)
-                    return ""
-
-            def poll(self):
-                return self.poll_result
-
-            def kill(self):
-                self.killed = True
-
-            def wait(self, timeout=5):
-                self.poll_result = self.returncode_value
-                return self.returncode_value
-
-        proc = BlockingProc()
-        prod = mocker.patch(
-            "lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker, timeout=0.01)
-        result = runner.run("команда", raw=True)
-        assert result is None
-        assert prod.called
-        streamed = [
-            c.args[0] for c in runner._output.print_info.call_args_list
-        ]
-        assert any("Вывод до таймаута" in s for s in streamed)
-        assert any("[OpenCode>>] начал делать" in s for s in streamed)
-
-    def test_run_reports_empty_output(self, mocker):
-        proc = FakeProc([], returncode=1)
-        mocker.patch("lib.opencode_cli.subprocess.Popen", return_value=proc)
-        mocker.patch("lib.opencode_cli.os.path.isdir", return_value=True)
-        runner = self._runner(mocker)
-        assert runner.run("команда") is None
-
-    def test_clean_strips_ansi_and_empty_lines(self):
-        runner = self._runner(MagicMock())
-        # _runner нужен только ради объекта; вызываем _clean напрямую
-        result = runner._clean("> \nthinking...\nпривет\n\nкрасиво\x1b[0m\n")
-        assert "привет" in result
-        assert "красиво" in result
-        assert ">" not in result
-
-    def test_clean_strips_agent_noise_blocks(self):
-        """Мёртвые инструменты и JSON-параметры агента не попадают в итог."""
-        runner = self._runner(MagicMock())
-        sample = (
-            "> build · auto/tools\n"
-            "✗ grep_search {\"includePattern\":\"**/*\"} failed\n"
-            "Error: No tool named \"grep_search\" is currently available.\n"
-            "> build · auto/tools\n"
-            "Error: Invalid arguments for tool \"read\":\n"
-            "- path: Missing key\n"
-            "Arguments provided:\n"
-            "{\n"
-            "  \"filePath\": \"C:\\\\x\\\\AGENTS.md\",\n"
-            "  \"startLine\": \"1\"\n"
-            "}\n"
-            "<system-reminder>\nRead the AGENTS.md file.\n</system-reminder>\n"
-            "<parameter=maxResults>\n200\n</parameter>\n"
-            "<parameter=query>\n**/*.ps1\n</parameter>\n"
-            "</function>\n"
-            "> build · auto/tools\n"
-            "$ cd C:\\Users\\b5\\Desktop\\voice; python -c \"x\"\n"
-            "Задача не найдена, ничего не выполнено.\n"
-        )
-        result = runner._clean(sample)
-        assert "grep_search" not in result
-        assert "No tool named" not in result
-        assert "filePath" not in result
-        assert "Read the AGENTS.md" not in result
-        assert "**/*.ps1" not in result
-        assert "> build" not in result
-        assert "$ cd" not in result
-        assert "Задача не найдена" in result
-
-    def test_clean_success_keeps_result_tail(self):
-        """Итоговая фраза агента после команд сохраняется."""
-        runner = self._runner(MagicMock())
-        sample = (
-            "$ cd C:\\x; python -c \"print(1)\"\n"
-            "Задача выполнена: накормить хомяка\n"
-        )
-        result = runner._clean(sample)
-        assert result == "Задача выполнена: накормить хомяка"
-
-    def test_clean_strips_tool_call_markup_text(self):
-        """Tool-call разметка агента, выведенная текстом, не попадает в итог."""
-        runner = self._runner(MagicMock())
-        sample = (
-            "Я выполняю скилл task-complete.\n"
-            "<\uff5ctool\uff5c calls>\n"
-            "<\uff5c invoke name=\"shell\">\n"
-            "<\uff5c parameter name=\"command\" string=\"true\">"
-            "cd C:\\x; python -m lib.tasks complete --b64:xxx"
-            "</\uff5c parameter>\n"
-            "<\uff5c parameter name=\"workdir\" string=\"true\">C:\\x</\uff5c"
-            " parameter>\n"
-            "</\uff5c invoke>\n"
-            "</\uff5c calls>\n"
-            "title: починить лампочку в ванной\n"
-            "result: {\"matched\": []}\n"
-        )
-        result = runner._clean(sample)
-        assert "tool" not in result
-        assert "invoke" not in result
-        assert "parameter" not in result
-        assert "calls" not in result
-        assert "Я выполняю скилл" in result
-        assert "title:" in result
-        assert "result:" in result
-
-    def test_clean_strips_ascii_tool_call_markup(self):
-        """ASCII-вариант разметки <|tool| ...> тоже отбрасывается."""
-        runner = self._runner(MagicMock())
-        sample = (
-            "<|tool| calls>\n"
-            "<|invoke name=\"shell\">\n"
-            "</|calls>\n"
-            "итог\n"
-        )
-        result = runner._clean(sample)
-        assert "invoke" not in result
-        assert "calls" not in result
-        assert result == "итог"

@@ -99,3 +99,62 @@ def wait_for_tab(url_part: str, port: int = DEFAULT_PORT, timeout: float = 15.0)
             return tab
         time.sleep(0.5)
     return None
+
+
+def eval_js(tab: dict, script: str) -> tuple[bool, str]:
+    """Выполняет JavaScript на вкладке через Runtime.evaluate."""
+    try:
+        ws = _ws_for(tab)
+        if not ws:
+            return False, "нет webSocketDebuggerUrl"
+        payload = {
+            "id": 1,
+            "method": "Runtime.evaluate",
+            "params": {"expression": script, "returnByValue": True},
+        }
+        ws.send(json.dumps(payload))
+        for _ in range(20):
+            data = json.loads(ws.recv())
+            if data.get("id") != 1:
+                continue
+            result = data.get("result", {})
+            if result.get("exceptionDetails"):
+                ws.close()
+                return False, str(result["exceptionDetails"])
+            value = result.get("result", {}).get("value")
+            ws.close()
+            return True, value if value is not None else ""
+        ws.close()
+        return False, "нет ответа от Runtime.evaluate"
+    except Exception as e:
+        print(f"[Browser] Ошибка eval_js: {e}")
+        return False, str(e)
+
+
+def click(tab: dict, selector: str) -> tuple[bool, str]:
+    """Кликает по первому элементу, подходящему под селектор."""
+    script = (
+        "(function(){"
+        f"var el = document.querySelector('{selector}');"
+        "if (!el) return '__NOT_FOUND__';"
+        "el.click();"
+        "return '__CLICKED__';"
+        "})()"
+    )
+    ok, value = eval_js(tab, script)
+    if not ok:
+        return False, value
+    if value == "__NOT_FOUND__":
+        return False, f"элемент '{selector}' не найден"
+    return True, value
+
+
+def wait_for_selector(tab: dict, selector: str, timeout: float = 15.0) -> bool:
+    """Ждёт появления элемента по селектору."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ok, value = eval_js(tab, f"!!document.querySelector('{selector}')")
+        if ok and value is True:
+            return True
+        time.sleep(0.5)
+    return False

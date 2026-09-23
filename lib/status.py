@@ -29,66 +29,19 @@ import json
 import os
 import platform
 import subprocess
-import sys
 import threading
 import time
 from typing import Any, Callable, Optional
 
 
-def _check_vpn() -> bool:
-    """Возвращает True, если youtube доступен напрямую (VPN включён).
-
-    Прокси-признак: без VPN youtube в РФ недоступен (таймаут/сброс),
-    с VPN отвечает 200. Сам VPN скрипт не включает — только проверяет.
-    """
-    try:
-        import urllib.request
-        request = urllib.request.Request(
-            "https://www.youtube.com/", method="HEAD",
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        with urllib.request.urlopen(request, timeout=4) as response:
-            return response.status == 200
-    except Exception:
-        return False
-
-
-def _check_media() -> bool:
-    """Возвращает True, если в системе сейчас играет медиа."""
-    from lib.media import is_media_playing
-    try:
-        return bool(is_media_playing())
-    except Exception:
-        return False
-
-
-def _check_media_session() -> bool:
-    """Возвращает True, если есть хоть одна медиа-сессия (хоть на паузе)."""
-    from lib.media import is_media_available
-    try:
-        return bool(is_media_available())
-    except Exception:
-        return False
-
-
-def _check_browser() -> bool:
-    """Возвращает True, если браузер отвечает по CDP (порт 9222)."""
-    from lib.browser_control import is_running
-    try:
-        return bool(is_running())
-    except Exception:
-        return False
-
-
-def _check_browser_youtube() -> bool:
-    """Возвращает True, если в браузере есть вкладка ютуба."""
-    from lib.browser_control import find_tab, is_running
-    try:
-        if not is_running():
-            return False
-        return find_tab("youtube") is not None
-    except Exception:
-        return False
+from lib.status_checkers import (
+    _check_browser,
+    _check_browser_youtube,
+    _check_media,
+    _check_media_session,
+    _check_vpn,
+)
+from lib.status_poll import StatusPollMixin
 
 
 BUILTIN_CHECKERS: dict[str, Callable[[], bool]] = {
@@ -100,7 +53,7 @@ BUILTIN_CHECKERS: dict[str, Callable[[], bool]] = {
 }
 
 
-class StatusStore:
+class StatusStore(StatusPollMixin):
     """Потокобезопасное хранилище статусов с фоновым опросом."""
 
     def __init__(self, status_file: Optional[str] = None,
@@ -205,17 +158,6 @@ class StatusStore:
                 self._output.print_info(f"[Status] {name}: {state}")
         return value
 
-    def _update_title(self) -> None:
-        """Обновляет заголовок окна консоли текущими статусами (Windows)."""
-        if sys.platform != "win32":
-            return
-        try:
-            parts = [f"{n}={'on' if v else 'off'}"
-                     for n, v in sorted(self.snapshot().items())]
-            os.system(f"title Voice: {' '.join(parts)}")
-        except Exception:
-            pass
-
     def refresh_all(self) -> dict[str, bool]:
         """Проверяет все статусы прямо сейчас."""
         return {name: self.refresh(name) for name in list(self._defs)}
@@ -231,12 +173,7 @@ class StatusStore:
             return dict(self._states)
 
     def ensure(self, names: list[str]) -> list[str]:
-        """Возвращает имена неактивных статусов из списка.
-
-        Кэшированно-выключенный статус перепроверяется синхронно один раз
-        (случай «только что включили»). Выключенное хранилище ничего
-        не требует — возвращает пустой список.
-        """
+        """Имена неактивных статусов (выключенные перепроверяются разово)."""
         if not self.enabled:
             return []
         missing = [n for n in names if not self.is_active(n)]
@@ -259,35 +196,3 @@ class StatusStore:
         if message:
             return str(message)
         return f"Нужен статус: {name}"
-
-    def start(self) -> None:
-        """Запускает фоновый опрос статусов (daemon-поток)."""
-        if not self.enabled or self._thread is not None:
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._loop, daemon=True, name="status-poll")
-        self._thread.start()
-
-    def stop(self) -> None:
-        """Останавливает фоновый опрос."""
-        self._stop_event.set()
-        thread, self._thread = self._thread, None
-        if thread is not None:
-            thread.join(timeout=2.0)
-
-    def _loop(self) -> None:
-        """Цикл опроса: проверяет просроченные статусы раз в секунду."""
-        while not self._stop_event.is_set():
-            cycle_start = time.monotonic()
-            try:
-                self.reload()
-                now = time.monotonic()
-                for name in list(self._defs):
-                    last = self._last_check.get(name, 0.0)
-                    if now - last >= self._interval_for(name):
-                        self.refresh(name)
-            except Exception:
-                pass
-            elapsed = time.monotonic() - cycle_start
-            self._stop_event.wait(max(0.0, 1.0 - elapsed))
