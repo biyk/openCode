@@ -26,6 +26,59 @@ import websocket
 from pathlib import Path
 from typing import Optional
 
+from lib.cdp_client import (
+    DEFAULT_PORT,
+    _activate,
+    _hostname,
+    _http_request,
+    _list_tabs,
+    _tab_for_site,
+    _ws_for,
+    find_tab,
+    is_running,
+    wait_for_tab,
+)
+from lib.youtube_browser import (
+    _YOUTUBE_EXTENSIONS_SETTLE,
+    _YOUTUBE_FIRST_VIDEO_TIMEOUT,
+    _youtube_first_video_link,
+    _youtube_is_watch,
+    _youtube_page_tabs,
+    _youtube_resume_current,
+    _youtube_wait_and_open_first,
+    youtube_open_first,
+    youtube_play,
+    youtube_play_first_result,
+    youtube_search,
+)
+
+# Стабильный фасад: тесты, status.py и youtube_browser обращаются
+# к CDP-примитивам и YouTube-сценариям через lib.browser_control.
+__all__ = [
+    "DEFAULT_PORT",
+    "_YOUTUBE_EXTENSIONS_SETTLE",
+    "_YOUTUBE_FIRST_VIDEO_TIMEOUT",
+    "_activate",
+    "_hostname",
+    "_http_request",
+    "_list_tabs",
+    "_tab_for_site",
+    "_ws_for",
+    "_youtube_first_video_link",
+    "_youtube_is_watch",
+    "_youtube_page_tabs",
+    "_youtube_resume_current",
+    "_youtube_wait_and_open_first",
+    "find_tab",
+    "is_running",
+    "wait_for_tab",
+    "websocket",
+    "youtube_open_first",
+    "youtube_play",
+    "youtube_play_first_result",
+    "youtube_search",
+]
+
 if sys.platform == "win32":
     try:
         os.system("chcp 65001 >nul")
@@ -34,59 +87,10 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-DEFAULT_PORT = 9222
-
 _COMMON_WINDOWS_PATHS = [
     Path(r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"),
     Path(r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe"),
 ]
-
-_YOUTUBE_SELECTORS = {
-    "player": "button.ytp-play-button",
-    "result": "ytd-video-renderer a#video-title, ytd-video-renderer #video-title",
-}
-
-_YOUTUBE_FIRST_VIDEO_SCRIPT = (
-    "(function(){"
-    "var items = document.querySelectorAll('ytd-rich-item-renderer');"
-    "for (var i = 0; i < items.length; i++) {"
-    "  if (items[i].querySelector('ytd-ad-slot-renderer')) continue;"
-    "  var a = items[i].querySelector('a[href*=\"/watch?v=\"]');"
-    "  if (a && a.href) return a.href;"
-    "}"
-    "return '';"
-    "})()"
-)
-
-
-def _http_request(url: str, data: Optional[dict] = None) -> dict:
-    """GET (data=None) или POST (data=json) к CDP-эндпоинту."""
-    req = urllib.request.Request(url)
-    if data is not None:
-        req = urllib.request.Request(
-            url, data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def _list_tabs(port: int = DEFAULT_PORT) -> list:
-    """Возвращает список вкладок через /json/list."""
-    try:
-        return _http_request(f"http://localhost:{port}/json/list")
-    except Exception as e:
-        print(f"[Browser] Ошибка получения вкладок: {e}")
-        return []
-
-
-def is_running(port: int = DEFAULT_PORT) -> bool:
-    """Проверяет, слушает ли браузер debug-порт."""
-    try:
-        _http_request(f"http://localhost:{port}/json/version")
-        return True
-    except Exception:
-        return False
 
 
 def _find_browser_exe() -> Optional[str]:
@@ -111,12 +115,10 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     if is_running(port):
         print(f"[Browser] Уже запущен на порту {port}")
         return True
-
     exe = _find_browser_exe()
     if not exe:
         print("[Browser] Brave не найден")
         return False
-
     profile = _profile_dir(port)
     profile.mkdir(exist_ok=True)
     print(f"[Browser] Запуск {exe} с debug-портом {port}")
@@ -141,34 +143,8 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     return False
 
 
-def _hostname(url: str) -> str:
-    """Хост из url без www и в нижнем регистре, '' если определить не удалось."""
-    try:
-        host = urllib.parse.urlparse(url).hostname or ""
-    except ValueError:
-        return ""
-    host = host.lower()
-    if host.startswith("www."):
-        host = host[4:]
-    return host
-
-
-def _tab_for_site(tabs: list, url: str) -> Optional[dict]:
-    """Возвращает открытую вкладку с тем же сайтом (без учёта www)."""
-    target = _hostname(url)
-    if not target:
-        return None
-    for tab in tabs:
-        if tab.get("type", "page") not in ("page", ""):
-            continue
-        if _hostname(tab.get("url", "")) == target:
-            return tab
-    return None
-
-
 def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Открывает url в новой вкладке; если вкладка с тем же сайтом уже
-    открыта — переключается на неё вместо создания новой."""
+    """Открывает url; если сайт уже открыт — переключается на вкладку."""
     if not ensure_browser(port):
         return None
     existing = _tab_for_site(_list_tabs(port), url)
@@ -190,33 +166,6 @@ def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
         return None
 
 
-def find_tab(url_part: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Ищет вкладку, url которой содержит подстроку."""
-    for tab in _list_tabs(port):
-        if url_part.lower() in tab.get("url", "").lower():
-            return tab
-    return None
-
-
-def _ws_for(tab: dict) -> Optional[websocket.WebSocket]:
-    """Открывает WebSocket к вкладке."""
-    ws_url = tab.get("webSocketDebuggerUrl")
-    if not ws_url:
-        return None
-    return websocket.create_connection(ws_url, timeout=30)
-
-
-def wait_for_tab(url_part: str, port: int = DEFAULT_PORT, timeout: float = 15.0) -> Optional[dict]:
-    """Ждёт появления вкладки с нужным url."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        tab = find_tab(url_part, port)
-        if tab:
-            return tab
-        time.sleep(0.5)
-    return None
-
-
 def eval_js(tab: dict, script: str) -> tuple[bool, str]:
     """Выполняет JavaScript на вкладке через Runtime.evaluate."""
     try:
@@ -231,15 +180,15 @@ def eval_js(tab: dict, script: str) -> tuple[bool, str]:
         ws.send(json.dumps(payload))
         for _ in range(20):
             data = json.loads(ws.recv())
-            if data.get("id") == 1:
-                result = data.get("result", {})
-                if result.get("exceptionDetails"):
-                    w = ws
-                    w.close()
-                    return False, str(result["exceptionDetails"])
-                value = result.get("result", {}).get("value")
+            if data.get("id") != 1:
+                continue
+            result = data.get("result", {})
+            if result.get("exceptionDetails"):
                 ws.close()
-                return True, value if value is not None else ""
+                return False, str(result["exceptionDetails"])
+            value = result.get("result", {}).get("value")
+            ws.close()
+            return True, value if value is not None else ""
         ws.close()
         return False, "нет ответа от Runtime.evaluate"
     except Exception as e:
@@ -276,144 +225,6 @@ def wait_for_selector(tab: dict, selector: str, timeout: float = 15.0) -> bool:
     return False
 
 
-def _activate(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Переключает фокус на вкладку."""
-    try:
-        _http_request(f"http://localhost:{port}/json/activate/{tab.get('id')}")
-        return True
-    except Exception:
-        return False
-
-
-def youtube_search(query: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Открывает ютуб с поисковым запросом, возвращает вкладку."""
-    tab = open_url(
-        "https://www.youtube.com/results?search_query="
-        + urllib.parse.quote(query, safe=""),
-        port=port,
-    )
-    if tab:
-        time.sleep(3)
-    return tab
-
-
-def youtube_play_first_result(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Кликает первый результат поиска и жмёт плей."""
-    _activate(tab, port)
-    wait_for_selector(tab, _YOUTUBE_SELECTORS["result"])
-    ok, value = click(tab, _YOUTUBE_SELECTORS["result"])
-    if not ok:
-        print(f"[Browser] Не удалось выбрать ролик: {value}")
-        return False
-    time.sleep(5)
-    click(tab, _YOUTUBE_SELECTORS["player"])
-    return True
-
-
-def youtube_play(query: str, port: int = DEFAULT_PORT) -> bool:
-    """Полный сценарий: открыть ютуб, найти ролик, запустить."""
-    tab = youtube_search(query, port)
-    if not tab:
-        print("[Browser] Не удалось открыть ютуб")
-        return False
-    return youtube_play_first_result(tab, port)
-
-
-_YOUTUBE_FIRST_VIDEO_TIMEOUT = 30.0
-_YOUTUBE_EXTENSIONS_SETTLE = 3.0
-_YOUTUBE_RESUME_SCRIPT = (
-    "(function(){"
-    "var v = document.querySelector('video');"
-    "if (!v) return 'no-video';"
-    "var p = v.play();"
-    "if (p && p.catch) p.catch(function(){});"
-    "return 'playing';"
-    "})()"
-)
-
-
-def _youtube_first_video_link(tab: dict) -> str:
-    """Первая ссылка на видео из ленты (рекламные элементы пропускаются)."""
-    ok, value = eval_js(tab, _YOUTUBE_FIRST_VIDEO_SCRIPT)
-    if ok and isinstance(value, str):
-        return value
-    return ""
-
-
-def _youtube_is_watch(url: str) -> bool:
-    """True, если url — страница ролика (/watch или /shorts)."""
-    path = urllib.parse.urlparse(url).path.lower()
-    return "/watch" in path or path.startswith("/shorts")
-
-
-def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Переключается на вкладку и запускает уже открытое видео."""
-    _activate(tab, port)
-    ok, value = eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
-    if ok and value == "playing":
-        print("[Browser] Запущено текущее видео")
-        return True
-    clicked, _ = click(tab, _YOUTUBE_SELECTORS["player"])
-    if clicked:
-        print("[Browser] Запущено текущее видео")
-        return True
-    print("[Browser] Не удалось запустить текущее видео")
-    return False
-
-
-def _youtube_wait_and_open_first(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Ждёт ленту на вкладке и открывает первое не-рекламное видео."""
-    _activate(tab, port)
-    deadline = time.time() + _YOUTUBE_FIRST_VIDEO_TIMEOUT
-    link = ""
-    while time.time() < deadline:
-        link = _youtube_first_video_link(tab)
-        if link:
-            break
-        time.sleep(1)
-    if not link:
-        print("[Browser] Список видео не загрузился за "
-              f"{_YOUTUBE_FIRST_VIDEO_TIMEOUT:.0f} секунд")
-        return False
-    time.sleep(_YOUTUBE_EXTENSIONS_SETTLE)
-    ok, _ = eval_js(tab, f"window.location.href = {json.dumps(link)}")
-    if not ok:
-        print("[Browser] Не удалось открыть первое видео")
-        return False
-    print(f"[Browser] Открыто первое видео: {link}")
-    return True
-
-
-def _youtube_page_tabs(port: int = DEFAULT_PORT) -> list:
-    """Обычные (не service worker) вкладки youtube.com."""
-    found = []
-    for tab in _list_tabs(port):
-        if tab.get("type", "page") not in ("page", ""):
-            continue
-        if _hostname(tab.get("url", "")) == "youtube.com":
-            found.append(tab)
-    return found
-
-
-def youtube_open_first(port: int = DEFAULT_PORT) -> bool:
-    """Нет вкладки ютуба — открыть главную и первое видео.
-    Есть вкладка с роликом — запустить его. Иначе — первое из ленты."""
-    if not ensure_browser(port):
-        print("[Browser] Не удалось открыть ютуб")
-        return False
-    pages = _youtube_page_tabs(port)
-    watch = next((t for t in pages if _youtube_is_watch(t.get("url", ""))), None)
-    if watch:
-        return _youtube_resume_current(watch, port)
-    if pages:
-        return _youtube_wait_and_open_first(pages[0], port)
-    tab = open_url("https://youtube.com", port)
-    if not tab:
-        print("[Browser] Не удалось открыть ютуб")
-        return False
-    return _youtube_wait_and_open_first(tab, port)
-
-
 def _cmd_status(port: int) -> int:
     if is_running(port):
         print(f"[Browser] Браузер работает на порту {port}")
@@ -430,8 +241,7 @@ def _cmd_tabs(port: int) -> int:
 
 
 def _cmd_open_url(url: str, port: int) -> int:
-    tab = open_url(url, port)
-    return 0 if tab else 1
+    return 0 if open_url(url, port) else 1
 
 
 def _cmd_eval(url_part: str, script: str, port: int) -> int:
@@ -477,7 +287,6 @@ def main(argv: Optional[list] = None) -> int:
         port = int(argv[argv.index("--port") + 1])
         argv = [a for i, a in enumerate(argv) if not (argv[i - 1] == "--port")]
     args = [a for a in argv[1:] if a != "--port"]
-
     if cmd == "status":
         return _cmd_status(port)
     if cmd == "tabs":
@@ -491,9 +300,7 @@ def main(argv: Optional[list] = None) -> int:
     if cmd == "youtube-play":
         return _cmd_youtube_play(" ".join(args), port)
     if cmd == "youtube-first":
-        if youtube_open_first(port):
-            return 0
-        return 1
+        return 0 if youtube_open_first(port) else 1
     print(f"[Browser] Неизвестная команда: {cmd}")
     return 1
 

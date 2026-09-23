@@ -36,7 +36,7 @@ class TestTabs:
     def test_list_tabs(self, mocker):
         """_list_tabs возвращает список вкладок."""
         mocker.patch(
-            "lib.browser_control._http_request",
+            "lib.cdp_client._http_request",
             return_value=[{"id": "1", "url": "https://youtube.com"}],
         )
         tabs = bc._list_tabs()
@@ -46,7 +46,7 @@ class TestTabs:
     def test_find_tab(self, mocker):
         """find_tab находит вкладку по подстроке url."""
         mocker.patch(
-            "lib.browser_control._list_tabs",
+            "lib.cdp_client._list_tabs",
             return_value=[
                 {"url": "https://youtube.com/watch?v=abc"},
                 {"url": "https://google.com"},
@@ -62,12 +62,12 @@ class TestIsRunning:
 
     def test_is_running_true(self, mocker):
         """is_running возвращает True при успешном /json/version."""
-        mocker.patch("lib.browser_control._http_request", return_value={})
+        mocker.patch("lib.cdp_client._http_request", return_value={})
         assert bc.is_running() is True
 
     def test_is_running_false(self, mocker):
         """is_running возвращает False при исключении."""
-        mocker.patch("lib.browser_control._http_request", side_effect=Exception("no"))
+        mocker.patch("lib.cdp_client._http_request", side_effect=Exception("no"))
         assert bc.is_running() is False
 
 
@@ -127,7 +127,7 @@ class TestOpenUrl:
         assert "json/new" in req.full_url
 
     def test_open_url_switches_to_existing(self, mocker):
-        """Если вкладка с тем же сайтом уже открыта — переключается не неё."""
+        """Если вкладка с тем же сайтом уже открыта — переключается не её."""
         existing = {"id": "1", "url": "https://www.youtube.com/watch?v=abc"}
         mocker.patch("lib.browser_control.ensure_browser", return_value=True)
         mocker.patch("lib.browser_control._list_tabs", return_value=[existing])
@@ -309,7 +309,7 @@ class TestWaitSelector:
     """Тесты для wait_for_selector."""
 
     def test_wait_for_selector_found(self, mocker):
-        """wait_for_selector возвращает True при появлении элемента."""
+        """wait_for_selector возвращает True, если элемент найден."""
         mocker.patch("lib.browser_control.eval_js", return_value=(True, True))
         assert bc.wait_for_selector({}, "button") is True
 
