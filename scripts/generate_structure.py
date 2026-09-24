@@ -15,192 +15,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from check_tooltips import EXCLUDED_DIRS, EXCLUDED_NAMES
-except ImportError:
-    from scripts.check_tooltips import EXCLUDED_DIRS, EXCLUDED_NAMES
+SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
 
-
-class StructureError(Exception):
-    """Ошибка валидности структуры проекта."""
-
-
-START_MARKER = "STRUCTURE:START"
-END_MARKER = "STRUCTURE:END"
-RUSSIAN_CHARS = set("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
-
-
-def _normalize_path(path: Any) -> str:
-    value = str(path).replace("\\", "/")
-    while value.startswith("./"):
-        value = value[2:]
-    return value
-
-
-def _is_excluded(path: str) -> bool:
-    normalized = _normalize_path(path)
-    name = Path(normalized).name
-    if name in EXCLUDED_NAMES:
-        return True
-    parts = Path(normalized).parts
-    return any(part in EXCLUDED_DIRS for part in parts)
-
-
-def _has_russian_description(description: Any) -> bool:
-    return isinstance(description, str) and any(
-        char in RUSSIAN_CHARS for char in description
-    )
-
-
-def _description_for(
-    descriptions: dict[str, Any],
-    path: str,
-) -> str:
-    description = descriptions.get(path)
-    if not _has_russian_description(description):
-        return ""
-    return str(description).strip()
-
-
-def validate_manifest(
-    manifest: dict[str, Any],
-    expected_files: set[str],
-    repo_path: Any,
-) -> list[str]:
-    """Валидирует плоский манифест описаний.
-
-    Обязательно описание для каждого файла из индекса. Каталоги не обязаны
-    иметь описание. В манифесте не должно быть неизвестных путей.
-
-    Возвращает список ошибок (пустой, если всё ок).
-    """
-    repo = Path(repo_path)
-    errors: list[str] = []
-
-    for path in sorted(expected_files):
-        normalized = _normalize_path(path)
-        if normalized not in manifest:
-            errors.append(f"описание отсутствует для файла: {normalized}")
-        elif not _has_russian_description(manifest[normalized]):
-            errors.append(f"описание для файла {normalized} не на русском языке")
-
-    for path in sorted(manifest):
-        normalized = _normalize_path(path)
-        if not normalized:
-            errors.append("пустой путь в манифесте")
-            continue
-        if _is_excluded(normalized):
-            continue
-        if not (repo / normalized).exists():
-            errors.append(f"путь не найден на диске: {normalized}")
-
-    return errors
-
-
-def render_structure(
-    root_name: str,
-    manifest: dict[str, Any],
-    files: set[str],
-    directories: set[str],
-) -> str:
-    """Рендерит дерево проекта в строку Markdown."""
-    files = {_normalize_path(path) for path in files}
-    directories = {_normalize_path(path) for path in directories}
-    root_name = root_name.replace("\\", "/").rstrip("/")
-
-    children_dirs: dict[str, list[str]] = {}
-    children_files: dict[str, list[str]] = {}
-    for directory in directories:
-        if directory == ".":
-            continue
-        parent = directory.rpartition("/")[0] or "."
-        children_dirs.setdefault(parent, []).append(directory)
-    for path in files:
-        parent = path.rpartition("/")[0] or "."
-        children_files.setdefault(parent, []).append(path)
-
-    root_description = _description_for(manifest, ".")
-    root_line = root_name + (f"  # {root_description}" if root_description else "")
-    lines = [root_line]
-
-    def append_entry(prefix: str, connector: str, path: str, is_directory: bool) -> None:
-        name = path.rpartition("/")[2] if "/" in path else path
-        label = f"{name}/" if is_directory else name
-        description = _description_for(manifest, path)
-        suffix = f"  # {description}" if description else ""
-        lines.append(f"{prefix}{connector}{label}{suffix}")
-
-    def walk(parent: str, prefix: str) -> None:
-        entries = [(path, True) for path in sorted(children_dirs.get(parent, []))]
-        entries += [(path, False) for path in sorted(children_files.get(parent, []))]
-        for index, (path, is_directory) in enumerate(entries):
-            is_last = index == len(entries) - 1
-            connector = "└── " if is_last else "├── "
-            append_entry(prefix, connector, path, is_directory)
-            if is_directory:
-                next_prefix = prefix + ("    " if is_last else "│   ")
-                walk(path, next_prefix)
-
-    walk(".", "")
-    return "\n".join(lines)
-
-
-def render_document(current: str, expected: str) -> str:
-    """Заменяет сгенерированную область в текущем содержимом STRUCTURE.md."""
-    start_marker = f"## {START_MARKER}"
-    end_marker = f"## {END_MARKER}"
-    region = f"{start_marker}\n```\n{expected.rstrip()}\n```\n{end_marker}"
-
-    start_idx = current.find(start_marker)
-    end_idx = current.find(end_marker)
-    if start_idx != -1 and end_idx != -1:
-        prefix = current[:start_idx].rstrip()
-        suffix = current[end_idx + len(end_marker):]
-        result = f"{prefix}\n\n{region}" if prefix else region
-        if suffix.strip():
-            result += "\n" + suffix.strip() + "\n"
-        else:
-            result += "\n"
-        return result
-
-    separator = "\n\n" if current.strip() else ""
-    return current.rstrip() + separator + region + "\n"
-
-
-def collect_index(repo: Any) -> set[str]:
-    """Собирает множество путей отслеживаемых файлов из индекса git."""
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
-        return set()
-    return {
-        path.replace("\\", "/")
-        for path in result.stdout.split("\0")
-        if path
-    }
-
-
-def get_inferred_directories(files: set[str]) -> set[str]:
-    """Инференцирует множество путей каталогов из множества файлов."""
-    directories: set[str] = set()
-    for path in files:
-        normalized = _normalize_path(path)
-        parts = normalized.split("/")
-        for index in range(1, len(parts)):
-            directories.add("/".join(parts[:index]))
-    directories.add(".")
-    return directories
+from scripts.structure_common import (  # noqa: E402
+    StructureError,
+    _is_excluded,
+    collect_index,
+    get_inferred_directories,
+    validate_manifest,
+)
+from scripts.structure_render import render_document, render_structure  # noqa: E402
 
 
 def build_structure(

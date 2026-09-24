@@ -137,7 +137,6 @@
   "WORKING.md": "WORKING.md — файл, фиксирующий текущий статус разработки и планируемые действия, используемый командой для отслеживания прогресса проекта.",
   "lib/cdp_client.py": "Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click/wait_for_selector.",
   "lib/youtube_browser.py": "Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.",
-  "REFACTOR.md": "План рефакторинга: разбить python-файлы длиннее 200 строк на мелкие модули.",
   "tests/test_cdp_client.py": "Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.",
   "tests/test_youtube_browser.py": "Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.",
   "lib/orchestrator_memory.py": "Миксин оркестратора: голосовое обучение алиасам запомни/забудь, кандидаты, контекст LLM.",
@@ -189,5 +188,15 @@
   "tests/test_google_tasks_operations.py": "Тесты Tasks: создание и завершение задач.",
   "tests/test_intent_prompt.py": "Тесты классификатора: промпт и контекст.",
   "tests/test_race_classify.py": "Тесты RaceClient: classify.",
-  "tests/test_reminders_main.py": "Тесты напоминаний: CLI main."
+  "tests/test_reminders_main.py": "Тесты напоминаний: CLI main.",
+  "bin/tts_sapi.ps1": "Этот PowerShell-скрипт преобразует текст из указанного файла в аудиофайл формата WAV, используя встроенный синтезатор речи Windows с русским голосом.",
+  "scripts/check_lengths.py": "Проверяет, что файлы исходников (py, ps1, bat, cmd, sh) не превышают лимит строк в 200",
+  "scripts/commands_md_data.py": "Загрузка и нормализация данных команд и скиллов для генерации COMMANDS.md",
+  "scripts/commands_md_render.py": "Рендер таблицы соответствия команд и скиллов в COMMANDS.md",
+  "scripts/files_git.py": "Работа с индексом git и чтение/сохранение .structure.json для генератора описаний",
+  "scripts/files_ignore.py": "Константы и хелперы фильтрации игнорируемых файлов для генератора описаний",
+  "scripts/files_llm.py": "Запрос описаний файлов через OmniRouter для генератора .structure.json",
+  "scripts/structure_common.py": "Общие хелперы валидации манифеста и индекса git для generate_structure.py",
+  "scripts/structure_render.py": "Рендер дерева проекта в Markdown для STRUCTURE.md",
+  "tests/test_check_lengths.py": "Тесты проверки, что файлы исходников не превышают лимит строк в 200"
 }
