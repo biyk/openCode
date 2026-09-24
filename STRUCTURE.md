@@ -134,7 +134,7 @@ voice
 │   ├── resurrector_control.py  # Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.
 │   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
 │   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
-│   ├── test_calendar_live.py  # Живой тест Google Calendar (VOICE_LIVE_GOOGLE=1): создаёт тестовый план, проверяет чтение по id и удаляет его.
+│   ├── test_calendar_live.py  # Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.
 │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
 │   ├── test_check_lengths.py  # Тесты проверки, что файлы исходников не превышают лимит строк в 200
 │   ├── test_check_tooltips.py  # Тесты для проверки наличия TOOLTIP-описаний в пакетах и модулях

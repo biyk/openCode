@@ -207,6 +207,6 @@
   "tests/test_youtube_live.py": "Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.",
   "tests/test_youtube_live_unit.py": "Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика.",
   "tests/resurrector_control.py": "Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.",
-  "tests/test_calendar_live.py": "Живой тест Google Calendar (VOICE_LIVE_GOOGLE=1): создаёт тестовый план, проверяет чтение по id и удаляет его.",
+  "tests/test_calendar_live.py": "Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.",
   "tests/test_google_calendar_crud.py": "Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление."
 }
