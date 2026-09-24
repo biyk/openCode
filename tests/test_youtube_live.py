@@ -1,7 +1,10 @@
 """Живые тесты YouTube на тестовом ролике в НОВОЙ вкладке.
 
 Не трогают активную вкладку с боевым роликом: тестовое видео всегда
-открывается в свежей вкладке и закрывается в конце.
+открывается в свежей вкладке и закрывается в конце. Перед тестами
+дебаг-браузер (Brave, порт 9222) поднимается автоматически через
+ensure_browser: без браузера live-тесты не проверяют ничего, поэтому
+они не скипаются, а запускают браузер (падают, если он не стартовал).
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import pytest
 
 from lib import cdp_client as cdc
 from lib import youtube_live as yl
+from lib.browser_control import ensure_browser
 from lib.commands import CommandMatcher
 from lib.config_loader import get_device_commands_path
 
@@ -21,10 +25,19 @@ TEST_VIDEO_URL = "https://www.youtube.com/watch?v=y65necIJU2Y"
 # Ждём, пока OS-медиаклавиша дойдёт до плеера.
 PAUSE_SETTLE_S = 2.0
 
-pytestmark = pytest.mark.skipif(
-    not cdc.is_running(),
-    reason="Браузер с CDP (порт 9222) не запущен",
-)
+
+@pytest.fixture(scope="module", autouse=True)
+def browser_ready():
+    """Поднимает дебаг-браузер (CDP 9222) перед live-тестами YouTube.
+
+    Если браузер уже открыт — просто проверяет порт. Если закрыт —
+    запускает (Brave, отдельный профиль) и ждёт готовности. Не удалось
+    запустить → тест падает: skip без браузера бессмыслен.
+    """
+    if not ensure_browser():
+        pytest.fail(
+            "дебаг-браузер (Brave, порт 9222) не запустился — "
+            "live-тесты YouTube невозможны")
 
 
 @pytest.fixture

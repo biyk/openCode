@@ -2,6 +2,7 @@
 
 
 import sys
+import time
 import builtins
 import platform
 import types
@@ -183,6 +184,10 @@ class TestMainEntryPoint:
             "__file__": main.__file__,
             "__builtins__": builtins_dict,
         })
+
+        deadline = time.monotonic() + 15.0
+        while ("stopped",) not in calls and time.monotonic() < deadline:
+            time.sleep(0.1)
 
         assert ("stopped",) in calls
         infos = [c[0] for c in calls if c[0] == "info"]

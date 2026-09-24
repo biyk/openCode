@@ -1,5 +1,4 @@
 """Голосовой цикл: захват аудио, Vosk STT, оркестратор команд."""
-
 import json
 import os
 import queue
@@ -25,7 +24,6 @@ import sounddevice as sd
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
 _provider_manager = ProviderManager()
-
 # ---------- Конфигурация ----------
 DEFAULT_SR = 16000       # Частота дискретизации
 BLOCKSIZE = 2048         # Размер блока аудио
@@ -197,4 +195,6 @@ class TranscriptionWorker:
 
     def stop(self):
         self._running.clear()
+        if getattr(self, "_status", None) is not None:
+            self._status.stop()
         self._orchestrator.stop()
