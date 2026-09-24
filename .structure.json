@@ -198,5 +198,12 @@
   "scripts/files_llm.py": "Запрос описаний файлов через OmniRouter для генератора .structure.json",
   "scripts/structure_common.py": "Общие хелперы валидации манифеста и индекса git для generate_structure.py",
   "scripts/structure_render.py": "Рендер дерева проекта в Markdown для STRUCTURE.md",
-  "tests/test_check_lengths.py": "Тесты проверки, что файлы исходников не превышают лимит строк в 200"
+  "tests/test_check_lengths.py": "Тесты проверки, что файлы исходников не превышают лимит строк в 200",
+  "TESTING.MD": "План живых тестов (YouTube + команды): тестирование на новой вкладке с тестовым роликом и функциональная проверка команд по реальному эффекту.",
+  "tests/test_commands_live.py": "Живые функциональные тесты команд: реально запускают volumeup/volumedown и проверяют изменение системной громкости через Core Audio API.",
+  "bin/get_volume.ps1": "Читает/устанавливает уровень громкости мастера (0..100) через Core Audio API (IAudioEndpointVolume), culture-invariant. Используется live-тестами громкости.",
+  "lib/youtube_live.py": "Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, определяет состояние плеера (играет/пауза) и закрывает вкладку.",
+  "tests/conftest.py": "Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами.",
+  "tests/test_youtube_live.py": "Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.",
+  "tests/test_youtube_live_unit.py": "Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика."
 }

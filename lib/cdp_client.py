@@ -82,6 +82,40 @@ def _activate(tab: dict, port: int = DEFAULT_PORT) -> bool:
         return False
 
 
+def open_new_tab(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
+    """Создаёт НОВУЮ вкладку через /json/new (без переиспользования).
+
+    В отличие от browser_control.open_url не проверяет существующие
+    вкладки и не переключается на них — всегда открывает свежую.
+    """
+    try:
+        q = urllib.parse.quote(url, safe="")
+        req = urllib.request.Request(
+            f"http://localhost:{port}/json/new?{q}", method="PUT")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            tab = json.loads(resp.read().decode("utf-8"))
+        return tab
+    except Exception as e:
+        print(f"[Browser] Ошибка создания вкладки {url}: {e}")
+        return None
+
+
+def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
+    """Закрывает вкладку через /json/close/{id}.
+
+    CDP отвечает текстом («Target is closing»), а не JSON, поэтому
+    используем сырой urlopen без разбора тела.
+    """
+    try:
+        with urllib.request.urlopen(
+                f"http://localhost:{port}/json/close/{tab.get('id')}",
+                timeout=5):
+            return True
+    except Exception as e:
+        print(f"[Browser] Ошибка закрытия вкладки: {e}")
+        return False
+
+
 def _ws_for(tab: dict) -> Optional[websocket.WebSocket]:
     """Открывает WebSocket соединение к вкладке."""
     ws_url = tab.get("webSocketDebuggerUrl")

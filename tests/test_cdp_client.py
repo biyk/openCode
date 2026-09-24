@@ -57,6 +57,43 @@ class TestTabs:
         assert cdc.find_tab("нет такого") is None
 
 
+class TestNewTabAndClose:
+    """Тесты для open_new_tab и close_tab."""
+
+    def test_open_new_tab_uses_put(self, mocker):
+        """open_new_tab всегда создаёт вкладку через PUT /json/new."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = (
+            b'{"id": "9", "url": "https://youtube.com/watch?v=x"}')
+        mock_urlopen = mocker.patch("lib.cdp_client.urllib.request.urlopen")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        tab = cdc.open_new_tab("https://youtube.com/watch?v=x")
+        assert tab["id"] == "9"
+        req = mock_urlopen.call_args[0][0]
+        assert req.method == "PUT"
+        assert "json/new" in req.full_url
+
+    def test_open_new_tab_error_returns_none(self, mocker):
+        """open_new_tab возвращает None при ошибке."""
+        mocker.patch("lib.cdp_client.urllib.request.urlopen",
+                     side_effect=Exception("boom"))
+        assert cdc.open_new_tab("https://youtube.com") is None
+
+    def test_close_tab_ok(self, mocker):
+        """close_tab дергает /json/close/{id} и возвращает True."""
+        mock_urlopen = mocker.patch("lib.cdp_client.urllib.request.urlopen")
+        mock_urlopen.return_value.__enter__.return_value = MagicMock()
+        assert cdc.close_tab({"id": "9"}) is True
+        url = mock_urlopen.call_args[0][0]
+        assert "json/close/9" in url
+
+    def test_close_tab_error_returns_false(self, mocker):
+        """close_tab возвращает False при ошибке."""
+        mocker.patch("lib.cdp_client.urllib.request.urlopen",
+                     side_effect=Exception("boom"))
+        assert cdc.close_tab({"id": "9"}) is False
+
+
 class TestIsRunning:
     """Тесты для is_running."""
 

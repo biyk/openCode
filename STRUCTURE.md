@@ -86,7 +86,8 @@ voice
 │   ├── version_checker.py  # Это модуль lib/version_checker.py, который в отдельном потоке периодически проверяет совпадение версии приложения и проекта и завершает программу при обнаружении несоответствия.
 │   ├── version_gate.py  # Файл lib/version_gate.py отвечает за проверку соответствия версии приложения и версии проекта, считывает номер версии из файла VERSION и при несовпадении завершает работу.
 │   ├── vosk_model.py  # Загрузка моделей Vosk при необходимости.
-│   └── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.
+│   ├── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.
+│   └── youtube_live.py  # Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, определяет состояние плеера (играет/пауза) и закрывает вкладку.
 ├── prompts/
 │   └── chat_template.txt  # Это файл шаблона подсказки для чат‑бота, определяющий стиль и правила ответов.
 ├── scripts/
@@ -129,6 +130,7 @@ voice
 │   │   ├── test_manifest.py  # Это тестовый модуль, проверяющий корректность создания и поведения dataclass SkillManifest и его компонентов.
 │   │   └── test_skills_dir.py  # Тесты для функции get_skills_dir из модуля lib.skills. Проверяют, что функция возвращает корректный путь к папке skills с именем хоста.
 │   ├── __init__.py  # Пакет tests – автотесты проекта
+│   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами.
 │   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
 │   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
 │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
@@ -137,6 +139,7 @@ voice
 │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
 │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
 │   ├── test_commands_find.py  # Тесты CommandMatcher: концепция трех строк, find_command.
+│   ├── test_commands_live.py  # Живые функциональные тесты команд: реально запускают volumeup/volumedown и проверяют изменение системной громкости через Core Audio API.
 │   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
 │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
 │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
@@ -190,7 +193,9 @@ voice
 │   ├── test_tts_pipeline.py  # Тесты TextToSpeech: нарезка фраз и конвейер воспроизведения.
 │   ├── test_tts_piper.py  # Тесты TextToSpeech: движок Piper и кэш голосов.
 │   ├── test_tts_playback.py  # Тесты TextToSpeech: SAPI, файлы, плееры, run_player.
-│   └── test_youtube_browser.py  # Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.
+│   ├── test_youtube_browser.py  # Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.
+│   ├── test_youtube_live.py  # Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.
+│   └── test_youtube_live_unit.py  # Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика.
 ├── AGENTS.md  # Руководство для агентов Voice Control: правила коммитов (только по команде), version gate, команды сборки/тестов, архитектура (Vosk STT → Orchestrator), Google Calendar/ Tasks, аудио и стоп-слова, LLM-провайдеры (race), концепция голосовых команд (commands.json, 90% порог, концепция трёх строк).
 ├── COMMANDS.md  # Это файл‑документация, в котором описаны голосовые команды, их триггеры, соответствующие навыки, параметры и вызываемые скрипты, служит справочником для работы голосового ассистента.
 ├── README.md  # README.md — это файл описания проекта, содержащий инструкцию по установке, использованию и функционалу голосового помощника для Windows.
