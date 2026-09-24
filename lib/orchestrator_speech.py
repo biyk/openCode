@@ -2,9 +2,38 @@
 
 import time
 
-# Управляющие фразы режима разработки (детерминированы, без матчера).
+from lib.commands_match import _similarity
+
+# Фразы включения режима разработки (детерминированы, без матчера).
+# Vosk иногда коверкает окончания: «режим разработке», «режим разработку»,
+# «отладка» — поэтому точное вхождение нескольких вариантов ДОПОЛНЯЕТСЯ
+# нечётким сходством с основной фразой (difflib ratio).
 DEV_MODE_ENABLE_PHRASE = "режим разработки"
+DEV_MODE_ENABLE_VARIANTS = (
+    "режим разработки",
+    "режим разработке",
+    "режим разработку",
+    "режим разработка",
+    "режим разработчика",
+    "режим отладки",
+    "режим отладке",
+    "отладка",
+)
 DEV_MODE_EXIT_PHRASE = "будильник"
+# Порог нечёткого совпадения фразы включения (difflib ratio).
+DEV_MODE_FUZZY_RATIO = 0.8
+
+
+def _is_dev_enable_phrase(low: str) -> bool:
+    """Совпадает ли текст с фразой включения dev-режима.
+
+    Точное вхождение одной из фраз-вариантов или нечёткое сходство всей
+    фразы с основной — покрывает ошибки распознавания Vosk.
+    """
+    for phrase in DEV_MODE_ENABLE_VARIANTS:
+        if phrase in low:
+            return True
+    return _similarity(low, DEV_MODE_ENABLE_PHRASE) >= DEV_MODE_FUZZY_RATIO
 
 
 class OrchestratorSpeechMixin:
@@ -13,7 +42,8 @@ class OrchestratorSpeechMixin:
     def _handle_dev_mode_controls(self, text: str) -> bool:
         """Управляющие фразы режима разработки.
 
-        «режим разработки» — включить/выключить, «будильник» внутри
+        «режим разработки» (и коверкания Vosk: «режим разработке»,
+        «отладка» и т.п.) — включить/выключить, «будильник» внутри
         dev-режима — полный выход из приложения (on_exit). Возвращает True,
         если фраза была управляющей и обработана здесь.
         """
@@ -21,7 +51,7 @@ class OrchestratorSpeechMixin:
             else text.strip()
         low = (core or text).lower()
 
-        if DEV_MODE_ENABLE_PHRASE in low:
+        if _is_dev_enable_phrase(low):
             self._dev_mode = not self._dev_mode
             if self._dev_mode:
                 self._output.print_info("[DevMode] Включён")

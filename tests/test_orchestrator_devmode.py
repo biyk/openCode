@@ -50,6 +50,31 @@ class TestOrchestratorDevmode:
         orch.process_text(DEV_MODE_ENABLE_PHRASE)
         assert orch.dev_mode is False
 
+    def test_dev_mode_enable_vosk_variant(self, mocker):
+        """Vosk-коверкание «режим разработке» включает dev-режим."""
+        orch = self._make(mocker)
+        orch._aliases = object()
+        orch._matcher.core_phrase.return_value = "режим разработке"
+        orch.process_text("алиса режим разработке")
+        assert orch.dev_mode is True
+
+    def test_dev_mode_enable_otladka_variant(self, mocker):
+        """«отладка» — принятая фраза включения dev-режима."""
+        orch = self._make(mocker)
+        orch._aliases = object()
+        orch._matcher.core_phrase.return_value = "отладка"
+        orch.process_text("алиса отладка")
+        assert orch.dev_mode is True
+
+    def test_dev_mode_unrelated_phrase_not_fuzzy(self, mocker):
+        """Непохожие фразы dev-режим не включают."""
+        orch = self._make(mocker)
+        orch._aliases = object()
+        orch._matcher.core_phrase.return_value = "привет как дела"
+        orch._matcher.has_trigger.return_value = False
+        orch.process_text("алиса привет как дела")
+        assert orch.dev_mode is False
+
     def test_dev_mode_forwards_raw_to_opencode(self, mocker):
         """В dev-режиме любые фразы идут в opencode с raw=True, без матчера."""
         opencode = mocker.MagicMock()
