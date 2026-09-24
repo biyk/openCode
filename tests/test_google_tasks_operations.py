@@ -33,6 +33,21 @@ class FakeTasksResource:
                 return FakeRequest(dict(t))
         raise KeyError(f"Задача {task} не найдена")
 
+    def get(self, tasklist=None, task=None):
+        self._log.append(("get", tasklist, task))
+        for t in self._tasks:
+            if t["id"] == task:
+                return FakeRequest(dict(t))
+        raise LookupError(f"Задача {task} не найдена")
+
+    def delete(self, tasklist=None, task=None):
+        self._log.append(("delete", tasklist, task))
+        for i, t in enumerate(self._tasks):
+            if t["id"] == task:
+                del self._tasks[i]
+                return FakeRequest({})
+        raise LookupError(f"Задача {task} не найдена")
+
 
 class FakeService:
     """Заглушка googleapiclient discovery.build для tasks v1."""
@@ -128,3 +143,40 @@ class TestOperations:
         """Пустой task_id → None без обращения к API."""
         g = self._google()
         assert g.complete_task("") is None
+
+    def test_get_task_returns_task_by_id(self):
+        """get_task возвращает задачу по id."""
+        g = self._google()
+        task_id = g.create_task("позвонить врачу")
+        found = g.get_task(task_id)
+        assert found and found["title"] == "позвонить врачу"
+        assert found["status"] == "needsAction"
+
+    def test_get_task_missing_returns_none(self):
+        """get_task для несуществующей задачи → None."""
+        g = self._google()
+        assert g.get_task("no-such-id") is None
+
+    def test_get_task_empty_id_returns_none(self):
+        """Пустой task_id → None без обращения к API."""
+        g = self._google()
+        assert g.get_task("") is None
+
+    def test_get_task_deleted_returns_none(self):
+        """get_task считает удалённую задачу (deleted=true) отсутствующей."""
+        g = self._google()
+        task_id = g.create_task("провести встречу")
+        g._tasks_service.tasks()._tasks[0]["deleted"] = True
+        assert g.get_task(task_id) is None
+
+    def test_delete_task_removes_item(self):
+        """delete_task удаляет задачу; get после → None."""
+        g = self._google()
+        task_id = g.create_task("вынести мусор")
+        assert g.delete_task(task_id) is True
+        assert g.get_task(task_id) is None
+
+    def test_delete_task_empty_id_returns_false(self):
+        """Пустой task_id → False без обращения к API."""
+        g = self._google()
+        assert g.delete_task("") is False

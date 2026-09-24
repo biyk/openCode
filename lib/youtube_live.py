@@ -50,6 +50,9 @@ def youtube_open_test_video(url: str,
     if not tab:
         print("[Browser] Не удалось открыть тестовый ролик")
         return None
+    # Вкладку нужно сделать активной: OS-медиаклавиша (playpause)
+    # адресуется активному табу, иначе пауза уйдёт на боевой ролик.
+    cdc._activate(tab, port)
     deadline = time.time() + PLAYER_TIMEOUT_S
     while time.time() < deadline:
         if "watch?v=" in _tab_url(tab):

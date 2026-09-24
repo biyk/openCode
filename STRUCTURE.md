@@ -186,6 +186,7 @@ voice
 │   ├── test_status.py  # Тесты статусов: загрузка и реестр.
 │   ├── test_status_checks.py  # Тесты статусов: выполнение проверок.
 │   ├── test_status_poll.py  # Тесты статусов: фоновый опрос.
+│   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
 │   ├── test_tasks.py  # Тесты задач: разбор фраз, создание.
 │   ├── test_tasks_complete_cli.py  # Тесты задач: CLI complete/create.
 │   ├── test_tasks_complete_match.py  # Тесты задач: подбор по названию.

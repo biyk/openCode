@@ -1,12 +1,10 @@
 """Интеграция с Google Tasks API через OAuth 2.0.
 
-Голосовая команда «добавь задачу купить хлеб» создаёт задачу в Google
-Tasks (список по умолчанию «@default»). В отличие от напоминаний в
-Calendar, задача не привязана ко времени — это просто пункт списка.
-
-Авторизация использует общий token.json с Calendar: при консенте здесь
-запрашиваются ОБА scope (tasks + calendar.events), чтобы пере-авторизация
-из-за задач не стёрла права, выданные для напоминаний.
+Команда «добавь задачу …» создаёт задачу в Google Tasks (список по
+умолчанию «@default»); в отличие от напоминаний в Calendar она не
+привязана ко времени. Авторизация использует общий token.json с Calendar:
+при консенте запрашиваются оба scope (tasks + calendar.events), чтобы
+пере-авторизация задач не стёрла права напоминаний.
 """
 
 from json import loads
@@ -30,11 +28,8 @@ DEFAULT_TASKLIST_ID = "@default"
 
 
 class GoogleTasks:
-    """Обёртка над Tasks API.
-
-    Лениво инициализирует сервис при первом обращении; если token.json
-    нет или не покрывает нужные scope — поднимает GoogleOAuthError.
-    """
+    """Обёртка над Tasks API (ленивый сервис; без подходящего токена —
+    GoogleOAuthError)."""
 
     def __init__(
         self,
@@ -151,6 +146,40 @@ class GoogleTasks:
             body={"status": "completed"},
         ).execute()
         return result
+
+    def get_task(self, task_id: str) -> Optional[dict]:
+        """Возвращает задачу по id или None, если её нет/удалена.
+
+        Элемент в формате list_tasks: {"id", "title", "status"}.
+        """
+        if not task_id:
+            return None
+        self._ensure_ready()
+        try:
+            result = self._tasks_service.tasks().get(
+                tasklist=self._tasklist_id, task=task_id).execute()
+        except Exception:
+            return None
+        if not result or not result.get("id"):
+            return None
+        # Google Tasks delete() помечает задачу deleted=true, но get её
+        # ещё отдаёт — для «существует/не существует» считаем удалённые
+        # отсутствующими (как cancelled у событий календаря).
+        if result.get("deleted"):
+            return None
+        return result
+
+    def delete_task(self, task_id: str) -> bool:
+        """Удаляет задачу по id. True — если запрос прошёл."""
+        if not task_id:
+            return False
+        self._ensure_ready()
+        try:
+            self._tasks_service.tasks().delete(
+                tasklist=self._tasklist_id, task=task_id).execute()
+            return True
+        except Exception:
+            return False
 
     # ---------- Служебное ----------
 
