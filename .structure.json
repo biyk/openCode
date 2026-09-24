@@ -208,5 +208,15 @@
   "tests/resurrector_control.py": "Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.",
   "tests/test_calendar_live.py": "Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.",
   "tests/test_google_calendar_crud.py": "Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.",
-  "tests/test_task_live.py": "Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete."
+  "tests/test_task_live.py": "Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.",
+  "cron": "Расписание и скрипты заданий планировщика cron (crontab.json + jobs/)",
+  "cron/crontab.json": "Расписание заданий (аналог crontab): классические 5-полевые cron-выражения, задания типов script (cron/jobs/) и shell, флаги enabled/announce/timeout. Тестовый сценарий: в 21:00 включить тестовый ролик YouTube и выставить громкость 50%, в 21:01 и 21:02 поднять громкость.",
+  "cron/jobs": "Скрипты заданий планировщика, запускаемые по расписанию",
+  "cron/jobs/test_video_and_volume.ps1": "Тестовое задание cron: открывает тестовый ролик YouTube в CDP-браузере (open-url) и выставляет громкость 50% через bin/get_volume.ps1",
+  "cron/jobs/volume_up.ps1": "Тестовое задание cron: поднимает громкость на шаг (клавиша volume up)",
+  "lib/cron.py": "Планировщик как cron: читает cron/crontab.json, фоновый поток раз в секунду запускает сработавшие задания (script/shell), дедупликация по минуте, пропуски не догоняются, announce через TTS",
+  "lib/cron_parse.py": "Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()",
+  "tests/test_cron_parse.py": "Юнит-тесты парсера cron-выражений: маски, шаги, диапазоны, имена, правило ИЛИ dom/dow, next_after, невалидные выражения",
+  "tests/test_cron_scheduler.py": "Юнит-тесты планировщика cron: срабатывание по расписанию, дедупликация, disabled, script/shell, announce, таймаут, перезагрузка по mtime",
+  "lib/cron_jobs.py": "Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true"
 }

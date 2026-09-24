@@ -1,0 +1,22 @@
+{
+    "jobs": [
+        {
+            "id": "test_video_and_volume",
+            "schedule": "6 6 * * *",
+            "script": "test_video_and_volume.ps1",
+            "announce": false
+        },
+        {
+            "id": "volume_up_1",
+            "schedule": "1 6 * * *",
+            "script": "volume_up.ps1",
+            "announce": false
+        },
+        {
+            "id": "volume_up_2",
+            "schedule": "2 6 * * *",
+            "script": "volume_up.ps1",
+            "announce": false
+        }
+    ]
+}

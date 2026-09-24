@@ -17,6 +17,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+from lib.cron import CronScheduler  # noqa: E402
 from lib.output import TranscriptionOutput  # noqa: E402
 from lib.transcription_worker import TranscriptionWorker  # noqa: E402
 
@@ -46,11 +47,19 @@ def main():
     thread = threading.Thread(target=worker.run, daemon=True)
     thread.start()
 
+    cron = CronScheduler(
+        os.path.join(os.path.dirname(__file__), "cron", "crontab.json"),
+        output=output,
+        base_dir=os.path.dirname(__file__),
+    )
+    cron.start()
+
     output.print_info("\n🎙️  Запись... Нажмите Enter для остановки.\n")
     input()
 
     worker.stop()
     thread.join(timeout=2)
+    cron.stop()
     output.print_info("Выход.")
 
 
