@@ -123,3 +123,42 @@ class GoogleCalendarEventsMixin:
                 "end": end,
             })
         return result
+
+    def get_event(self, event_id: str) -> Optional[dict]:
+        """Возвращает событие по id или None, если его нет/недоступно.
+
+        Формат элемента как у list_events: id, summary, start, end.
+        """
+        self._ensure_ready()
+        try:
+            ev = self._calendar_service.events().get(
+                calendarId=self._calendar_id, eventId=event_id).execute()
+        except Exception:
+            return None
+        if not ev or not ev.get("id"):
+            return None
+        # Удалённое событие Google помечает status=cancelled, но get его
+        # ещё отдаёт — для «существует/не существует» считаем отменённые
+        # отсутствующими.
+        if str(ev.get("status", "")).lower() == "cancelled":
+            return None
+        start = (ev.get("start") or {}).get(
+            "dateTime", (ev.get("start") or {}).get("date", ""))
+        end = (ev.get("end") or {}).get(
+            "dateTime", (ev.get("end") or {}).get("date", ""))
+        return {
+            "id": str(ev.get("id", "")),
+            "summary": ev.get("summary", ""),
+            "start": start,
+            "end": end,
+        }
+
+    def delete_event(self, event_id: str) -> bool:
+        """Удаляет событие по id. True — если запрос прошёл."""
+        self._ensure_ready()
+        try:
+            self._calendar_service.events().delete(
+                calendarId=self._calendar_id, eventId=event_id).execute()
+            return True
+        except Exception:
+            return False

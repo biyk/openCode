@@ -131,8 +131,10 @@ voice
 │   │   └── test_skills_dir.py  # Тесты для функции get_skills_dir из модуля lib.skills. Проверяют, что функция возвращает корректный путь к папке skills с именем хоста.
 │   ├── __init__.py  # Пакет tests – автотесты проекта
 │   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами.
+│   ├── resurrector_control.py  # Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.
 │   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
 │   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
+│   ├── test_calendar_live.py  # Живой тест Google Calendar (VOICE_LIVE_GOOGLE=1): создаёт тестовый план, проверяет чтение по id и удаляет его.
 │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
 │   ├── test_check_lengths.py  # Тесты проверки, что файлы исходников не превышают лимит строк в 200
 │   ├── test_check_tooltips.py  # Тесты для проверки наличия TOOLTIP-описаний в пакетах и модулях
@@ -149,6 +151,7 @@ voice
 │   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.
 │   ├── test_diagnose_supervise.py  # Тесты диагностики: супервизор и прогон тестов.
 │   ├── test_google_calendar.py  # Тесты календаря: OAuth-авторизация.
+│   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.
 │   ├── test_google_calendar_events.py  # Тесты календаря: события-напоминания.
 │   ├── test_google_tasks.py  # Тесты Tasks: OAuth-авторизация.
 │   ├── test_google_tasks_operations.py  # Тесты Tasks: создание и завершение задач.

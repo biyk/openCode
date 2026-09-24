@@ -3,16 +3,45 @@
 
 import sys
 import builtins
+import platform
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
 import main
+from tests.resurrector_control import get_enabled, set_enabled, wait_app_stopped
+
+
+@pytest.fixture
+def app_paused_for_main_test():
+    """Выключает приложение на время теста main и возвращает как было.
+
+    Тест exec-ит main.py, поэтому запущенный параллельно экземпляр
+    приложения мешает проверке. Гасим его через resurrector и обязательно
+    включаем обратно (даже если тест упал).
+    """
+    if platform.system() != "Windows":
+        yield
+        return
+    original = get_enabled()
+    if original is None:
+        yield
+        return
+    set_enabled(False)
+    wait_app_stopped()
+    try:
+        yield
+    finally:
+        set_enabled(original)
 
 
 class TestMainEntryPoint:
     """Гард __main__ и запуск."""
 
-    def test_guard_executes_main(self, monkeypatch):
+    def test_guard_executes_main(self, monkeypatch,
+                                 app_paused_for_main_test):
         """Модуль при запуске как __main__ вызывает main()."""
         calls = []
 
