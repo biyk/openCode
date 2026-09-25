@@ -55,7 +55,8 @@ class TestLayaDecisionDetect:
 
         mocker.patch("lib.laya_decision.urllib.request.urlopen",
                      side_effect=fake_urlopen)
-        assert client.detect("алиса сделай громче") == ("volumeup", 0.9)
+        res = client.detect("алиса сделай громче")
+        assert res[:2] == ("volumeup", 0.9) and res[2] >= 0.0
 
     def test_none_choice_returns_none(self, mocker):
         """Диалог без команды (`none`) не исполняется."""
@@ -125,20 +126,17 @@ class TestOrchestratorDecisionPath:
         matcher.find_command.return_value = (None, [], False)
         matcher.missing_requires.return_value = []
         matcher.has_trigger.return_value = True
+        matcher.needs_text.return_value = False
         matcher.status_snapshot.return_value = {}
         matcher.requires_map.return_value = {}
-        orch = Orchestrator(
-            matcher=matcher,
-            output=mocker.MagicMock(),
-            tts=mocker.MagicMock(),
-            decision=decision,
-        )
+        orch = Orchestrator(matcher=matcher, output=mocker.MagicMock(),
+                            tts=mocker.MagicMock(), decision=decision)
         return orch, matcher
 
     def test_decision_command_executed(self, mocker):
         """Laya распознала команду → выполняется, intent не зовётся."""
         decision = mocker.MagicMock()
-        decision.detect.return_value = ("stop", 0.9)
+        decision.detect.return_value = ("stop", 0.9, 0.123)
         orch, matcher = self._make(mocker, decision)
         matcher.execute_by_id.return_value = True
         orch.process_text("алиса стоп")
@@ -146,7 +144,7 @@ class TestOrchestratorDecisionPath:
         orch._output.print_text.assert_any_call("алиса стоп")
         orch._output.print_text.assert_any_call("stop")
         orch._output.print_info.assert_any_call(
-            "[Decision] Лайя: команда распознана «stop» (c=0.90)")
+            "[Decision] Лайя: команда распознана «stop» (c=0.90 t=0.123)")
         orch._opencode_queue.empty()
 
     def test_decision_none_stubs_omni_and_stops(self, mocker):
@@ -166,7 +164,7 @@ class TestOrchestratorDecisionPath:
     def test_decision_blocked_reports_and_returns(self, mocker):
         """Заблокированная команда Laya сообщается, intent не зовётся."""
         decision = mocker.MagicMock()
-        decision.detect.return_value = ("stop", 0.8)
+        decision.detect.return_value = ("stop", 0.8, 0.05)
         orch, matcher = self._make(mocker, decision)
         matcher.execute_by_id.return_value = False
         matcher.missing_requires.return_value = ["media_session"]
@@ -179,13 +177,13 @@ class TestOrchestratorDecisionPath:
     def test_decision_unknown_command_errors(self, mocker):
         """Выбранная Laya команда отсутствует в matcher — ошибка, return."""
         decision = mocker.MagicMock()
-        decision.detect.return_value = ("nonexistent", 0.99)
+        decision.detect.return_value = ("nonexistent", 0.99, 0.01)
         orch, matcher = self._make(mocker, decision)
         matcher.execute_by_id.return_value = False
         matcher.missing_requires.return_value = []
         orch.process_text("алиса что-нибудь")
         orch._output.print_error.assert_called_once_with(
-            "[Decision] Команда «nonexistent» не найдена")
+            "[Decision] Команда «nonexistent» не найдена или не выполнена")
         orch._opencode_queue.empty()
 
     def test_legacy_path_without_decision_still_works(self, mocker):

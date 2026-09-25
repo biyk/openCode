@@ -7,6 +7,35 @@
 class OrchestratorDecisionMixin:
     """Шаг 1..3: commands.json, алиасы, decision-слой Laya, legacy fallback."""
 
+    def _execute_decision(self, cmd_id: str, text: str) -> bool:
+        """Запускает команду алиаса/Laya, подставляя ядро фразы в {{text}}.
+
+        Laya и алиасы возвращают только id команды; команды со свободным
+        текстом (taskstart, calendar-reminder) иначе запускаются с пустым
+        аргументом. Для них слова фразы без триггеров уходят как settings.
+        """
+        settings = ()
+        if self._matcher.needs_text(cmd_id):
+            settings = self._decision_text(cmd_id, text)
+        if settings:
+            return self._matcher.execute_by_id(cmd_id, settings)
+        return self._matcher.execute_by_id(cmd_id)
+
+    def _decision_text(self, cmd_id: str, text: str) -> tuple[str, ...]:
+        """Слова фразы для {{text}}: ядро без триггеров и ведущих командных слов.
+
+        «поставь дальше приготовить гречку» для task-add → «дальше
+        приготовить гречку»: срезается только ведущие слова из match-
+        шаблонов команды, хвост фразы не трогается.
+        """
+        tokens = self._matcher.core_phrase(text).split()
+        words: set[str] = set()
+        for tpl in self._matcher.match_config().get(cmd_id, []):
+            words.update(tpl.lower().split())
+        while tokens and tokens[0] in words:
+            tokens = tokens[1:]
+        return tuple(tokens)
+
     def _process_commands_level(self, text: str) -> None:
         """Обрабатывает цепочку: commands.json → Laya/legacy → opencode."""
         # 1. Команды commands.json — концепция «трёх строк».
@@ -53,7 +82,7 @@ class OrchestratorDecisionMixin:
                     self._output.print_info(
                         f"[Alias] Распознана команда: {alias_id}")
                     self._aliases.bump(core)
-                    self._matcher.execute_by_id(alias_id)
+                    self._execute_decision(alias_id, text)
                     return
                 blocked = [(alias_id, missing)]
             else:
@@ -70,11 +99,11 @@ class OrchestratorDecisionMixin:
                     "в OmniRouter (auto/fast), пока пропускаем"
                 )
                 return
-            resolved, confidence = detected
+            resolved, confidence, elapsed = detected
             self._output.print_info(
                 f"[Decision] Лайя: команда распознана «{resolved}» "
-                f"(c={confidence:.2f})")
-            if self._matcher.execute_by_id(resolved):
+                f"(c={confidence:.2f} t={elapsed:.3f})")
+            if self._execute_decision(resolved, text):
                 self._output.print_text(resolved)
                 self._remember_candidate(text, resolved, literal_id)
                 return
@@ -83,7 +112,7 @@ class OrchestratorDecisionMixin:
                 self._report_blocked(resolved, missing)
                 return
             self._output.print_error(
-                f"[Decision] Команда «{resolved}» не найдена")
+                f"[Decision] Команда «{resolved}» не найдена или не выполнена")
             return
         # 3. Legacy-путь (decision не настроен): mini-LLM intent, затем
         # фолбэк в console opencode.

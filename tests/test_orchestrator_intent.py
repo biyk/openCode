@@ -19,6 +19,7 @@ class TestOrchestratorIntent:
         if "matcher" not in kwargs:
             orch._matcher.find_command.return_value = (None, [], False)
             orch._matcher.missing_requires.return_value = []
+            orch._matcher.needs_text.return_value = False
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
             orch._matcher.requires_map.return_value = {}

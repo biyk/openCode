@@ -58,6 +58,17 @@ class CommandConfigMixin:
         provides = self.provides_map().get(cmd_id, [])
         return list(provides)
 
+    def needs_text(self, cmd_id: str) -> bool:
+        """True, если шаблон команды использует {{text}} (свободный текст)."""
+        cmd = self._data.get("commands", {}).get(cmd_id)
+        if cmd is None:
+            return False
+        if isinstance(cmd, str):
+            return "{{text}}" in cmd
+        templates = (cmd.get(k) for k in
+                     ("linux", "windows", "darwin", "default"))
+        return any("{{text}}" in t for t in templates if isinstance(t, str))
+
     def missing_requires(self, cmd_id: str) -> list[str]:
         """Возвращает невыполненные requires команды (пусто = можно)."""
         if self._status_store is None or not self._status_store.enabled:

@@ -52,21 +52,30 @@ class TaskStartHandler:
             day_start, day_start + timedelta(days=1))
 
     def find_task_event(self, name: str) -> Optional[dict]:
-        """Мероприятие сегодня с наиболее близким названием (или None)."""
+        """Мероприятие сегодня с наиболее близким названием (или None).
+
+        Название-подстрока фразы (Laya отдаёт всю фразу без команды)
+        считается полным совпадением; при нескольких таких — берётся
+        самое длинное название.
+        """
         target = _norm(self._strip_noise(name))
         if not target:
             return None
-        best: Optional[tuple[float, dict]] = None
+        best: Optional[tuple[tuple[float, int], dict]] = None
         for ev in self._today_events():
             title = _norm(ev.get("summary") or "")
             if not title:
                 continue
             if title == target:
                 return ev
-            score = SequenceMatcher(None, target, title).ratio()
-            if best is None or score > best[0]:
-                best = (score, ev)
-        if best is not None and best[0] >= TITLE_THRESHOLD:
+            if f" {title} " in f" {target} ":
+                score = 1.0
+            else:
+                score = SequenceMatcher(None, target, title).ratio()
+            key = (score, len(title))
+            if best is None or key > best[0]:
+                best = (key, ev)
+        if best is not None and best[0][0] >= TITLE_THRESHOLD:
             return best[1]
         return None
 

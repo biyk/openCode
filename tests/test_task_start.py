@@ -86,6 +86,21 @@ def test_preposition_kei_stripped():
     assert h.find_task_event("к отчету") is not None
 
 
+def test_title_substring_of_phrase_matches():
+    """Laya отдаёт всю фразу: название-подстрока — полное совпадение."""
+    h, _, sheet = handler([event("Приготовить гречку"), event("Отчёт")])
+    result = h.start_task("поставь дальше приготовить гречку")
+    assert result["ok"] is True
+    assert result["title"] == "Приготовить гречку"
+    assert sheet.written is not None
+
+
+def test_longest_matching_title_wins():
+    h, _, _ = handler([event("Гречка"), event("Приготовить гречку")])
+    ev = h.find_task_event("приготовить гречку прямо сейчас")
+    assert ev is not None and ev["summary"] == "Приготовить гречку"
+
+
 def test_unknown_task_and_missing_uuid_and_row_are_errors():
     h, _, sheet = handler([event("Отчёт")])
     assert h.start_task("сжечь мост")["ok"] is False

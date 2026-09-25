@@ -21,6 +21,16 @@
             "command": "openyoutube",
             "hits": 0,
             "confirmed": false
+        },
+        "открой я туб": {
+            "command": "openyoutube",
+            "hits": 0,
+            "confirmed": false
+        },
+        "включай": {
+            "command": "volumeup",
+            "hits": 0,
+            "confirmed": false
         }
     }
 }

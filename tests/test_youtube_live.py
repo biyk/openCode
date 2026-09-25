@@ -5,6 +5,9 @@
 дебаг-браузер (Brave, порт 9222) поднимается автоматически через
 ensure_browser: без браузера live-тесты не проверяют ничего, поэтому
 они не скипаются, а запускают браузер (падают, если он не стартовал).
+Если же что-то УЖЕ играет (системное медиа или боевой ролик),
+тест скипается: открытие ютуба и плей/пауза пропускаются, чтобы не
+вмешиваться в воспроизведение и не ловить ложные падения.
 """
 from __future__ import annotations
 
@@ -19,8 +22,10 @@ from lib import youtube_live as yl
 from lib.browser_control import ensure_browser
 from lib.commands import CommandMatcher
 from lib.config_loader import get_device_commands_path
+from lib.media import is_media_playing
 
-TEST_VIDEO_URL = "https://www.youtube.com/watch?v=y65necIJU2Y"
+TEST_VIDEO_ID = "y65necIJU2Y"
+TEST_VIDEO_URL = "https://www.youtube.com/watch?v=" + TEST_VIDEO_ID
 
 # Ждём, пока OS-медиаклавиша дойдёт до плеера.
 PAUSE_SETTLE_S = 2.0
@@ -52,6 +57,10 @@ class TestYoutubeLiveCombined:
     def test_open_play_pause_close(self, matcher, live_announce):
         """Тестовый ролик играет в новой вкладке, пауза срабатывает,
         вкладка закрывается, боевой ролик не тронут."""
+        _close_stale_test_tabs()
+        busy = _media_busy()
+        if busy:
+            pytest.skip(f"{busy} — пропускаем открытие ютуба и плей/паузу")
         tabs_before = {t.get("id") for t in cdc._list_tabs()}
         watch_before = _watch_tabs()
 
@@ -61,7 +70,7 @@ class TestYoutubeLiveCombined:
             # 1. Открыт в НОВОЙ вкладке, а не в существующей.
             assert tab.get("id") not in tabs_before, (
                 "ролик открылся в существующей вкладке, а не в новой")
-            assert "watch?v=y65necIJU2Y" in yl._tab_url(tab)
+            assert f"watch?v={TEST_VIDEO_ID}" in yl._tab_url(tab)
 
             # 2. Видео реально играет.
             assert _wait_state(tab, "playing"), (
@@ -85,6 +94,31 @@ class TestYoutubeLiveCombined:
             "существующие watch-вкладки изменились")
 
 
+def _close_stale_test_tabs() -> None:
+    """Закрывает вкладки тестового ролика, оставшиеся от упавших прогонов.
+
+    Иначе осиротевшее тестовое видео играет → is_media_playing()
+    истинна → тест вечно скипал бы сам себя.
+    """
+    for t in cdc._list_tabs():
+        if TEST_VIDEO_ID in (t.get("url") or ""):
+            cdc.close_tab(t)
+
+
+def _media_busy() -> str:
+    """Причина пропустить тест, если что-то уже играет (пусто — свободно)."""
+    if is_media_playing():
+        return "системное медиа проигрывается"
+    for t in cdc._list_tabs():
+        if t.get("type", "page") not in ("page", ""):
+            continue
+        url = t.get("url", "")
+        if ("watch?v=" in url and TEST_VIDEO_ID not in url
+                and yl._player_state(t) == "playing"):
+            return "боевой ролик в браузере играет"
+    return ""
+
+
 def _watch_tabs() -> set:
     """id обычных вкладок с роликом (боевой ролик), кроме тестового."""
     result = set()
@@ -92,7 +126,7 @@ def _watch_tabs() -> set:
         if t.get("type", "page") not in ("page", ""):
             continue
         url = t.get("url", "")
-        if "watch?v=" in url and "y65necIJU2Y" not in url:
+        if "watch?v=" in url and TEST_VIDEO_ID not in url:
             result.add(t.get("id"))
     return result
 

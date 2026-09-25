@@ -120,11 +120,11 @@ class LayaDecision:
                     f"{HEALTH_TIMEOUT_S}с")
         return False
 
-    def detect(self, text: str) -> Optional[tuple[str, float]]:
+    def detect(self, text: str) -> Optional[tuple[str, float, float]]:
         """Распознаёт команду через Laya.
 
-        Возвращает (command_id, confidence) при уверенности >= порога,
-        иначе None (включая недоступный сервер / диалог без команды).
+        Возвращает (command_id, confidence, время запроса в сек.) при
+        уверенности >= порога, иначе None (и при недоступном сервере).
         """
         if not self._health():
             if not self._error_reported:
@@ -141,6 +141,7 @@ class LayaDecision:
                 }
             },
         }
+        t0 = time.perf_counter()
         try:
             req = urllib.request.Request(
                 self._url + "/v1/systemone",
@@ -164,7 +165,7 @@ class LayaDecision:
             return None
         if confidence < self._threshold:
             return None
-        return choice, confidence
+        return choice, confidence, time.perf_counter() - t0
 
     def close(self) -> None:
         """Останавливает запущенный сервер (если запускали сами)."""
