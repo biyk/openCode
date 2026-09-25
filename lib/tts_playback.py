@@ -103,10 +103,15 @@ class TtsPlaybackMixin:
                     timeout: float = 120.0) -> bool:
         """Запускает плеер с возможностью прерывания.
 
+        Плеер detach'ится от консоли: иначе mpg123 снимает с неё
+        QuickEdit (выделение/копирование), а по abort не успевает вернуть.
         Возвращает True при нормальном завершении, False при прерывании
         по abort_event. При превышении таймаута поднимает TimeoutExpired.
         """
-        proc = subprocess.Popen(cmd)
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.DEVNULL,
+            creationflags=subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NO_WINDOW)
         deadline = time.time() + timeout
         try:
             while proc.poll() is None:
