@@ -89,6 +89,7 @@ voice
 │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
 │   ├── tasks.py  # Обработчик задач: создание, CLI complete/create.
 │   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
+│   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
 │   ├── tasks_parse.py  # Разбор фраз задач: триггеры, чистка, нормализация названий.
 │   ├── time_parser.py  # Парсер времени напоминаний: TimeParser и ReminderSpec.
 │   ├── time_parser_strategies.py  # Миксин парсера времени: через/завтра/часы/дни недели.
@@ -212,6 +213,7 @@ voice
 │   ├── test_tasks_complete_cli.py  # Тесты задач: CLI complete/create.
 │   ├── test_tasks_complete_match.py  # Тесты задач: подбор по названию.
 │   ├── test_tasks_complete_parse.py  # Тесты задач: разбор фразы завершения.
+│   ├── test_tasks_dedup.py  # Тесты задач: поиск дубликата exact/Laya перед созданием.
 │   ├── test_time_parser.py  # Это файл тестов, проверяющий корректность разбора русских фраз о напоминаниях парсером времени.
 │   ├── test_tts.py  # Тесты TextToSpeech: синтез и фолбэки движков.
 │   ├── test_tts_control.py  # Тесты TTS: прерывания, колбэки, _decode_arg, CLI.

@@ -89,8 +89,11 @@ class TestYoutubeLiveCombined:
         time.sleep(1)
         tabs_after = {t.get("id") for t in cdc._list_tabs()}
         assert tab.get("id") not in tabs_after, "тестовая вкладка не закрыта"
-        # 5. Боевой ролик (существовавшие watch-вкладки) не тронут.
-        assert _watch_tabs() == watch_before, (
+        # 5. Боевой ролик (существовавшие watch-вкладки) не тронут:
+        # ни одна из них не закрылась и не уехала. Новые вкладки за
+        # время прогона — не вина теста (юзер/автоплей), тестовая
+        # проверялась выше на закрытие по id.
+        assert not (watch_before - _watch_tabs()), (
             "существующие watch-вкладки изменились")
 
 

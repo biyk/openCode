@@ -7,15 +7,22 @@ Google Tasks через lib.google_tasks: текст без триггера с�
 Завершение: «заверши задачу купить хлеб» загружает незавершённые задачи,
 ищет по названию и отмечает совпадения выполненными.
 
-Разбор детерминированный, LLM не используется.
+Разбор детерминированный; LLM (Laya) используется только для проверки
+на дубликат перед созданием: строгое совпадание — пропускаем, иначе
+спрашиваем модель, и если дубликата нет — создаём.
 """
 
 import base64
 import json
+import platform
 import sys
 from typing import Optional
 
+from lib import tasks_dedup
+from lib.commands import CommandMatcher
+from lib.config_loader import get_device_commands_path
 from lib.google_tasks import GoogleOAuthError, GoogleTasks
+from lib.laya_decision import LayaDecision
 from lib.tasks_complete import TaskCompleteMixin
 from lib.tasks_parse import TRIGGER_PHRASES, _canonicalize, _clean_candidate
 from lib.tts import TextToSpeech
@@ -57,12 +64,42 @@ class TaskHandler(TaskCompleteMixin):
         """Готовы ли авторизация и scope для Google Tasks."""
         return self._google.is_ready()
 
+    def find_duplicate(self, title: str) -> Optional[dict]:
+        """Есть ли в списке уже такая же задача (exact, затем Laya).
+
+        Возвращает {"id", "title", "method"} дубликата или None.
+        """
+        try:
+            existing = self._google.list_tasks(show_completed=False)
+        except Exception as e:
+            print(f"[Google] Ошибка загрузки задач (проверка дублей): {e}")
+            return None
+        return tasks_dedup.find_duplicate(
+            title, existing, get_laya_decision)
+
     def authorize(self) -> None:
         """Обновляет доступ (refresh) или проходит интерактивный OAuth.
 
         Бросает GoogleOAuthError, если авторизоваться не удалось.
         """
         self._google.authorize()
+
+
+def get_laya_decision() -> Optional[LayaDecision]:
+    """Клиент Laya из commands.json или None (сервер не запускаем).
+
+    subprocess не должен поднимать модель: если готового сервера нет,
+    дубликат ищем только строгим совпадением.
+    """
+    try:
+        path = get_device_commands_path(platform.node())
+        config = CommandMatcher(path).get_decision_config()
+        if not config.get("enabled"):
+            return None
+        client = LayaDecision(config)
+        return client if client.available else None
+    except Exception:
+        return None
 
 
 def _decode_arg(raw: str) -> str:
@@ -119,6 +156,13 @@ def main(argv: Optional[list] = None) -> int:
             except GoogleOAuthError as e:
                 print(f"[Google] Нет авторизации Tasks: {e}")
                 return 3
+            dup = handler.find_duplicate(title)
+            if dup:
+                print("task:", title)
+                print("duplicate:", json.dumps(dup, ensure_ascii=False))
+                print(f"Такая задача уже стоит: «{dup['title']}» "
+                      f"({dup['method']}) — пропускаем")
+                return 0
             task_id = handler.add_task(title)
             if not task_id:
                 print("Не удалось создать задачу")

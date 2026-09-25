@@ -16,12 +16,18 @@ class TestCompleteCli:
             "complete_task": lambda self, task_id: {"status": "completed"},
         })()
 
-    def _google_create(self, task_id="task-9", auth=True):
+    def _google_create(self, task_id="task-9", auth=True, existing=None, fail_list=False):
         from lib.google_tasks import GoogleOAuthError
 
         class G:
             def create_task(self, title, notes=None):
+                G.created.append(title)
                 return task_id
+
+            def list_tasks(self, show_completed=False):
+                if fail_list:
+                    raise RuntimeError("network down")
+                return list(existing or [])
 
             def is_ready(self):
                 return auth
@@ -29,6 +35,7 @@ class TestCompleteCli:
             def authorize(self):
                 if not auth:
                     raise GoogleOAuthError("нет consent")
+        G.created = []
         return G()
 
     def test_main_complete_fuzzy(self, capsys):
@@ -142,6 +149,50 @@ class TestCompleteCli:
         finally:
             tasks_module.TaskHandler = TaskHandler
         assert code == 1
+
+    def _main_create(self, monkeypatch, g, phrase, laya="keep", speak=False):
+        """CLI create с подменой обработчика; laya/speak — заглушки."""
+        import lib.tasks as tasks_module
+        monkeypatch.setattr(tasks_module, "TaskHandler",
+                            lambda google=None: TaskHandler(google=g))
+        if laya != "keep":
+            monkeypatch.setattr(tasks_module, "get_laya_decision", lambda: laya)
+        if speak:
+            monkeypatch.setattr(tasks_module, "TextToSpeech", lambda *a, **k: (
+                type("T", (), {"speak_and_play": lambda self, t: None})()))
+        return main(["create", phrase])
+
+    def test_main_create_duplicate_exact_skips(self, monkeypatch, capsys):
+        """Строгий дубликат в списке — создание пропускаем, код 0."""
+        g = self._google_create(
+            existing=[{"id": "1", "title": "убраться у кошки"}])
+        code = self._main_create(monkeypatch, g, "создай задачу убраться у кошки")
+        out = capsys.readouterr().out
+        assert code == 0
+        assert '"method": "exact"' in out
+        assert g.created == []
+
+    def test_main_create_duplicate_laya_skips(self, monkeypatch, capsys):
+        """Laya сводит новую фразу к существующей задаче — пропускаем."""
+        fake = type("D", (), {"detect": lambda s, text, **kw:
+                              ("помыть полы", 0.9, 0.1)})()
+        g = self._google_create(existing=[{"id": "1", "title": "помыть полы"}])
+        code = self._main_create(monkeypatch, g, "создай задачу вымыть пол",
+                                 laya=fake)
+        out = capsys.readouterr().out
+        assert code == 0
+        assert '"method": "laya"' in out
+        assert g.created == []
+
+    def test_main_create_dedup_error_still_creates(self, monkeypatch, capsys):
+        """Ошибка списка задач не блокирует создание."""
+        g = self._google_create(fail_list=True)
+        code = self._main_create(monkeypatch, g, "создай задачу купить хлеб",
+                                 laya=None, speak=True)
+        out = capsys.readouterr().out
+        assert code == 0
+        assert g.created == ["купить хлеб"]
+        assert "task_id: task-9" in out
 
     def test_main_unknown_subcommand(self, capsys):
         """Неизвестная подкоманда — usage, код 2."""

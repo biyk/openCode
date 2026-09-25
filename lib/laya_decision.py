@@ -120,27 +120,30 @@ class LayaDecision:
                     f"{HEALTH_TIMEOUT_S}с")
         return False
 
-    def detect(self, text: str) -> Optional[tuple[str, float, float]]:
-        """Распознаёт команду через Laya.
+    def detect(self, text: str, criteria: Optional[dict] = None,
+               instructions: Optional[str] = None,
+               threshold: Optional[float] = None,
+               ) -> Optional[tuple[str, float, float]]:
+        """Вопрос-выбор к Laya: (выбор, уверенность, время запроса в сек.).
 
-        Возвращает (command_id, confidence, время запроса в сек.) при
-        уверенности >= порога, иначе None (и при недоступном сервере).
+        Без аргументов — критерии команды из decision; с criteria/
+        instructions/threshold — свой вопрос (например, поиск
+        дубликата среди названий задач). None — ниже порога или сервер
+        недоступен.
         """
+        crit = dict(self._criteria if criteria is None else criteria)
+        crit.setdefault("none", DEFAULT_NONE_DESCRIPTION)
+        limit = self._threshold if threshold is None else threshold
         if not self._health():
             if not self._error_reported:
                 self._print("error", f"[Decision] Laya недоступна: {self._url}")
                 self._error_reported = True
             return None
-        payload = {
-            "state": {"body": text},
-            "questions": {
-                "command": {
-                    "type": "choice",
-                    "instructions": self._instructions,
-                    "criteria": self._criteria,
-                }
-            },
-        }
+        payload = {"state": {"body": text}, "questions": {"command": {
+            "type": "choice",
+            "instructions": instructions or self._instructions,
+            "criteria": crit,
+        }}}
         t0 = time.perf_counter()
         try:
             req = urllib.request.Request(
@@ -159,11 +162,9 @@ class LayaDecision:
         answer = answers.get("command", {}) or {}
         choice = answer.get("choice")
         confidence = float(answer.get("confidence", 0.0))
-        if choice is None or choice == "none":
+        if choice is None or choice == "none" or choice not in crit:
             return None
-        if choice not in self._criteria:
-            return None
-        if confidence < self._threshold:
+        if confidence < limit:
             return None
         return choice, confidence, time.perf_counter() - t0
 
