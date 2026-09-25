@@ -72,6 +72,25 @@ def matcher() -> CommandMatcher:
     return CommandMatcher(path)
 
 
+def test_sleepmode_phrase_matches_command(matcher):
+    """«спать»/«я спать»/«я пошел спать» (и варианты) матчатся на sleepmode."""
+    for window in (["алиса спать"], ["алиса я спать"], ["алиса иду спать"],
+                   ["алиса я лег спать"], ["лег спать пожалуйста"],
+                   ["алиса я лёг спать"], ["алиса я пошел спать"],
+                   ["алиса я пошёл спать"]):
+        cmd_id, _settings, wait = matcher.find_command(window)
+        assert cmd_id == "sleepmode", f"{window}: ожидался sleepmode, получил {cmd_id}"
+        assert not wait
+
+
+def test_sleepmode_sequence_steps_resolvable(matcher):
+    """Sequence sleepmode собирается из шагов sleepvolume + sleepfix."""
+    steps = matcher.sequences()["sleepmode"]["steps"]
+    assert steps == ["sleepvolume", "sleepfix"]
+    assert "get_volume.ps1" in (matcher.get_command("sleepvolume") or "")
+    assert "lib.sleep_event" in (matcher.get_command("sleepfix") or "")
+
+
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only test")
 class TestVolumeCommandsLive:
     """volumeup/volumedown: реальный запуск + измерение системной громкости."""
@@ -116,6 +135,25 @@ class TestVolumeCommandsLive:
             after = _get_volume()
             assert after <= BASELINE_VOLUME - VOLUME_TOLERANCE, (
                 f"громкость не уменьшилась: было {BASELINE_VOLUME}, стало {after}"
+            )
+        finally:
+            _set_volume(original)
+
+    def test_sleepvolume_sets_volume_to_one(self, matcher):
+        """Шаг sleepvolume опускает громкость ровно до 1%."""
+        original = _get_volume()
+        _set_volume(BASELINE_VOLUME)
+        try:
+            cmd = matcher.get_command("sleepvolume")
+            assert cmd, "sleepvolume: пустая shell-команда"
+            result = _run_shell(cmd)
+            assert result.returncode == 0, (
+                f"sleepvolume завершился с кодом {result.returncode}: "
+                f"{result.stderr.strip()}"
+            )
+            time.sleep(VOLUME_SETTLE_S)
+            assert abs(_get_volume() - 1.0) <= VOLUME_TOLERANCE, (
+                "sleepvolume: громкость не опустилась до 1%"
             )
         finally:
             _set_volume(original)

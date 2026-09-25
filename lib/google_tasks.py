@@ -17,19 +17,20 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 from lib.google_calendar import GoogleOAuthError
 
-# Общий scope: tasks — для задач, calendar.events — чтобы консент не
-# сломал напоминания (token.json общий с Calendar).
+# Общий scope: tasks + calendar.events (чтобы консент не сломал напоминания,
+# token.json общий) + spreadsheets (Google Таблицы). Запрашиваем всё сразу —
+# повторный консент не затирает уже выданные права.
 SCOPES = [
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 DEFAULT_TASKLIST_ID = "@default"
 
 
 class GoogleTasks:
-    """Обёртка над Tasks API (ленивый сервис; без подходящего токена —
-    GoogleOAuthError)."""
+    """Обёртка над Tasks API (ленивый сервис; без токена — GoogleOAuthError)."""
 
     def __init__(
         self,
@@ -90,8 +91,7 @@ class GoogleTasks:
     def _token_has_scopes(self) -> bool:
         """Покрывает ли token.json все нужные SCOPES (по файлу)."""
         try:
-            data = loads(Path(self._token_file).read_text(
-                encoding="utf-8"))
+            data = loads(Path(self._token_file).read_text(encoding="utf-8"))
         except Exception:
             return False
         granted = set(data.get("scopes") or [])

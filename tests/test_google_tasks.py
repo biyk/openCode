@@ -107,12 +107,13 @@ class TestAuthorize:
             credentials_file=str(tmp_path / "creds.json"))
         assert g.is_ready() is False
 
-    def test_is_ready_true_when_tasks_scope_present(self, tmp_path):
-        """Токен со scope tasks готов."""
+    def test_is_ready_true_when_all_scopes_present(self, tmp_path):
+        """Токен со всеми скоупами (tasks, calendar, sheets) готов."""
         tok = tmp_path / "token.json"
         _write_token(tok, [
             "https://www.googleapis.com/auth/tasks",
             "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/spreadsheets",
         ])
         g = GoogleTasks(
             token_file=str(tok),

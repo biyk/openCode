@@ -25,6 +25,8 @@ from lib.google_calendar_events import GoogleCalendarEventsMixin, GoogleOAuthErr
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/tasks",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 

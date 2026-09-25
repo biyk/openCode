@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.google_calendar_mutate import GoogleCalendarMutateMixin
+
 DEFAULT_REMINDER_MINUTES = 0
 EVENT_DURATION_MINUTES = 30
 
@@ -11,8 +13,12 @@ class GoogleOAuthError(RuntimeError):
     """Ошибка авторизации или отсутствия доступа к Google API."""
 
 
-class GoogleCalendarEventsMixin:
-    """Миксин GoogleCalendar: создание и чтение событий."""
+class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
+    """Миксин GoogleCalendar: создание и чтение событий.
+
+    Мутации существующих событий (update_event_start, delete_event) —
+    в GoogleCalendarMutateMixin.
+    """
 
     def create_reminder(
         self,
@@ -95,6 +101,21 @@ class GoogleCalendarEventsMixin:
             except ValueError:
                 return None
 
+    def list_events_between(
+        self,
+        time_min: datetime,
+        time_max: datetime,
+        limit: int = 50,
+    ) -> list[dict[str, str]]:
+        """События в окне [time_min, time_max] — тем же форматом, что list_events.
+
+        Нужно, чтобы видеть и уже идущие события (у list_events нижняя
+        граница — текущий момент).
+        """
+        self._ensure_ready()
+        return self._list_events_raw(
+            time_min.isoformat(), time_max.isoformat(), limit)
+
     def list_events(self, limit: int = 25) -> list[dict[str, str]]:
         """Ближайшие события календаря от текущего момента.
 
@@ -103,13 +124,27 @@ class GoogleCalendarEventsMixin:
         """
         self._ensure_ready()
         now = datetime.utcnow()
-        events = self._calendar_service.events().list(
-            calendarId=self._calendar_id,
-            timeMin=now.isoformat() + "Z",
-            maxResults=limit,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute().get("items", [])
+        return self._list_events_raw(
+            now.isoformat() + "Z", None, limit)
+
+    def _list_events_raw(
+        self,
+        time_min: str,
+        time_max: Optional[str],
+        limit: int,
+    ) -> list[dict[str, str]]:
+        """Общий запрос events().list; time_min/time_max — RFC3339-строки."""
+        kwargs = {
+            "calendarId": self._calendar_id,
+            "timeMin": time_min,
+            "maxResults": limit,
+            "singleEvents": True,
+            "orderBy": "startTime",
+        }
+        if time_max:
+            kwargs["timeMax"] = time_max
+        events = self._calendar_service.events().list(**kwargs) \
+            .execute().get("items", [])
         result = []
         for ev in events:
             start = (ev.get("start") or {}).get(
@@ -152,13 +187,3 @@ class GoogleCalendarEventsMixin:
             "start": start,
             "end": end,
         }
-
-    def delete_event(self, event_id: str) -> bool:
-        """Удаляет событие по id. True — если запрос прошёл."""
-        self._ensure_ready()
-        try:
-            self._calendar_service.events().delete(
-                calendarId=self._calendar_id, eventId=event_id).execute()
-            return True
-        except Exception:
-            return False

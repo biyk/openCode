@@ -96,11 +96,14 @@ class TestAuthorize:
             credentials_file=str(tmp_path / "creds.json"))
         assert g.is_ready() is False
 
-    def test_is_ready_true_when_calendar_scope_present(self, tmp_path):
-        """Токен со scope calendar.events готов."""
+    def test_is_ready_true_when_all_scopes_present(self, tmp_path):
+        """Токен со всеми скоупами (calendar, tasks, sheets) готов."""
         tok = tmp_path / "token.json"
-        self._write_token(
-            tok, ["https://www.googleapis.com/auth/calendar.events"])
+        self._write_token(tok, [
+            "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/tasks",
+            "https://www.googleapis.com/auth/spreadsheets",
+        ])
         g = GoogleCalendar(
             token_file=str(tok),
             credentials_file=str(tmp_path / "creds.json"))

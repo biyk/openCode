@@ -2,7 +2,7 @@
     "jobs": [
         {
             "id": "test_video_and_volume",
-            "schedule": "6 6 * * *",
+            "schedule": "0 6 * * *",
             "script": "test_video_and_volume.ps1",
             "announce": false
         },
