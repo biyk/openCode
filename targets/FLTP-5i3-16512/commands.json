@@ -32,6 +32,11 @@
             "windows": "python -m lib.sleep_event",
             "default": "python -m lib.sleep_event"
         },
+        "wakefix": {
+            "linux": "python -m lib.wake_event",
+            "windows": "python -m lib.wake_event",
+            "default": "python -m lib.wake_event"
+        },
         "playpause": {
             "linux": "playerctl play-pause",
             "windows": "powershell -c \"$s='using System;using System.Runtime.InteropServices;public class K{[DllImport(\\\"user32.dll\\\",CharSet=CharSet.Auto)]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}';Add-Type -TypeDefinition $s -ErrorAction Stop;[K]::k(0xB3)\"",
@@ -85,6 +90,7 @@
         "volumedown": "уменьшить громкость",
         "sleepvolume": "ночной режим: опустить громкость до 1%",
         "sleepfix": "ночной режим: перенести начало события «СОН» на сейчас",
+        "wakefix": "пробуждение: перенести завершение начавшегося события «СОН» на сейчас",
         "playpause": "play/pause медиа",
         "stop": "остановить медиа",
         "openyoutube": "открыть YouTube",
@@ -123,6 +129,7 @@
         "volumeup": ["громче", "сделай громче", "увеличь громкость", "громкость вверх"],
         "volumedown": ["тише", "сделай тише", "уменьши громкость", "громкость вниз"],
         "sleepmode": ["спать", "я спать", "иду спать", "я лег спать", "лег спать", "я пошел спать", "пошел спать", "я ложусь спать", "ложусь спать"],
+        "wakefix": ["я проснулся", "проснулся", "я встал", "доброе утро", "время встать"],
         "playpause": ["пауза", "плей", "играй", "включи", "дальше"],
         "stop": ["стоп", "остановить", "выключи"],
         "openyoutube": ["открой ютуб", "запусти ютуб", "включи ютуб"],

@@ -91,6 +91,22 @@ def test_sleepmode_sequence_steps_resolvable(matcher):
     assert "lib.sleep_event" in (matcher.get_command("sleepfix") or "")
 
 
+def test_wake_phrase_matches_command(matcher):
+    """«я проснулся»/«я встал»/«доброе утро» матчатся на команду wakefix."""
+    for window in (["алиса я проснулся"], ["алиса проснулся"],
+                   ["алиса я встал"], ["доброе утро пожалуйста"],
+                   ["алиса время встать"]):
+        cmd_id, _settings, wait = matcher.find_command(window)
+        assert cmd_id == "wakefix", f"{window}: ожидался wakefix, получил {cmd_id}"
+        assert not wait
+
+
+def test_wakefix_command_resolvable(matcher):
+    """Команда wakefix строится в запуск lib.wake_event."""
+    cmd = matcher.get_command("wakefix")
+    assert cmd and "lib.wake_event" in cmd
+
+
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only test")
 class TestVolumeCommandsLive:
     """volumeup/volumedown: реальный запуск + измерение системной громкости."""
