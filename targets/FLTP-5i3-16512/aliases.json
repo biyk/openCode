@@ -16,6 +16,11 @@
             "command": "stop",
             "hits": 0,
             "confirmed": false
+        },
+        "открой я топ": {
+            "command": "openyoutube",
+            "hits": 0,
+            "confirmed": false
         }
     }
 }

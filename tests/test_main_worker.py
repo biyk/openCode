@@ -62,7 +62,7 @@ class TestTranscriptionWorkerInit:
         mock_provider.get_client.assert_called_once_with(history_limit=10)
 
     def test_init_builds_intent_classifier_when_enabled(self, mocker):
-        """При intent.enabled=true создаётся IntentClassifier и передаётся оркестратору."""
+        """При intent.enabled=true создаётся классификатор через build_intent."""
         mocker.patch("lib.transcription_worker.get_device_commands_path", return_value="x")
         mocker.patch("lib.transcription_worker.CommandMatcher")
         mocker.patch("lib.transcription_worker.Logger")
@@ -73,22 +73,16 @@ class TestTranscriptionWorkerInit:
         matcher.get_llm_config.return_value = {}
         matcher.get_intent_config.return_value = {
             "enabled": True, "include_media": True}
-        matcher.match_config.return_value = {"volumeup": ["громче"]}
-        mock_probe = mocker.patch("lib.transcription_worker.is_media_playing")
-        mock_intent = mocker.patch("lib.transcription_worker.IntentClassifier")
-        mock_intent.return_value = "INTENT"
+        mock_intent = mocker.patch(
+            "lib.transcription_worker.build_intent", return_value="INTENT")
 
         worker = lib.transcription_worker.TranscriptionWorker()
 
-        mock_intent.assert_called_once_with(
-            commands={"volumeup": ["громче"]},
-            llm="LLM",
-            media_probe=mock_probe,
-        )
+        mock_intent.assert_called_once_with(matcher, "LLM")
         assert worker._orchestrator._intent == "INTENT"
 
     def test_init_intent_without_media_probe(self, mocker):
-        """При include_media=false классификатор создаётся без media_probe."""
+        """include_media=false: build_intent всё равно создаёт классификатор."""
         mocker.patch("lib.transcription_worker.get_device_commands_path", return_value="x")
         mocker.patch("lib.transcription_worker.CommandMatcher")
         mocker.patch("lib.transcription_worker.Logger")
@@ -99,17 +93,12 @@ class TestTranscriptionWorkerInit:
         matcher.get_llm_config.return_value = {}
         matcher.get_intent_config.return_value = {
             "enabled": True, "include_media": False}
-        matcher.match_config.return_value = {"volumeup": ["громче"]}
-        mock_intent = mocker.patch("lib.transcription_worker.IntentClassifier")
-        mock_intent.return_value = "INTENT"
+        mock_intent = mocker.patch(
+            "lib.transcription_worker.build_intent", return_value="INTENT")
 
         worker = lib.transcription_worker.TranscriptionWorker()
 
-        mock_intent.assert_called_once_with(
-            commands={"volumeup": ["громче"]},
-            llm="LLM",
-            media_probe=None,
-        )
+        mock_intent.assert_called_once_with(matcher, "LLM")
         assert worker._orchestrator._intent == "INTENT"
 
     def test_init_mini_disabled_by_default(self, mocker):

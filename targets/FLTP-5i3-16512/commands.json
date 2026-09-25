@@ -83,7 +83,8 @@
             "linux": "python -m lib.diagnose launch \"{{text}}\"",
             "windows": "python -m lib.diagnose launch \"{{text}}\"",
             "default": "python -m lib.diagnose launch \"{{text}}\""
-        }
+        },
+        "taskstart": "python -m lib.task_start \"{{text}}\""
     },
     "descriptions": {
         "volumeup": "увеличить громкость",
@@ -91,6 +92,7 @@
         "sleepvolume": "ночной режим: опустить громкость до 1%",
         "sleepfix": "ночной режим: перенести начало события «СОН» на сейчас",
         "wakefix": "пробуждение: перенести завершение начавшегося события «СОН» на сейчас",
+        "taskstart": "запуск задачи: по названию найти сегодняшнее мероприятие, взять uuid из описания и записать start_date в Google Таблицу",
         "playpause": "play/pause медиа",
         "stop": "остановить медиа",
         "openyoutube": "открыть YouTube",
@@ -107,9 +109,9 @@
     "requires": {
         "playpause": ["media_session"],
         "stop": ["media_session"],
-        "openyoutube": ["vpn"],
-        "youtube_news": ["vpn", "browser_youtube"],
-        "news": ["vpn"]
+        "openyoutube": ["proxy"],
+        "youtube_news": ["proxy", "browser_youtube"],
+        "news": ["proxy"]
     },
     "provides": {
         "openyoutube": ["browser_youtube"],
@@ -130,6 +132,7 @@
         "volumedown": ["тише", "сделай тише", "уменьши громкость", "громкость вниз"],
         "sleepmode": ["спать", "я спать", "иду спать", "я лег спать", "лег спать", "я пошел спать", "пошел спать", "я ложусь спать", "ложусь спать"],
         "wakefix": ["я проснулся", "проснулся", "я встал", "доброе утро", "время встать"],
+        "taskstart": ["я начал", "я приступил"],
         "playpause": ["пауза", "плей", "играй", "включи", "дальше"],
         "stop": ["стоп", "остановить", "выключи"],
         "openyoutube": ["открой ютуб", "запусти ютуб", "включи ютуб"],
@@ -181,6 +184,35 @@
     "intent": {
         "enabled": true,
         "include_media": true
+    },
+    "decision": {
+        "enabled": true,
+        "url": "http://127.0.0.1:8080",
+        "threshold": 0.5,
+        "timeout": 15,
+        "auto_launch": {
+            "exe": "laya-lab/bin/laya.exe",
+            "model": "laya-lab/models/laya_multilingual_ud_q4_k_m.gguf",
+            "port": 8080,
+            "device": "auto"
+        },
+        "instructions": "Что пользователь просит сделать голосовому помощнику? Это распознанная речь с ошибками и лишними словами. Выбери из существующих команд.",
+        "criteria": {
+            "volumeup": "увеличить громкость звука, сделать громче",
+            "volumedown": "уменьшить громкость звука, сделать тише",
+            "sleepmode": "пользователь ложится спать: сделать тихо и зафиксировать сон",
+            "wakefix": "пользователь проснулся или встал: зафиксировать пробуждение",
+            "taskstart": "пользователь начал/выполнил/сделал мероприятие из плана дня",
+            "playpause": "пауза или продолжить воспроизведение музыки",
+            "stop": "остановить воспроизведение музыки, выключить музыку",
+            "openyoutube": "открыть или запустить ютуб",
+            "youtube_news": "включить новости на ютубе",
+            "news": "включить новости",
+            "calendar-reminder": "поставить напоминание",
+            "task-add": "добавить или создать задачу",
+            "diagnose": "проверить логи, найти ошибки, диагностика",
+            "none": "просто речь, нет команды"
+        }
     },
     "opencode_cli": {
         "enabled": true,

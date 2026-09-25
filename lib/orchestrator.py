@@ -1,12 +1,12 @@
 """Оркестратор обработки голосового ввода (детерминированное ядро).
 
-Решает, на каком из трёх уровней обрабатывать распознанный текст:
+Решает, на каком уровне обрабатывать распознанный текст:
 1. commands.json (дословное совпадение + алиасы),
-2. mini-LLM (интеллектуальный классификатор команд),
-3. console opencode (opencode-cli в cli/, использует скиллы).
+2. decision-слой Laya (дисижн-модель; commands.json не совпало),
+3. (legacy, когда decision не настроен) mini-LLM intent → opencode-cli.
 
-Большой чат LLM убран: фолбэк уходит в консольный opencode, который сам
-выполняет команду и озвучивает результат через скилл speak-answer.
+Фолбэк после Laya — заглушка-комментарий про OmniRouter (auto/fast):
+сам запрос пока не выполняется.
 """
 
 import queue
@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
 from lib.opencode_cli import OpenCodeCliRunner
+from lib.orchestrator_decision import OrchestratorDecisionMixin
 from lib.orchestrator_memory import OrchestratorMemoryMixin
 from lib.orchestrator_opencode import OrchestratorOpencodeMixin
 from lib.orchestrator_speech import OrchestratorSpeechMixin
@@ -29,6 +30,7 @@ COMMAND_WINDOW_SIZE = 4
 
 
 class Orchestrator(
+    OrchestratorDecisionMixin,
     OrchestratorMemoryMixin,
     OrchestratorOpencodeMixin,
     OrchestratorSpeechMixin,
@@ -48,6 +50,7 @@ class Orchestrator(
         intent: Any = None,
         aliases: Optional[AliasStore] = None,
         opencode: Optional[OpenCodeCliRunner] = None,
+        decision: Any = None,
         on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         self._matcher = matcher
@@ -59,6 +62,7 @@ class Orchestrator(
         self._intent = intent or None
         self._aliases = aliases or None
         self._opencode = opencode or None
+        self._decision = decision or None
         self._on_exit = on_exit or None
         self._dev_mode = False
         self._speaking = False
@@ -116,72 +120,8 @@ class Orchestrator(
         if (self._aliases is not None and self._matcher.has_trigger(text)
                 and self._handle_memory_command(text)):
             return
-        # 1. Команды commands.json — концепция «трёх строк».
-        self._window.append(text)
-        cmd_id, settings, wait = self._matcher.find_command(
-            list(self._window))
-        if wait:
-            # Ключ есть, команды вокруг него нет — ждём следующую строку.
-            self._output.print_debug(
-                "[Command] Ключ без команды — ждём следующую строку")
-            return
-        blocked: list[tuple[str, list[str]]] = []
-        if cmd_id is not None:
-            missing = self._matcher.missing_requires(cmd_id)
-            if not missing:
-                self._output.print_info(
-                    f"[Command] Распознана команда: {cmd_id}"
-                    + (f" (настройки: {', '.join(settings)})"
-                       if settings else ""))
-                self._execute_with_settings(cmd_id, settings)
-                self._window.clear()
-                return
-            blocked = [(cmd_id, missing)]
-            self._window.clear()
-        # Команды из commands.json нет (или она заблокирована) — дальше
-        # старые уровни: алиасы/intent/opencode (переделываются позже).
-        if not self._matcher.has_trigger(text):
-            return
-        literal_id = cmd_id  # найденная (даже заблокированная) команда
-        # 1.5. Известное коверканье из базы алиасов — без вызова LLM.
-        # Переделывается позже; пока работает как раньше (когда шага 1 нет).
-        if cmd_id is None and self._aliases is not None:
-            core = self._matcher.core_phrase(text)
-            alias_id = self._aliases.resolve(core)
-            if alias_id is not None:
-                missing = self._matcher.missing_requires(alias_id)
-                if not missing:
-                    self._output.print_info(
-                        f"[Alias] Распознана команда: {alias_id}")
-                    self._aliases.bump(core)
-                    self._matcher.execute_by_id(alias_id)
-                    return
-                blocked = [(alias_id, missing)]
-        # 2. Не дословно — мини-LLM классификатор команд.
-        if self._intent is not None:
-            detected = self._intent.detect(text, self._llm_context(blocked))
-            if detected is not None:
-                self._output.print_info(
-                    f"[Mini] Распознана команда «{detected}»"
-                )
-                if self._matcher.execute_by_id(detected):
-                    self._output.print_text(detected)
-                    self._remember_candidate(text, detected, literal_id)
-                    return
-                missing = self._matcher.missing_requires(detected)
-                if missing:
-                    self._report_blocked(detected, missing)
-                    return
-                self._output.print_error(
-                    f"[Mini] Команда «{detected}» не найдена"
-                )
-                return
-        self._output.print_debug(
-            f"[OpenCode Decision] No literal, no alias, no intent match. "
-            f"Sending to opencode-cli. Text: {text}"
-        )
-        self._output.print_info("... отправка запроса в opencode-cli (фон)")
-        self._enqueue_opencode(text)
+        # 1..3. commands.json → алиасы → Laya/legacy → opencode-cli.
+        self._process_commands_level(text)
 
     def _speak_async(self, answer: str) -> None:
         """Запускает озвучку в фоне, оставляя цикл распознавания активным."""

@@ -55,13 +55,36 @@ class TestStatusStoreChecks:
 
     def test_builtin_checker_called(self, mocker):
         """Встроенный checker вызывается по имени."""
-        path = _write_status_file({"vpn": {"checker": "vpn"}})
+        path = _write_status_file({"proxy": {"checker": "proxy"}})
         try:
             mock_fn = mocker.patch.dict(
-                "lib.status.BUILTIN_CHECKERS", {"vpn": lambda: True})
+                "lib.status.BUILTIN_CHECKERS", {"proxy": lambda: True})
             store = StatusStore(path)
-            assert store.refresh("vpn") is True
+            assert store.refresh("proxy") is True
             assert mock_fn is not None
+        finally:
+            os.unlink(path)
+
+    def test_checker_receives_config(self, mocker):
+        """checker_config передаётся чекеру аргументом."""
+        received = {}
+
+        def _proxy_checker(config):
+            received["config"] = config
+            return config.get("port") == 1080
+
+        path = _write_status_file({
+            "proxy": {
+                "checker": "proxy",
+                "checker_config": {"host": "192.168.1.107", "port": 1080},
+            }
+        })
+        try:
+            mocker.patch.dict(
+                "lib.status.BUILTIN_CHECKERS", {"proxy": _proxy_checker})
+            store = StatusStore(path)
+            assert store.refresh("proxy") is True
+            assert received == {"config": {"host": "192.168.1.107", "port": 1080}}
         finally:
             os.unlink(path)
 
@@ -142,11 +165,11 @@ class TestStatusStoreChecks:
 
     def test_set_marks_known_only(self):
         """set() ставит только известные статусы."""
-        path = _write_status_file({"vpn": {"checker": "vpn"}})
+        path = _write_status_file({"proxy": {"checker": "proxy"}})
         try:
             store = StatusStore(path)
-            store.set("vpn", True)
-            assert store.is_active("vpn") is True
+            store.set("proxy", True)
+            assert store.is_active("proxy") is True
             store.set("ghost", True)
             assert store.is_active("ghost") is False
         finally:
@@ -161,16 +184,16 @@ class TestStatusStoreChecks:
             return len(calls) >= 2
 
         import lib.status as status_mod
-        orig = status_mod.BUILTIN_CHECKERS.get("vpn")
-        status_mod.BUILTIN_CHECKERS["vpn"] = _checker
-        path = _write_status_file({"vpn": {"checker": "vpn"}})
+        orig = status_mod.BUILTIN_CHECKERS.get("proxy")
+        status_mod.BUILTIN_CHECKERS["proxy"] = _checker
+        path = _write_status_file({"proxy": {"checker": "proxy"}})
         try:
             store = StatusStore(path)
-            assert store.ensure(["vpn"]) == ["vpn"]
-            assert store.ensure(["vpn"]) == []
+            assert store.ensure(["proxy"]) == ["proxy"]
+            assert store.ensure(["proxy"]) == []
         finally:
             if orig is None:
-                del status_mod.BUILTIN_CHECKERS["vpn"]
+                del status_mod.BUILTIN_CHECKERS["proxy"]
             else:
-                status_mod.BUILTIN_CHECKERS["vpn"] = orig
+                status_mod.BUILTIN_CHECKERS["proxy"] = orig
             os.unlink(path)

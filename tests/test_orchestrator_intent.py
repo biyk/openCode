@@ -107,12 +107,12 @@ class TestOrchestratorIntent:
         orch._matcher.has_trigger.return_value = True
         orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.execute_by_id.return_value = False
-        orch._matcher.missing_requires.return_value = ["vpn"]
-        orch._matcher.need_message.return_value = "Включи VPN вручную"
+        orch._matcher.missing_requires.return_value = ["proxy"]
+        orch._matcher.need_message.return_value = "Проверь доступность прокси"
         orch._abort_playback = mocker.MagicMock()
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста открой ютуб")
-        spy.assert_called_once_with("Включи VPN вручную")
+        spy.assert_called_once_with("Проверь доступность прокси")
 
     def test_process_text_alias_hit_executes(self, mocker, tmp_path):
         """Известное коверканье запускается без LLM."""
@@ -155,8 +155,8 @@ class TestOrchestratorIntent:
         orch._matcher.has_trigger.return_value = True
         orch._matcher.find_command.return_value = (None, [], False)
         orch._matcher.core_phrase.return_value = "включи и ютюб"
-        orch._matcher.missing_requires.return_value = ["vpn"]
+        orch._matcher.missing_requires.return_value = ["proxy"]
         orch.process_text("алиса включи и ютюб пожалуйста")
         orch._matcher.execute_by_id.assert_not_called()
         text, context = intent.detect.call_args.args
-        assert context["blocked"] == [("openyoutube", ["vpn"])]
+        assert context["blocked"] == [("openyoutube", ["proxy"])]

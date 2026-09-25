@@ -96,7 +96,11 @@ class CommandMatchMixin:
                 best_match = candidate
         if best_match is not None:
             return best_match[2], best_match[3], False
-        if key_idx >= len(window) - 1:
+        # Ждём следующую строку только если ключ — последняя строка и в ней
+        # кроме триггеров больше ничего нет (команда ожидается после ключа).
+        # Иначе — не распознано, уходим к дисижн-слою (Laya).
+        if key_idx >= len(window) - 1 and not self.core_phrase(
+                window[key_idx]).strip():
             return None, [], True
         return None, [], False
 

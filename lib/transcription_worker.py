@@ -9,9 +9,9 @@ from typing import Optional
 from lib.aliases import AliasStore
 from lib.commands import CommandMatcher
 from lib.config_loader import get_device_commands_path
-from lib.intent import IntentClassifier
+from lib.intent import build_intent
+from lib.laya_decision import build_decision
 from lib.logger import Logger
-from lib.media import is_media_playing
 from lib.opencode_cli import OpenCodeCliRunner
 from lib.orchestrator import Orchestrator
 from lib.output import TranscriptionOutput
@@ -77,17 +77,10 @@ class TranscriptionWorker:
             self._llm._set_output(self._output)
         self._tts = TextToSpeech()
 
-        intent_config = self._matcher.get_intent_config()
-        intent = None
-        if intent_config.get("enabled"):
-            media_probe = None
-            if intent_config.get("include_media", True):
-                media_probe = is_media_playing
-            intent = IntentClassifier(
-                commands=self._matcher.match_config(),
-                llm=self._llm,
-                media_probe=media_probe,
-            )
+        intent = build_intent(self._matcher, self._llm)
+        # Decision-слой Laya (заменяет mini-intent, когда настроен);
+        # intent не создаём — новый путь его не использует.
+        self._decision = build_decision(self._matcher, self._output)
         self._orchestrator = Orchestrator(
             matcher=self._matcher,
             output=self._output,
@@ -95,6 +88,7 @@ class TranscriptionWorker:
             stop_words=STOP_WORDS,
             suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
             intent=intent,
+            decision=self._decision,
             on_exit=self._dev_mode_exit,
         )
 
@@ -197,4 +191,6 @@ class TranscriptionWorker:
         self._running.clear()
         if getattr(self, "_status", None) is not None:
             self._status.stop()
+        if getattr(self, "_decision", None) is not None:
+            self._decision.close()
         self._orchestrator.stop()

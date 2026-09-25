@@ -1,28 +1,25 @@
 """Хранилище статусов системы с фоновым опросом.
 
-Статусы (vpn, media, browser_youtube, ...) описываются в отдельном
+Статусы (proxy, media, browser_youtube, ...) описываются в отдельном
 targets/<host>/status.json:
 
 {
   "statuses": {
-    "vpn": {
-      "description": "VPN включён (youtube доступен)",
-      "checker": "vpn",
+    "proxy": {
+      "description": "Прокси 192.168.1.107:1080 доступен",
+      "checker": "proxy",
+      "checker_config": {"host": "192.168.1.107", "port": 1080},
       "interval": 5,
-      "need_message": "Включи VPN вручную"
-    },
-    "custom": {
-      "check": "curl -s -o NUL https://example.com",
-      "interval": 10
+      "need_message": "Проверь доступность прокси"
     }
   }
 }
 
-Проверка статуса — либо встроенный checker ("checker": <имя>),
-либо shell-команда ("check": <строка или per-OS dict>, exit 0 = активен).
-StatusStore опрашивает все статусы в фоне (daemon-поток) и хранит
-последние значения потокобезопасно. Команды в commands.json ссылаются
-на статусы через поле "requires".
+Проверка статуса — либо встроенный checker ("checker": <имя>, параметры —
+через "checker_config"), либо shell-команда ("check": <строка или per-OS
+dict>, exit 0 = активен). StatusStore опрашивает все статусы в фоне
+(daemon-поток) и хранит последние значения потокобезопасно. Команды в
+commands.json ссылаются на статусы через поле "requires".
 """
 
 import json
@@ -33,19 +30,18 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-
 from lib.status_checkers import (
     _check_browser,
     _check_browser_youtube,
     _check_media,
     _check_media_session,
-    _check_vpn,
+    _check_proxy,
 )
 from lib.status_poll import StatusPollMixin
 
 
 BUILTIN_CHECKERS: dict[str, Callable[[], bool]] = {
-    "vpn": _check_vpn,
+    "proxy": _check_proxy,
     "media": _check_media,
     "media_session": _check_media_session,
     "browser": _check_browser,
@@ -132,6 +128,9 @@ class StatusStore(StatusPollMixin):
                 checker = BUILTIN_CHECKERS.get(spec["checker"])
                 if checker is None:
                     return False
+                config = spec.get("checker_config")
+                if config is not None:
+                    return bool(checker(config))
                 return bool(checker())
             if "check" in spec:
                 cmd = self._resolve_shell(spec["check"])

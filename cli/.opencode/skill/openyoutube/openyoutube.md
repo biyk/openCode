@@ -29,7 +29,7 @@ cd C:\Users\b5\Desktop\voice; python -m lib.browser_control tabs
 
 ## Notes
 
-- Requires the `vpn` status to be active (`requires: ["vpn"]`).
+- Requires the `proxy` status to be active (`requires: ["proxy"]`).
 - Sets `provides: ["browser_youtube"]` after success.
 - The browser opens a dedicated CDP profile inside the repo (`.voice-cdp-profile-9222`) using Brave.
 - Exit code 0 = opened/played OK; 1 = failed (browser not found, list didn't load, or play failed).

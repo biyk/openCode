@@ -61,16 +61,16 @@ class TestIntentPrompt:
         llm.ask.return_value = "NONE"
         context = {
             "triggers": ["пожалуйста", "алиса"],
-            "statuses": {"vpn": True, "media": False},
-            "requires": {"openyoutube": ["vpn"], "playpause": ["media"]},
+            "statuses": {"proxy": True, "media": False},
+            "requires": {"openyoutube": ["proxy"], "playpause": ["media"]},
             "blocked": [("playpause", ["media"])],
         }
         assert classifier.detect("пожалуйста включи и ютюб", context) is None
         prompt = llm.classify.call_args.args[0]
         assert "пожалуйста, алиса" in prompt
-        assert "- openyoutube: открой ютуб; требует: vpn" in prompt
+        assert "- openyoutube: открой ютуб; требует: proxy" in prompt
         assert "- playpause: пауза; требует: media" in prompt
-        assert "vpn=вкл" in prompt
+        assert "proxy=вкл" in prompt
         assert "media=выкл" in prompt
         assert "playpause (нет: media)" in prompt
         assert "Запрос пользователя: «пожалуйста включи и ютюб»" in prompt
@@ -81,8 +81,8 @@ class TestIntentPrompt:
         llm.classify.return_value = "openyoutube"
         context = {
             "triggers": ["пожалуйста"],
-            "statuses": {"vpn": True},
-            "requires": {"openyoutube": ["vpn"]},
+            "statuses": {"proxy": True},
+            "requires": {"openyoutube": ["proxy"]},
             "blocked": [],
         }
         assert classifier.detect("пожалуйста включи и ютюб", context) == (

@@ -112,14 +112,14 @@ class TestCommandRequires:
         path = self._write_cfg({
             "triggers": ["пожалуйста"],
             "commands": {"openyoutube": "echo yt"},
-            "requires": {"openyoutube": ["vpn"]},
+            "requires": {"openyoutube": ["proxy"]},
             "match": {"openyoutube": ["открой ютуб"]},
         })
         try:
             matcher = CommandMatcher(path, status_store=self._fake_store(set()))
             assert matcher.execute_by_id("openyoutube") is False
             run_mock.assert_not_called()
-            assert matcher.missing_requires("openyoutube") == ["vpn"]
+            assert matcher.missing_requires("openyoutube") == ["proxy"]
         finally:
             os.unlink(path)
 
@@ -135,7 +135,7 @@ class TestCommandRequires:
             "match": {"news": ["включи новости"]},
         })
         try:
-            store = self._fake_store({"vpn"})
+            store = self._fake_store({"proxy"})
             matcher = CommandMatcher(path, status_store=store)
             assert matcher.execute_by_id("news") is True
             assert run_mock.call_count == 2
@@ -170,7 +170,7 @@ class TestCommandRequires:
         path = self._write_cfg({
             "triggers": ["пожалуйста"],
             "commands": {"openyoutube": "echo yt"},
-            "requires": {"openyoutube": ["vpn"]},
+            "requires": {"openyoutube": ["proxy"]},
             "sequences": {"news": {"steps": ["openyoutube"]}},
             "match": {"news": ["включи новости"]},
         })

@@ -98,7 +98,8 @@ class TestOperations:
         assert items[0] == {
             "id": "e1", "summary": "захватить мир",
             "start": "2026-09-15T14:00:00+04:00",
-            "end": "2026-09-15T14:30:00+04:00"}
+            "end": "2026-09-15T14:30:00+04:00",
+            "description": ""}
         assert items[1]["start"] == "2026-09-16"
 
     def test_pending_events_filters_finished_and_sorts(self):

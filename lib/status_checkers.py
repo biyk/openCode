@@ -1,21 +1,24 @@
-"""Встроенные проверки статусов (vpn, media, browser)."""
+"""Встроенные проверки статусов (proxy, media, browser)."""
 
 
-def _check_vpn() -> bool:
-    """Возвращает True, если youtube доступен напрямую (VPN включён).
+def _check_proxy(config=None) -> bool:
+    """True, если прокси достижим (TCP connect к host:port).
 
-    Прокси-признак: без VPN youtube в РФ недоступен (таймаут/сброс),
-    с VPN отвечает 200. Сам VPN скрипт не включает — только проверяет.
+    По умолчанию 192.168.1.107:1080. config — dict из status.json
+    (секция checker_config): host/port/timeout.
     """
+    host = "192.168.1.107"
+    port = 1080
+    timeout = 3.0
+    if isinstance(config, dict):
+        host = config.get("host", host)
+        port = int(config.get("port", port))
+        timeout = float(config.get("timeout", timeout))
+    import socket
     try:
-        import urllib.request
-        request = urllib.request.Request(
-            "https://www.youtube.com/", method="HEAD",
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        with urllib.request.urlopen(request, timeout=4) as response:
-            return response.status == 200
-    except Exception:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
         return False
 
 

@@ -139,3 +139,23 @@ class IntentClassifier:
             if match and (best_pos is None or match.start() < best_pos):
                 best, best_pos = cmd_id, match.start()
         return best
+
+
+def build_intent(matcher, llm: Any, output: Optional[Any] = None
+                 ) -> Optional[IntentClassifier]:
+    """Создаёт IntentClassifier из commands.json (None, если не включён).
+
+    Используется TranscriptionWorker для legacy mini-intent пути (когда
+    decision-слой Laya не настроен).
+    """
+    config = matcher.get_intent_config()
+    if not config.get("enabled"):
+        return None
+    del output  # зарезервировано под сообщения об ошибках
+    from lib.media import is_media_playing
+    media_probe = is_media_playing if config.get("include_media", True) else None
+    return IntentClassifier(
+        commands=matcher.match_config(),
+        llm=llm,
+        media_probe=media_probe,
+    )

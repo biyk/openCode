@@ -1,10 +1,11 @@
 {
     "statuses": {
-        "vpn": {
-            "description": "VPN включён (youtube доступен напрямую)",
-            "checker": "vpn",
+        "proxy": {
+            "description": "Прокси 192.168.1.107:1080 доступен",
+            "checker": "proxy",
+            "checker_config": {"host": "192.168.1.107", "port": 1080, "timeout": 3},
             "interval": 5,
-            "need_message": "Включи VPN вручную"
+            "need_message": "Прокси 192.168.1.107:1080 недоступен — проверь прокси"
         },
         "media": {
             "description": "Сейчас играет медиа",

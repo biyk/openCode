@@ -31,6 +31,6 @@ cd C:\Users\b5\Desktop\voice; python -m lib.browser_control youtube-play "нов
 
 ## Notes
 
-- Requires the `vpn` and `browser_youtube` statuses (`requires: ["vpn", "browser_youtube"]`); the `news` sequence additionally needs `openyoutube` to run first.
+- Requires the `proxy` and `browser_youtube` statuses (`requires: ["proxy", "browser_youtube"]`); the `news` sequence additionally needs `openyoutube` to run first.
 - `youtube-play` opens the search URL, waits for the first `ytd-video-renderer` result, clicks it, waits ~5s, then clicks the play button.
 - Exit code 0 = video started; 1 = search/click/play failed.

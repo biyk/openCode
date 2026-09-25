@@ -12,6 +12,14 @@ class CommandConfigMixin:
         """Возвращает конфигурацию интеллектуального классификатора команд."""
         return self._data.get("intent", {})
 
+    def get_decision_config(self) -> dict:
+        """Возвращает конфигурацию decision-слоя (Laya).
+
+        Секция `decision` в commands.json: url сервера, порог confidence,
+        критерии команд и опциональный auto_launch (exe/модель/порт).
+        """
+        return self._data.get("decision", {})
+
     def match_config(self) -> dict:
         """Возвращает словарь {command_id: [фразы]} для классификатора."""
         return self._data.get("match", {})

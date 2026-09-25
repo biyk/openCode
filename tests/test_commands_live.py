@@ -107,6 +107,18 @@ def test_wakefix_command_resolvable(matcher):
     assert cmd and "lib.wake_event" in cmd
 
 
+def test_taskstart_matches_and_renders(matcher):
+    """«я начал {задача}» → taskstart с настройками; {{text}} подставлен."""
+    for window, settings in (
+            (["алиса я начал починить велосипед"], ["починить", "велосипед"]),
+            (["алиса я приступил к отчету"], ["к", "отчету"]),
+            (["я начал мыть посуду пожалуйста"], ["мыть", "посуду"])):
+        cmd_id, got, wait = matcher.find_command(window)
+        assert (cmd_id, list(got), wait) == ("taskstart", settings, False), window
+    cmd = matcher.get_command("taskstart", ("помыть", "пол"))
+    assert cmd == 'python -m lib.task_start "помыть пол"'
+
+
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only test")
 class TestVolumeCommandsLive:
     """volumeup/volumedown: реальный запуск + измерение системной громкости."""

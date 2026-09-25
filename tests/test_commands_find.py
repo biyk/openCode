@@ -1,6 +1,4 @@
 """Тесты CommandMatcher: концепция «трёх строк» (find_command)."""
-
-
 import pytest
 import os
 import tempfile
@@ -45,7 +43,6 @@ def temp_commands_file():
 
 class TestCommandFind:
     """Ключ/команда/настройки, fuzzy-порог, триггеры."""
-
     def _full_cfg(self):
         """Конфиг с командами громкости/паузы/стопа для тестов концепции."""
         import tempfile
@@ -102,7 +99,7 @@ class TestCommandFind:
         """[Алиса] в строке, команда — следующей строкой."""
         matcher = CommandMatcher(temp_commands_file)
         assert matcher.find_command(["какая же ты тупая алиса"]) == (
-            None, [], True)
+            None, [], False)
         assert matcher.find_command([
             "какая же ты тупая алиса", "сделай громче немного"
         ]) == ("volumeup", ["немного"], False)
@@ -120,22 +117,29 @@ class TestCommandFind:
             "volumeup", [], False)
 
     def test_find_command_fuzzy_below_threshold_rejected(self):
-        """Совпадение ниже 90% — мимо (ложный вызов), не угадывать."""
+        """Совпадение ниже 90% — мимо: не угадываем, уходим к Laya."""
         matcher = CommandMatcher(self._full_cfg()())
         assert matcher.find_command(["пожалуйста сделаыми громче"]) == (
-            None, [], True)
+            None, [], False)
 
     def test_find_command_no_command_around_key(self):
         """Ключ без команды вокруг — ложный вызов."""
         matcher = CommandMatcher(self._full_cfg()())
         assert matcher.find_command(["але все плохо"]) == (None, [], False)
 
-    def test_find_command_no_command_when_key_last_line_wait(
+    def test_find_command_no_command_when_key_last_line_not_wait(
             self, temp_commands_file):
-        """Ключ последний, команды нет — ждём следующую строку."""
+        """Ключ последний, слова есть, но команды нет — не ждём, к Laya."""
         matcher = CommandMatcher(temp_commands_file)
         assert matcher.find_command(["да блин", "какая же ты тупая алиса"]) == (
-            None, [], True)
+            None, [], False)
+
+    def test_find_command_bare_trigger_waits(self, temp_commands_file):
+        """Голый ключ без содержания — ждём следующую строку."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.find_command(["пожалуйста"]) == (None, [], True)
+        assert matcher.find_command(["алиса"]) == (None, [], True)
+        assert matcher.find_command(["алиса пожалуйста"]) == (None, [], True)
 
     def test_find_command_settings_multiplier_applied(self, tmp_path, mocker):
         """Настройки меняют {{step}} через секцию settings."""
@@ -182,10 +186,8 @@ class TestCommandFind:
         """Если в файле нет поля triggers, возвращаются дефолтные."""
         import tempfile
         import json
-        commands = {
-            "commands": {"test": "echo test"},
-            "match": {"test": ["тест"]}
-        }
+        commands = {"commands": {"test": "echo test"},
+                    "match": {"test": ["тест"]}}
         with tempfile.NamedTemporaryFile(
             mode='w', suffix='.json', delete=False, encoding='utf-8'
         ) as f:
