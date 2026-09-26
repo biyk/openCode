@@ -37,9 +37,9 @@ voice
 │   └── AGENTS.md  # Файл описывает конфигурацию консольного интерфейса проекта Voice Control, включая роли, пути, пайплайн обработки команд и правила работы навыков (skills).
 ├── cron/  # Расписание и скрипты заданий планировщика cron (crontab.json + jobs/)
 │   ├── jobs/  # Скрипты заданий планировщика, запускаемые по расписанию
-│   │   ├── test_video_and_volume.ps1  # Тестовое задание cron: открывает тестовый ролик YouTube в CDP-браузере (open-url) и выставляет громкость 50% через bin/get_volume.ps1
-│   │   └── volume_up.ps1  # Тестовое задание cron: поднимает громкость на шаг (клавиша volume up)
-│   └── crontab.json  # Расписание заданий (аналог crontab): классические 5-полевые cron-выражения, задания типов script (cron/jobs/) и shell, флаги enabled/announce/timeout. Тестовый сценарий: в 21:00 включить тестовый ролик YouTube и выставить громкость 50%, в 21:01 и 21:02 поднять громкость.
+│   │   ├── volume_up.ps1  # Задание cron: поднимает громкость на шаг (клавиша volume up), сверяет уровень до и после — без изменения считается провалом
+│   │   └── wake_video_and_volume.ps1  # Утреннее задание cron: открывает тестовый ролик YouTube новой вкладкой (open-new), проверяет по шагам, что он играет (CDP eval, попытка play() при паузе), и выставляет громкость 30%; провал шага — ошибка задания
+│   └── crontab.json  # Расписание заданий (аналог crontab): классические 5-полевые cron-выражения, задания типов script (cron/jobs/) и shell, флаги enabled/announce/timeout. Утренний сценарий: включить тестовый ролик YouTube (wake_video_and_volume) и поднять громкость (volume_up).
 ├── lib/
 │   ├── providers/
 │   │   ├── __init__.py  # Это модуль инициализации пакета провайдеров LLM, в котором объявлен базовый абстрактный класс клиента и экспортированы конкретные реализации клиентов.
@@ -49,14 +49,14 @@ voice
 │   │   └── race.py  # Это файл, определяющий класс RaceClient, который параллельно отправляет запросы двум провайдерам LLM (OmniRouterClient и LmStudioClient) и возвращает первый полученный ответ, реализуя конкурентный запрос и логирование.
 │   ├── __init__.py  # Это файл инициализации пакета lib, который задаёт атрибут __version__ для указания текущей версии проекта.
 │   ├── aliases.py  # Это модуль, реализующий хранилище алиасов команд с поддержкой загрузки из файла, автообновления, подтверждения и учёта статистики.
-│   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url, команды status/tabs/eval/click/youtube.
+│   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
 │   ├── cdp_client.py  # Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click/wait_for_selector.
 │   ├── commands.py  # Матчер команд: выполнение shell, requires/provides.
 │   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
 │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
 │   ├── config_loader.py  # Это модуль‑загрузчик конфигурации, который определяет путь к файлу commands.json для указанного устройства, при необходимости создаёт каталог устройства и копирует туда файловый файл команд.
 │   ├── cron.py  # Планировщик как cron: читает cron/crontab.json, фоновый поток раз в секунду запускает сработавшие задания (script/shell), дедупликация по минуте, пропуски не догоняются, announce через TTS
-│   ├── cron_jobs.py  # Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true
+│   ├── cron_jobs.py  # Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true, пишет вывод скрипта (stdout) в лог всегда
 │   ├── cron_parse.py  # Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()
 │   ├── diagnose.py  # Диагностика: промпт, git/lock/rollback, прогон тестов.
 │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
@@ -161,6 +161,7 @@ voice
 │   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
 │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
 │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
+│   ├── test_cron_output.py  # Юнит-тесты логирования вывода cron-заданий: stdout в логе при успехе и ошибке, защита от не-bytes
 │   ├── test_cron_parse.py  # Юнит-тесты парсера cron-выражений: маски, шаги, диапазоны, имена, правило ИЛИ dom/dow, next_after, невалидные выражения
 │   ├── test_cron_scheduler.py  # Юнит-тесты планировщика cron: срабатывание по расписанию, дедупликация, disabled, script/shell, announce, таймаут, перезагрузка по mtime
 │   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json

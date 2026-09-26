@@ -1,20 +1,21 @@
 {
     "jobs": [
         {
-            "id": "test_video_and_volume",
-            "schedule": "0 6 * * *",
-            "script": "test_video_and_volume.ps1",
+            "id": "wake_video_and_volume",
+            "schedule": "15 9 * * *",
+            "script": "wake_video_and_volume.ps1",
+            "timeout": 180,
             "announce": false
         },
         {
             "id": "volume_up_1",
-            "schedule": "1 6 * * *",
+            "schedule": "16 9 * * *",
             "script": "volume_up.ps1",
             "announce": false
         },
         {
             "id": "volume_up_2",
-            "schedule": "2 6 * * *",
+            "schedule": "17 9 * * *",
             "script": "volume_up.ps1",
             "announce": false
         }

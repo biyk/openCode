@@ -174,14 +174,14 @@ class TestCompleteCli:
 
     def test_main_create_duplicate_laya_skips(self, monkeypatch, capsys):
         """Laya сводит новую фразу к существующей задаче — пропускаем."""
-        fake = type("D", (), {"detect": lambda s, text, **kw:
-                              ("помыть полы", 0.9, 0.1)})()
+        fake = type("D", (), {"detect": lambda s, text, **kw: ("помыть полы", 0.9, 0.1)})()
         g = self._google_create(existing=[{"id": "1", "title": "помыть полы"}])
         code = self._main_create(monkeypatch, g, "создай задачу вымыть пол",
                                  laya=fake)
         out = capsys.readouterr().out
         assert code == 0
         assert '"method": "laya"' in out
+        assert '"score": 0.9' in out and "(laya, c=0.90)" in out
         assert g.created == []
 
     def test_main_create_dedup_error_still_creates(self, monkeypatch, capsys):

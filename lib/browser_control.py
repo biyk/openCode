@@ -92,11 +92,15 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     return False
 
 
-def open_url(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Открывает url; если сайт уже открыт — переключается на вкладку."""
+def open_url(url: str, port: int = DEFAULT_PORT,
+             force_new: bool = False) -> Optional[dict]:
+    """Открывает url; если сайт уже открыт — переключается на вкладку.
+
+    force_new=True всегда создаёт новую вкладку (для exact-url сценариев).
+    """
     if not ensure_browser(port):
         return None
-    existing = _tab_for_site(_list_tabs(port), url)
+    existing = None if force_new else _tab_for_site(_list_tabs(port), url)
     if existing:
         _activate(existing, port)
         print(f"[Browser] Переключено на открытую вкладку: {existing.get('url')}")
@@ -127,8 +131,8 @@ def _cmd_tabs(port: int) -> int:
     return 0
 
 
-def _cmd_open_url(url: str, port: int) -> int:
-    return 0 if open_url(url, port) else 1
+def _cmd_open_url(url: str, port: int, force_new: bool = False) -> int:
+    return 0 if open_url(url, port, force_new) else 1
 
 
 def _cmd_eval(url_part: str, script: str, port: int) -> int:
@@ -178,6 +182,8 @@ def main(argv: Optional[list] = None) -> int:
         return _cmd_tabs(port)
     if cmd == "open-url":
         return _cmd_open_url(args[0], port)
+    if cmd == "open-new":
+        return _cmd_open_url(args[0], port, True)
     if cmd == "eval":
         return _cmd_eval(args[0], " ".join(args[1:]), port)
     if cmd == "click":

@@ -18,9 +18,9 @@ from lib.cron_parse import CronExpr
 DEFAULT_TIMEOUT = 120.0
 
 
-def _tail(data: bytes, limit: int = 300) -> str:
+def _tail(data: object, limit: int = 300) -> str:
     """Хвост вывода процесса как строка (для диагностики)."""
-    if not data:
+    if not isinstance(data, bytes):
         return ""
     text = data.decode("utf-8", errors="replace").strip()
     return text[-limit:]
@@ -58,9 +58,11 @@ class JobRunner:
                 self._announce("задание выполнено" if ok
                                else "задание не выполнено")
             return ok
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
+            out = _tail(getattr(error, "stdout", None), 500)
             self._print(f"[cron] «{job.job_id}»: таймаут "
-                        f"{job.timeout:.0f} с")
+                        f"{job.timeout:.0f} с"
+                        + (f", вывод: {out}" if out else ""))
             if job.announce:
                 self._announce("задание не выполнено")
             return False
@@ -90,6 +92,11 @@ class JobRunner:
             process = subprocess.run(
                 job.command, shell=True, cwd=self._dir,
                 capture_output=True, timeout=job.timeout)
+        # Вывод скрипта — единственная подсказка, где именно встал
+        # шаг задания, поэтому пишем его в лог и при успехе тоже.
+        out = _tail(process.stdout, 500)
+        if out:
+            self._print(f"[cron] «{job.job_id}» вывод: {out}")
         if process.returncode != 0:
             tail = _tail(process.stderr, 300)
             self._print(f"[cron] «{job.job_id}»: код "

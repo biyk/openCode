@@ -48,7 +48,8 @@ class TestLaya:
         v = ("помыть полы", 0.9, 0.1)
         d = FakeDecision(v, v)
         hit = find_duplicate("вымыть пол", existing, lambda: d)
-        assert hit == {"id": "a", "title": "помыть полы", "method": "laya"}
+        assert hit == {"id": "a", "title": "помыть полы",
+                       "method": "laya", "score": 0.9}
         batch, pair = d.calls
         assert batch["criteria"] == {
             "помыть полы": "открытая задача: помыть полы",
@@ -61,7 +62,8 @@ class TestLaya:
             "помыть полы": "открытая задача: помыть полы",
             "none": PAIR_NONE}
         assert pair["instructions"] == PAIR_INSTRUCTIONS
-        assert pair["threshold"] == DUP_THRESHOLD
+        # Порог применяет вызывающий, чтобы видеть c и при отказе.
+        assert pair["threshold"] == 0.0
 
     def test_laya_none_or_miss(self):
         # none (дубликата нет) или низкая уверенность — detect() отдаёт None
@@ -127,11 +129,28 @@ class TestLaya:
     def test_hit_in_second_batch(self):
         existing = [{"id": str(i), "title": f"задача {i}"}
                     for i in range(BATCH_OPTS + 2)]
-        verdict = (f"задача {BATCH_OPTS + 1}", 0.8, 0.1)
+        verdict = (f"задача {BATCH_OPTS + 1}", 0.95, 0.1)
         d = FakeDecision(None, verdict, verdict)
         hit = find_duplicate("новая", existing, lambda: d)
         assert hit["title"] == f"задача {BATCH_OPTS + 1}"
         assert len(d.calls) == 3
+
+    def test_confirm_low_confidence_not_duplicate(self):
+        # Правило пользователя: c < DUP_THRESHOLD — не дубликат.
+        v = ("полы", DUP_THRESHOLD - 0.3, 0.1)
+        d = FakeDecision(v, v)
+        assert find_duplicate("хлеб", [{"id": "a", "title": "полы"}],
+                              lambda: d) is None
+
+    def test_report_logs_rejected_score(self):
+        msgs: list = []
+        v = ("полы", DUP_THRESHOLD - 0.3, 0.1)
+        d = FakeDecision(v, v)
+        find_duplicate("хлеб", [{"id": "a", "title": "полы"}], lambda: d,
+                       report=msgs.append)
+        text = "\n".join(msgs)
+        assert "кандидат «полы»" in text
+        assert f"c={v[1]:.4f}" in text and "не дубликат" in text
 
 
 class TestReport:
@@ -139,4 +158,5 @@ class TestReport:
         v = ("полы", 0.9, 0.1)
         d = FakeDecision(v, v)
         hit = find_duplicate("пол", [{"title": "полы"}], lambda: d)
-        assert hit == {"id": "", "title": "полы", "method": "laya"}
+        assert hit == {"id": "", "title": "полы", "method": "laya",
+                       "score": 0.9}

@@ -14,10 +14,12 @@ from typing import Callable, Optional
 
 from lib.tasks_parse import _normalize
 
-# Порог подтверждающего парного вопроса (калибровка на живом сервере):
-# near-дубликаты >= 0.20, ложные семантически близкие пары <= 0.174
-# («убраться в комнате» vs «Инвентаризация. Коробки» = 0.1739).
-DUP_THRESHOLD = 0.19
+# Порог подтверждающего парного вопроса: дубликатом считается только
+# уверенный ответ Laya (c >= 0.9). Ниже — считаем задачу новой:
+# калибровка показала, что при низких c модель лепит дубли на
+# несвязанные пары («провести химические опыты» vs «Выбить квартплату
+# через суд» пришло с c=0.22).
+DUP_THRESHOLD = 0.9
 # Вопрос по пачке — только кандидат: годится любой выбор не none
 # (уверенность на 15 вариантах шумная, ~0.02-0.9).
 BATCH_THRESHOLD = 0.0
@@ -41,13 +43,21 @@ PAIR_NONE = "это разные задачи"
 
 def find_duplicate(title: str, existing: list[dict],
                    get_decision: Optional[Callable[[], object]] = None,
+                   report: Optional[Callable[[str], None]] = None,
                    ) -> Optional[dict]:
     """Ищет дубликат среди existing: exact, затем вопрос Laya.
 
-    Возвращает {"id", "title", "method"} (method: exact|laya) или None.
+    Возвращает {"id", "title", "method"} (method: exact|laya) или None;
+    для laya добавляет "score" — уверенность модели (для отладки порога).
     get_decision — фабрика LayaDecision (вызывается лениво, только
     когда exact не нашёлся и есть варианты); None — Laya не спрашиваем.
+    report — колбэк отладочных строк по каждому шагу Laya (видно и
+    отказ с конкретным c, а не только принятый дубликат).
     """
+    def say(msg: str) -> None:
+        if report is not None:
+            report(msg)
+
     query = _normalize(title)
     if not query:
         return None
@@ -59,11 +69,23 @@ def find_duplicate(title: str, existing: list[dict],
         return None
     decision = get_decision()
     if decision is None:
+        say("laya недоступна — ищем только строгим совпадением")
         return None
     for start in range(0, len(options), BATCH_OPTS):
-        task = _ask_laya(decision, title, options[start:start + BATCH_OPTS])
-        if task is not None and _confirm(decision, title, task):
-            return _hit(task, "laya")
+        batch = options[start:start + BATCH_OPTS]
+        task = _ask_laya(decision, title, batch)
+        if task is None:
+            say(f"пачка {start // BATCH_OPTS + 1}: кандидата нет")
+            continue
+        say(f"пачка {start // BATCH_OPTS + 1}: кандидат «{task['title']}»")
+        conf = _confirm(decision, title, task)
+        if conf is None:
+            say("подтверждение: модель ответила «разные задачи»")
+            continue
+        if conf >= DUP_THRESHOLD:
+            say(f"подтверждение: c={conf:.4f} >= {DUP_THRESHOLD} — дубликат")
+            return _hit(task, "laya", conf)
+        say(f"подтверждение: c={conf:.4f} < {DUP_THRESHOLD} — не дубликат")
     return None
 
 
@@ -82,14 +104,20 @@ def _ask_laya(decision, title: str, batch: list[dict]) -> Optional[dict]:
     return _pick(batch, verdict)
 
 
-def _confirm(decision, title: str, task: dict) -> bool:
-    """Парный вопрос: новая задача и кандидат — одно и то же?"""
+def _confirm(decision, title: str, task: dict) -> Optional[float]:
+    """Парный вопрос; возвращает уверенность ответа про кандидата.
+
+    Порог DUP_THRESHOLD применяет вызывающий (нужен сам c и при
+    отказе); None — модель выбрала none или ответила не про кандидата.
+    """
     name = str(task["title"])
     verdict = decision.detect(
         f"Новая задача: {title}",
         criteria={name: f"открытая задача: {name}", "none": PAIR_NONE},
-        instructions=PAIR_INSTRUCTIONS, threshold=DUP_THRESHOLD)
-    return bool(verdict) and verdict[0] == name
+        instructions=PAIR_INSTRUCTIONS, threshold=0.0)
+    if verdict and verdict[0] == name:
+        return float(verdict[1])
+    return None
 
 
 def _pick(batch: list[dict], verdict: Optional[tuple]) -> Optional[dict]:
@@ -102,7 +130,10 @@ def _pick(batch: list[dict], verdict: Optional[tuple]) -> Optional[dict]:
     return None
 
 
-def _hit(task: dict, method: str) -> dict:
-    """Запись отчёта о найденном дубликате."""
-    return {"id": str(task.get("id", "")),
-            "title": str(task.get("title", "")), "method": method}
+def _hit(task: dict, method: str, score: Optional[float] = None) -> dict:
+    """Запись отчёта о найденном дубликате (score — c Laya)."""
+    hit = {"id": str(task.get("id", "")),
+           "title": str(task.get("title", "")), "method": method}
+    if score is not None:
+        hit["score"] = round(score, 4)
+    return hit

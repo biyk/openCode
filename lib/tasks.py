@@ -75,7 +75,8 @@ class TaskHandler(TaskCompleteMixin):
             print(f"[Google] Ошибка загрузки задач (проверка дублей): {e}")
             return None
         return tasks_dedup.find_duplicate(
-            title, existing, get_laya_decision)
+            title, existing, get_laya_decision,
+            report=lambda m: print(f"[Dedup] {m}"))
 
     def authorize(self) -> None:
         """Обновляет доступ (refresh) или проходит интерактивный OAuth.
@@ -158,10 +159,11 @@ def main(argv: Optional[list] = None) -> int:
                 return 3
             dup = handler.find_duplicate(title)
             if dup:
+                score = f", c={dup['score']:.2f}" if "score" in dup else ""
                 print("task:", title)
                 print("duplicate:", json.dumps(dup, ensure_ascii=False))
                 print(f"Такая задача уже стоит: «{dup['title']}» "
-                      f"({dup['method']}) — пропускаем")
+                      f"({dup['method']}{score}) — пропускаем")
                 return 0
             task_id = handler.add_task(title)
             if not task_id:
