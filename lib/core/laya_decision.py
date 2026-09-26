@@ -3,8 +3,7 @@
 Распознанный текст → POST /v1/systemone с критеками команд из секции
 `decision` commands.json. Если уверенность >= порога и выбор — известная
 команда (не `none`), возвращает (command_id, confidence), иначе None.
-Автозапуск сервера (секция `auto_launch`) — по требованию при первом
-использовании, если /health на порту ещё не отвечает.
+Автозапуск сервера (секция `auto_launch`) — по требованию, если /health на порту не отвечает.
 """
 
 import json
@@ -14,7 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Callable, Optional
 
 from lib.core.output import TranscriptionOutput
 
@@ -103,8 +102,7 @@ class LayaDecision:
         while time.time() - t0 < HEALTH_TIMEOUT_S:
             if self._proc.poll() is not None:
                 self._print("error",
-                            f"[Decision] laya server завершился "
-                            f"(rc={self._proc.returncode})")
+                            f"[Decision] laya server завершился (rc={self._proc.returncode})")
                 self._proc = None
                 return False
             try:
@@ -115,21 +113,21 @@ class LayaDecision:
             except Exception:
                 pass
             time.sleep(1)
-        self._print("error",
-                    "[Decision] laya server не поднялся за "
+        self._print("error", "[Decision] laya server не поднялся за "
                     f"{HEALTH_TIMEOUT_S}с")
         return False
 
     def detect(self, text: str, criteria: Optional[dict] = None,
                instructions: Optional[str] = None,
                threshold: Optional[float] = None,
+               on_verdict: Optional[Callable[[str, float], None]] = None,
                ) -> Optional[tuple[str, float, float]]:
         """Вопрос-выбор к Laya: (выбор, уверенность, время запроса в сек.).
 
         Без аргументов — критерии команды из decision; с criteria/
-        instructions/threshold — свой вопрос (например, поиск
-        дубликата среди названий задач). None — ниже порога или сервер
-        недоступен.
+        instructions/threshold — свой вопрос (поиск дубликата среди
+        названий задач). None — мимо/ниже порога/нет сервера; on_verdict
+        зовётся вердиктом (choice, c) до отбрасывания — виден и none.
         """
         crit = dict(self._criteria if criteria is None else criteria)
         crit.setdefault("none", DEFAULT_NONE_DESCRIPTION)
@@ -162,6 +160,8 @@ class LayaDecision:
         answer = answers.get("command", {}) or {}
         choice = answer.get("choice")
         confidence = float(answer.get("confidence", 0.0))
+        if on_verdict is not None and choice is not None:
+            on_verdict(str(choice), confidence)
         if choice is None or choice == "none" or choice not in crit:
             return None
         if confidence < limit:
@@ -194,7 +194,6 @@ def build_decision(matcher, output: Optional[TranscriptionOutput] = None
     if decision.available:
         return decision
     if output is not None:
-        output.print_error(
-            "[Decision] Laya недоступна — decision-слой выключен, "
-            "работает legacy intent/opencode")
+        output.print_error("[Decision] Laya недоступна — decision-слой "
+                           "выключен, работает legacy intent/opencode")
     return None

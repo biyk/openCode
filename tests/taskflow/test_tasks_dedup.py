@@ -13,13 +13,19 @@ class FakeDecision:
         self._verdicts = list(verdicts) or [None]
         self.calls = []
 
-    def detect(self, text, criteria=None, instructions=None, threshold=None):
+    def detect(self, text, criteria=None, instructions=None, threshold=None,
+               on_verdict=None):
         self.calls.append({"text": text, "criteria": criteria,
                            "instructions": instructions,
                            "threshold": threshold})
-        if len(self._verdicts) > 1:
-            return self._verdicts.pop(0)
-        return self._verdicts[0]
+        verdict = (self._verdicts.pop(0) if len(self._verdicts) > 1
+                   else self._verdicts[0])
+        if verdict is None:
+            return None
+        if on_verdict is not None:
+            on_verdict(str(verdict[0]), float(verdict[1]))
+        # Как реальный detect: «none» — вердикт есть, а результата нет.
+        return None if str(verdict[0]) == "none" else verdict
 
 
 def _boom():
@@ -151,6 +157,32 @@ class TestLaya:
         text = "\n".join(msgs)
         assert "кандидат «полы»" in text
         assert f"c={v[1]:.4f}" in text and "не дубликат" in text
+
+    def test_report_logs_query_and_none_verdict(self):
+        msgs: list = []
+        d = FakeDecision(("none", 0.72, 0.431))
+        find_duplicate("хлеб", [{"id": "a", "title": "полы"},
+                                {"id": "b", "title": "цветы"}],
+                       lambda: d, report=msgs.append)
+        assert "ищу «хлеб» среди 2 открытых задач" in msgs[0]
+        assert "пачка 1: кандидата нет — Laya: «none» (c=0.72)" in msgs[1]
+        # списки кандидатов в трассе не печатаются
+        assert not any("кандидаты:" in m for m in msgs)
+
+    def test_report_without_verdict_says_no_verdict(self):
+        msgs: list = []
+        d = FakeDecision(None)
+        find_duplicate("хлеб", [{"id": "a", "title": "полы"}], lambda: d,
+                       report=msgs.append)
+        assert "кандидата нет (Laya без вердикта)" in "\n".join(msgs)
+
+    def test_report_candidate_logs_score_and_time(self):
+        msgs: list = []
+        v = ("полы", 0.93, 0.104)
+        d = FakeDecision(v, None)
+        find_duplicate("хлеб", [{"id": "a", "title": "полы"}], lambda: d,
+                       report=msgs.append)
+        assert "пачка 1: кандидат «полы» (c=0.93 t=0.104)" in "\n".join(msgs)
 
 
 class TestReport:

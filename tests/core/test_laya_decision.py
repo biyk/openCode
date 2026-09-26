@@ -41,61 +41,54 @@ def _ok_answer(choice, confidence):
                         "confidence": confidence}}
 
 
+def _mock_server(mocker, answer=None):
+    """/health — 200; POST /v1/systemone — answer (или пустые ответы)."""
+    def fake_urlopen(url_or_req, timeout=None):
+        if isinstance(url_or_req, str):
+            return FakeResponse()
+        return FakeResponse({"answers": answer or {}})
+
+    mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
+                 side_effect=fake_urlopen)
+
+
 class TestLayaDecisionDetect:
     def test_detects_command_above_threshold(self, mocker):
         """Уверенная известная команда возвращается с confidence."""
-        client = _make_client()
-
-        def fake_urlopen(url_or_req, timeout=None):
-            path = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
-            if path.endswith("/health"):
-                return FakeResponse()
-            return FakeResponse({"answers": _ok_answer("volumeup", 0.9),
-                                 "usage": {"input_tokens": 5, "latency_ms": 30}})
-
-        mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
-                     side_effect=fake_urlopen)
-        res = client.detect("алиса сделай громче")
+        _mock_server(mocker, _ok_answer("volumeup", 0.9))
+        res = _make_client().detect("алиса сделай громче")
         assert res[:2] == ("volumeup", 0.9) and res[2] >= 0.0
 
     def test_none_choice_returns_none(self, mocker):
         """Диалог без команды (`none`) не исполняется."""
-        client = _make_client()
+        _mock_server(mocker, _ok_answer("none", 0.9))
+        assert _make_client().detect("как дела") is None
 
-        def fake_urlopen(url_or_req, timeout=None):
-            if isinstance(url_or_req, str):
-                return FakeResponse()
-            return FakeResponse({"answers": _ok_answer("none", 0.9)})
-
-        mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
-                     side_effect=fake_urlopen)
-        assert client.detect("как дела") is None
+    def test_on_verdict_gets_none_choice(self, mocker):
+        """on_verdict видит вердикт (none, c), когда detect возвращает None."""
+        _mock_server(mocker, _ok_answer("none", 0.72))
+        seen = []
+        res = _make_client().detect("как дела",
+                                    on_verdict=lambda c, s: seen.append((c, s)))
+        assert res is None and seen == [("none", 0.72)]
 
     def test_below_threshold_returns_none(self, mocker):
         """Уверенность ниже порога — команда не запускается."""
-        client = _make_client()
+        _mock_server(mocker, _ok_answer("stop", 0.2))
+        assert _make_client().detect("выключи") is None
 
-        def fake_urlopen(url_or_req, timeout=None):
-            if isinstance(url_or_req, str):
-                return FakeResponse()
-            return FakeResponse({"answers": _ok_answer("stop", 0.2)})
-
-        mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
-                     side_effect=fake_urlopen)
-        assert client.detect("выключи") is None
+    def test_below_threshold_verdict_reported(self, mocker):
+        """Ниже порога — detect None, но on_verdict получает выбор и c."""
+        _mock_server(mocker, _ok_answer("stop", 0.2))
+        seen = []
+        res = _make_client().detect("выключи",
+                                    on_verdict=lambda c, s: seen.append((c, s)))
+        assert res is None and seen == [("stop", 0.2)]
 
     def test_unknown_choice_returns_none(self, mocker):
         """Выбранный кандидат вне критериев конфига игнорируется."""
-        client = _make_client()
-
-        def fake_urlopen(url_or_req, timeout=None):
-            if isinstance(url_or_req, str):
-                return FakeResponse()
-            return FakeResponse({"answers": _ok_answer("launch_missile", 0.99)})
-
-        mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
-                     side_effect=fake_urlopen)
-        assert client.detect("что-то странное") is None
+        _mock_server(mocker, _ok_answer("launch_missile", 0.99))
+        assert _make_client().detect("что-то странное") is None
 
     def test_server_down_returns_none(self, mocker):
         """Недоступный сервер — тихий None, без исключений."""
@@ -106,8 +99,7 @@ class TestLayaDecisionDetect:
 
     def test_criteria_always_include_none(self):
         """В критерии добавляется `none`, если его не задали."""
-        client = _make_client()
-        assert "none" in client._criteria
+        assert "none" in _make_client()._criteria
 
     def test_close_terminates_launched_server(self, mocker):
         """close() останавливает запущенный нами сервер."""

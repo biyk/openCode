@@ -51,12 +51,19 @@ def find_duplicate(title: str, existing: list[dict],
     для laya добавляет "score" — уверенность модели (для отладки порога).
     get_decision — фабрика LayaDecision (вызывается лениво, только
     когда exact не нашёлся и есть варианты); None — Laya не спрашиваем.
-    report — колбэк отладочных строк по каждому шагу Laya (видно и
-    отказ с конкретным c, а не только принятый дубликат).
+    report — колбэк трассировки поиска: что ищем и какой вердикт Laya
+    вынесла по пачке (c, t).
     """
     def say(msg: str) -> None:
         if report is not None:
             report(msg)
+
+    none_seen = {"heard": False, "c": 0.0}
+
+    def note_verdict(choice: str, confidence: float) -> None:
+        if choice == "none":
+            none_seen["heard"] = True
+            none_seen["c"] = confidence
 
     query = _normalize(title)
     if not query:
@@ -71,13 +78,21 @@ def find_duplicate(title: str, existing: list[dict],
     if decision is None:
         say("laya недоступна — ищем только строгим совпадением")
         return None
+    say(f"ищу «{title}» среди {len(options)} открытых задач")
     for start in range(0, len(options), BATCH_OPTS):
         batch = options[start:start + BATCH_OPTS]
-        task = _ask_laya(decision, title, batch)
+        num = start // BATCH_OPTS + 1
+        none_seen["heard"] = False
+        task, verdict = _ask_laya(decision, title, batch, note_verdict)
         if task is None:
-            say(f"пачка {start // BATCH_OPTS + 1}: кандидата нет")
+            if none_seen["heard"]:
+                say(f"пачка {num}: кандидата нет — Laya: «none» "
+                    f"(c={none_seen['c']:.2f})")
+            else:
+                say(f"пачка {num}: кандидата нет (Laya без вердикта)")
             continue
-        say(f"пачка {start // BATCH_OPTS + 1}: кандидат «{task['title']}»")
+        say(f"пачка {num}: кандидат «{task['title']}» "
+            f"(c={verdict[1]:.2f} t={verdict[2]:.3f})")
         conf = _confirm(decision, title, task)
         if conf is None:
             say("подтверждение: модель ответила «разные задачи»")
@@ -89,19 +104,23 @@ def find_duplicate(title: str, existing: list[dict],
     return None
 
 
-def _ask_laya(decision, title: str, batch: list[dict]) -> Optional[dict]:
-    """Один вопрос-выбор по пачке задач; кандидат или None.
+def _ask_laya(decision, title: str, batch: list[dict],
+              on_verdict: Optional[Callable[[str, float], None]] = None
+              ) -> tuple:
+    """Один вопрос-выбор по пачке: (кандидат, вердикт Laya) — оба могут быть None.
 
     Критерии — сами названия (значение — описание «открытая задача: …»):
     на такие ключи Laya отвечает надёжнее, чем на индексы t0..tN.
+    Вердикт (choice, c, t) возвращаем и когда кандидата нет — для трассы.
     """
     criteria = {str(t["title"]): f"открытая задача: {t['title']}"
                 for t in batch}
     criteria["none"] = NONE_DESCRIPTION
     verdict = decision.detect(
         f"Новая задача: {title}", criteria=criteria,
-        instructions=DUP_INSTRUCTIONS, threshold=BATCH_THRESHOLD)
-    return _pick(batch, verdict)
+        instructions=DUP_INSTRUCTIONS, threshold=BATCH_THRESHOLD,
+        on_verdict=on_verdict)
+    return _pick(batch, verdict), verdict
 
 
 def _confirm(decision, title: str, task: dict) -> Optional[float]:
