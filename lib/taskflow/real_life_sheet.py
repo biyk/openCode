@@ -1,4 +1,4 @@
-"""Клиент листов real_life_* для засчёта выполнения (эквивалент ✅, done.md).
+"""Клиент листов real_life_* для засчёта выполнения (✅ done.md и ⏹ stop.md).
 
 Транспорт поверх того же OAuth-токена, что и календарь: строка задачи A:T
 по task_uuid, событие-«галочка» colorId=7, журнал task_executions и
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from lib.google_calendar import GoogleCalendar
-from lib.taskflow.cells import as_float
+from lib.taskflow.cells import as_float, as_int
 from lib.taskflow.task_start_sheet import SHEET_NAME, SPREADSHEET_ID
 
 SHEET_TASKS = SHEET_NAME                      # real_life_tasks
@@ -83,6 +83,21 @@ class RealLifeSheet:
             range=f"{SHEET_TASKS}!A{row_idx}:T{row_idx}",
             valueInputOption="RAW",
             body={"values": [_pad(values)]}).execute()
+
+    def find_running_task(self) -> Optional[dict]:
+        """Первая запущенная задача (start_date != 0): row/uuid/title либо None.
+
+        Команда «завершил» без названия берёт её — это эквивалент ⏹. Если
+        запущено несколько, выбирается первая сверху вниз (как в JS-списке).
+        """
+        for offset, row in enumerate(self._get(f"{SHEET_TASKS}!A1:T")[1:],
+                                     start=2):
+            values = _pad(row)
+            if as_int(values[COLS["start_date"]]) != 0:
+                return {"row": offset,
+                        "uuid": str(values[UUID_COL]).strip(),
+                        "title": str(values[COLS["task_title"]] or "").strip()}
+        return None
 
     # ---------- событие-«галочка» ----------
 

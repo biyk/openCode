@@ -110,6 +110,16 @@ def money_reward(time_spent: int, average: float, date_mode: float) -> float:
     return money if math.isfinite(money) else 0.0
 
 
+def elapsed_minutes(start_ms: int, now_ms: int) -> int:
+    """Минуты в работе ⏹: длительность от start_date, округление вверх."""
+    return math.ceil((now_ms - start_ms) / 60_000)
+
+
+def average_task_time(old_time: int, elapsed_min: int) -> int:
+    """Новый план после ⏹: среднее старого плана и факта, вверх (§4.1)."""
+    return math.ceil((old_time + elapsed_min) / 2)
+
+
 def is_same_local_day(ms: int, now: datetime) -> bool:
     """Тот же локальный день, что и now (защита от повторного ✅ в тот же день)."""
     if not ms:
