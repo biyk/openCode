@@ -1,10 +1,47 @@
 """Мутации событий Google Calendar (миксин): перенос начала/конца, удаление."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional
+
+# Цвет «галочки» выполнения того же JS-приложения (done.md §0).
+DONE_COLOR = "7"
 
 
 class GoogleCalendarMutateMixin:
     """Миксин GoogleCalendar: изменение существующих событий."""
+
+    def put_done_event(self, summary: str, description: str, minutes: int,
+                       end: datetime, event_id: Optional[str] = None) -> str:
+        """Создаёт/обновляет событие-«галочку» (colorId=7) длительностью minutes.
+
+        Интервал — [end − minutes, end]: выполнение засчитывается по плану
+        и оканчивается в момент нажатия (done.md §7). Без event_id вставляет
+        новое событие, с event_id — обновляет существующее (так JS-клиент
+        превращает запланированное событие задачи в галочку). Пустая строка
+        — запрос не прошёл.
+        """
+        self._ensure_ready()
+        if end.tzinfo is None:
+            end = end.astimezone()
+        start = end - timedelta(minutes=max(1, int(minutes)))
+        body = {
+            "summary": summary,
+            "description": description,
+            "colorId": DONE_COLOR,
+            "start": {"dateTime": start.isoformat()},
+            "end": {"dateTime": end.isoformat()},
+        }
+        try:
+            events = self._calendar_service.events()
+            if event_id:
+                ev = events.update(calendarId=self._calendar_id,
+                                   eventId=event_id, body=body).execute()
+            else:
+                ev = events.insert(calendarId=self._calendar_id,
+                                   body=body).execute()
+        except Exception:
+            return ""
+        return str(ev.get("id", ""))
 
     def update_event_start(self, event_id: str, new_start: datetime) -> bool:
         """Меняет ТОЛЬКО дату начала события; конец остаётся как был.
