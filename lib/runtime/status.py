@@ -53,9 +53,11 @@ class StatusStore(StatusPollMixin):
     """Потокобезопасное хранилище статусов с фоновым опросом."""
 
     def __init__(self, status_file: Optional[str] = None,
-                 default_interval: float = 5.0, output: Any = None) -> None:
+                 default_interval: float = 5.0, output: Any = None,
+                 recheck_ttl: float = 5.0) -> None:
         self._status_file = status_file
         self._default_interval = default_interval
+        self._recheck_ttl = recheck_ttl
         self._output = output
         self._defs: dict[str, dict] = {}
         self._states: dict[str, bool] = {}
@@ -170,17 +172,6 @@ class StatusStore(StatusPollMixin):
         """Возвращает копию всех текущих значений."""
         with self._lock:
             return dict(self._states)
-
-    def ensure(self, names: list[str]) -> list[str]:
-        """Имена неактивных статусов (выключенные перепроверяются разово)."""
-        if not self.enabled:
-            return []
-        missing = [n for n in names if not self.is_active(n)]
-        still_missing = []
-        for name in missing:
-            if not self.refresh(name):
-                still_missing.append(name)
-        return still_missing
 
     def set(self, name: str, value: bool) -> None:
         """Оптимистично выставляет статус (после успешного шага команды)."""

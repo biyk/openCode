@@ -176,7 +176,7 @@ class TestStatusStoreChecks:
             os.unlink(path)
 
     def test_ensure_refreshes_when_off(self):
-        """ensure() синхронно перепроверяет выключенные."""
+        """ensure() с recheck_ttl=0 перепроверяет выключенные всегда."""
         calls = []
 
         def _checker():
@@ -188,7 +188,7 @@ class TestStatusStoreChecks:
         status_mod.BUILTIN_CHECKERS["proxy"] = _checker
         path = _write_status_file({"proxy": {"checker": "proxy"}})
         try:
-            store = StatusStore(path)
+            store = StatusStore(path, recheck_ttl=0.0)
             assert store.ensure(["proxy"]) == ["proxy"]
             assert store.ensure(["proxy"]) == []
         finally:

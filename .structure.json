@@ -162,7 +162,7 @@
   "tests/test_main_entry.py": "Тесты main: точка входа приложения.",
   "lib/skills/skill_actions.py": "Миксин реестра скиллов: исполнение шагов open_url/run_cmd.",
   "lib/runtime/status_checkers.py": "Встроенные проверки статусов: vpn, media, browser.",
-  "lib/runtime/status_poll.py": "Миксин хранилища статусов: фоновый опрос и заголовок консоли.",
+  "lib/runtime/status_poll.py": "Миксин хранилища статусов: фоновый опрос, заголовок консоли, ensure() с негативным TTL (свежие проверки не дублируются)",
   "lib/taskflow/tasks_parse.py": "Разбор фраз задач: триггеры, чистка, нормализация названий.",
   "lib/taskflow/tasks_complete.py": "Миксин задач: завершение по названию exact/substring/fuzzy.",
   "lib/taskflow/tasks_dedup.py": "Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).",
@@ -287,5 +287,15 @@
   "tests/google/test_shopping_sheet.py": "Юнит-тесты транспорта списка покупок: диапазоны, RAW/UNFORMATTED_VALUE, шапка на пустом листе, append и deleteDimension (без сети)",
   "tests/google/test_shopping_dedup.py": "Юнит-тесты совпадения названий: нормализация, точное/подстрочное/нечёткое сравнение и что выключенный dedup не блокирует добавление",
   "tests/google/test_shopping.py": "Юнит-тесты списка покупок: добавление с датой, дубликат при включённом dedup, удаление по названию, коды выхода CLI и озвучка (без сети)",
-  "tests/voice_cmd/test_shopping_match.py": "Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping"
+  "tests/voice_cmd/test_shopping_match.py": "Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping",
+  "tests/speed": "Скоростные замеры: обычные прогоны pytest их пропускают, запуск только с VOICE_SPEED=1",
+  "tests/speed/conftest.py": "Шлюз папки speed: skip всей папки без VOICE_SPEED=1 и сессионная фикстура bench (Recorder)",
+  "tests/speed/bench.py": "Рекордер замеров: медиана/min/max по повторам, история метрик в results.json и печать дельты к прежнему значению",
+  "tests/speed/results.json": "История скоростных метрик (медиана на каждый прогон) — сравнение «до/после» оптимизаций",
+  "tests/speed/test_config_speed.py": "Замеры конфиг-слоя: инициализация матчера, reload-noop, find_command (попадание/промах), alias resolve — проверка, что mtime-кэш действительно дёшев",
+  "tests/speed/test_status_speed.py": "Замеры проверок статусов (живые: TCP, PowerShell, CDP) и худшего пути блокировки команды ensure()/missing_requires()",
+  "tests/speed/test_laya_speed.py": "Замеры decision-слоя: latency /health, полного detect и доли health в detect (кэш health пока неактуален — 0.4%)",
+  "tests/speed/test_race_speed.py": "Замеры LLM-гонки: overhead classify и цена повторного одинакового запроса (baseline для кэша); живые провайдеры только с VOICE_SPEED_LIVE=1",
+  "SPEED.md": "Документ скоростных замеров: как запускать tests/speed, baseline-метрики, план оптимизаций и журнал «до/после»",
+  "tests/runtime/test_status_ensure_ttl.py": "Юнит-тесты негативного TTL ensure(): свежий статус не перепроверяется, протухший — перепроверяется, recheck_ttl=0 возвращает старое поведение"
 }
