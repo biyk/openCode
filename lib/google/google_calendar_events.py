@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core.errors import INFO, swallowed
 from lib.google.google_calendar_mutate import GoogleCalendarMutateMixin
 
 DEFAULT_REMINDER_MINUTES = 0
@@ -169,8 +170,10 @@ class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
         try:
             ev = self._calendar_service.events().get(
                 calendarId=self._calendar_id, eventId=event_id).execute()
-        except Exception:
-            return None
+        except Exception as e:
+            # 404 (нет такого события) — штатный ответ проверок «существует»,
+            # поэтому INFO, а не WARNING.
+            return swallowed("gcal.get_event", e, None, level=INFO)
         if not ev or not ev.get("id"):
             return None
         # Удалённое событие Google помечает status=cancelled, но get его

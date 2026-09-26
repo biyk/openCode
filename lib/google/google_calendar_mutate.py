@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core.errors import swallowed
+
 # Цвет «галочки» выполнения того же JS-приложения (done.md §0).
 DONE_COLOR = "7"
 
@@ -39,8 +41,8 @@ class GoogleCalendarMutateMixin:
             else:
                 ev = events.insert(calendarId=self._calendar_id,
                                    body=body).execute()
-        except Exception:
-            return ""
+        except Exception as e:
+            return swallowed("gcal.put_done_event", e, "")
         return str(ev.get("id", ""))
 
     def update_event_start(self, event_id: str, new_start: datetime) -> bool:
@@ -53,8 +55,8 @@ class GoogleCalendarMutateMixin:
         try:
             ev = self._calendar_service.events().get(
                 calendarId=self._calendar_id, eventId=event_id).execute()
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("gcal.update_event_start.get", e, False)
         start_raw = (ev.get("start") or {}).get("dateTime")
         end_raw = (ev.get("end") or {}).get("dateTime")
         if not start_raw or not end_raw:
@@ -72,8 +74,8 @@ class GoogleCalendarMutateMixin:
             self._calendar_service.events().patch(
                 calendarId=self._calendar_id, eventId=event_id,
                 body=body).execute()
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("gcal.update_event_start.patch", e, False)
         return True
 
     def update_event_end(self, event_id: str, new_end: datetime) -> bool:
@@ -86,8 +88,8 @@ class GoogleCalendarMutateMixin:
         try:
             ev = self._calendar_service.events().get(
                 calendarId=self._calendar_id, eventId=event_id).execute()
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("gcal.update_event_end.get", e, False)
         start_raw = (ev.get("start") or {}).get("dateTime")
         end_raw = (ev.get("end") or {}).get("dateTime")
         if not start_raw or not end_raw:
@@ -105,8 +107,8 @@ class GoogleCalendarMutateMixin:
             self._calendar_service.events().patch(
                 calendarId=self._calendar_id, eventId=event_id,
                 body=body).execute()
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("gcal.update_event_end.patch", e, False)
         return True
 
     def delete_event(self, event_id: str) -> bool:
@@ -116,5 +118,5 @@ class GoogleCalendarMutateMixin:
             self._calendar_service.events().delete(
                 calendarId=self._calendar_id, eventId=event_id).execute()
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("gcal.delete_event", e, False)

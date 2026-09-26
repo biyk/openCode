@@ -2,6 +2,8 @@
 
 from typing import Optional
 
+from lib.core.errors import swallowed
+
 
 class OrchestratorMemoryMixin:
     """Миксин Orchestrator: «запомни»/«забудь», кандидаты, контекст LLM."""
@@ -33,8 +35,8 @@ class OrchestratorMemoryMixin:
         ids = set(self._matcher.match_config())
         try:
             ids.update(self._matcher.sequences())
-        except Exception:
-            pass
+        except Exception as e:
+            swallowed("orchestrator.sequences", e)
         return ids
 
     def _say(self, message: str) -> None:

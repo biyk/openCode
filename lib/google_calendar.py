@@ -21,6 +21,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from lib.core.errors import swallowed
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin, GoogleOAuthError
 
 SCOPES = [
@@ -68,7 +69,8 @@ class GoogleCalendar(GoogleCalendarEventsMixin):
             try:
                 creds = Credentials.from_authorized_user_file(
                     self._token_file, SCOPES)
-            except Exception:
+            except (OSError, ValueError):
+                # Битый/нечитаемый token.json — штатный путь к reauth.
                 creds = None
 
         # Токен пригоден только если у него ЕСТЬ нужные scope: `creds.valid`
@@ -84,8 +86,9 @@ class GoogleCalendar(GoogleCalendarEventsMixin):
                     self._save_token(creds)
                     if self._token_has_scopes():
                         return creds
-                except Exception:
-                    pass
+                except Exception as e:
+                    # RefreshError/401 — идём в интерактивный консент ниже.
+                    swallowed("gcal.refresh_token", e)
 
         # Нет токена, протух, сломан рефреш или не хватает scope —
         # нужна новая интерактивная авторизация.
@@ -112,7 +115,7 @@ class GoogleCalendar(GoogleCalendarEventsMixin):
         try:
             data = loads(Path(self._token_file).read_text(
                 encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             return False
         granted = set(data.get("scopes") or [])
         return set(SCOPES).issubset(granted)
@@ -141,7 +144,7 @@ class GoogleCalendar(GoogleCalendarEventsMixin):
             creds = Credentials.from_authorized_user_file(
                 self._token_file, SCOPES)
             return bool(creds and creds.valid and self._token_has_scopes())
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def _ensure_ready(self) -> None:

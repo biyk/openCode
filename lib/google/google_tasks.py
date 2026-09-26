@@ -15,11 +15,12 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from lib.core.errors import INFO, swallowed
 from lib.google_calendar import GoogleOAuthError
 
 # Общий scope: tasks + calendar.events (чтобы консент не сломал напоминания,
-# token.json общий) + spreadsheets (Google Таблицы). Запрашиваем всё сразу —
-# повторный консент не затирает уже выданные права.
+# token.json общий) + spreadsheets. Запрашиваем всё сразу — повторный
+# консент не затирает уже выданные права.
 SCOPES = [
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/calendar.events",
@@ -59,7 +60,7 @@ class GoogleTasks:
             try:
                 creds = Credentials.from_authorized_user_file(
                     self._token_file, SCOPES)
-            except Exception:
+            except (OSError, ValueError):  # битый token.json — путь к reauth
                 creds = None
 
         usable = creds is not None and self._token_has_scopes()
@@ -72,8 +73,8 @@ class GoogleTasks:
                     self._save_token(creds)
                     if self._token_has_scopes():
                         return creds
-                except Exception:
-                    pass
+                except Exception as e:  # RefreshError/401 — ниже консент
+                    swallowed("tasks.refresh_token", e)
 
         if not Path(self._credentials_file).exists():
             raise GoogleOAuthError(
@@ -92,7 +93,7 @@ class GoogleTasks:
         """Покрывает ли token.json все нужные SCOPES (по файлу)."""
         try:
             data = loads(Path(self._token_file).read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             return False
         granted = set(data.get("scopes") or [])
         return set(SCOPES).issubset(granted)
@@ -128,8 +129,7 @@ class GoogleTasks:
         """
         self._ensure_ready()
         result = self._tasks_service.tasks().list(
-            tasklist=self._tasklist_id,
-            showCompleted=show_completed).execute()
+            tasklist=self._tasklist_id, showCompleted=show_completed).execute()
         return list(result.get("items", []))
 
     def complete_task(self, task_id: str) -> Optional[dict]:
@@ -158,8 +158,8 @@ class GoogleTasks:
         try:
             result = self._tasks_service.tasks().get(
                 tasklist=self._tasklist_id, task=task_id).execute()
-        except Exception:
-            return None
+        except Exception as e:  # 404 (нет задачи) — штатно для дедупа
+            return swallowed("tasks.get_task", e, None, level=INFO)
         if not result or not result.get("id"):
             return None
         # Google Tasks delete() помечает задачу deleted=true, но get её
@@ -178,8 +178,8 @@ class GoogleTasks:
             self._tasks_service.tasks().delete(
                 tasklist=self._tasklist_id, task=task_id).execute()
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            return swallowed("tasks.delete_task", e, False)
 
     # ---------- Служебное ----------
 
@@ -192,7 +192,7 @@ class GoogleTasks:
             creds = Credentials.from_authorized_user_file(
                 self._token_file, SCOPES)
             return bool(creds and creds.valid and self._token_has_scopes())
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def _ensure_ready(self) -> None:

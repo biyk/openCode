@@ -69,7 +69,7 @@ class LayaDecision:
         try:
             with urllib.request.urlopen(self._url + "/health", timeout=2) as r:
                 return r.status == 200
-        except Exception:
+        except (OSError, ValueError):  # сервер лежит — штатный ответ пробы
             return False
 
     def ensure_server(self) -> bool:
@@ -110,8 +110,8 @@ class LayaDecision:
                     if r.status == 200:
                         self._print("info", "[Decision] laya server готов")
                         return True
-            except Exception:
-                pass
+            except (OSError, ValueError):
+                pass  # сервер ещё прогревается, ждём до таймаута
             time.sleep(1)
         self._print("error", "[Decision] laya server не поднялся за "
                     f"{HEALTH_TIMEOUT_S}с")
@@ -174,7 +174,7 @@ class LayaDecision:
             self._proc.terminate()
             try:
                 self._proc.wait(timeout=10)
-            except Exception:
+            except subprocess.TimeoutExpired:
                 self._proc.kill()
             self._proc = None
 

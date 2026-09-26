@@ -1,5 +1,6 @@
 """Фоновый console opencode оркестратора (миксин)."""
 
+import queue
 import threading
 import time
 
@@ -25,7 +26,7 @@ class OrchestratorOpencodeMixin:
             try:
                 self._opencode_queue.get_nowait()
                 discarded += 1
-            except Exception:
+            except queue.Empty:
                 break
         if discarded:
             self._output.print_debug(
