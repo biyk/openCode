@@ -253,6 +253,9 @@ voice
 │   │   ├── test_laya_speed.py  # Замеры decision-слоя: latency /health, полного detect и доли health в detect (кэш health пока неактуален — 0.4%)
 │   │   ├── test_race_speed.py  # Замеры LLM-гонки: overhead classify и цена повторного одинакового запроса (baseline для кэша); живые провайдеры только с VOICE_SPEED_LIVE=1
 │   │   └── test_status_speed.py  # Замеры проверок статусов (живые: TCP, PowerShell, CDP) и худшего пути блокировки команды ensure()/missing_requires()
+│   ├── stt/  # Автотесты STT-слоя: сквозная интеграция распознавания речи в команду.
+│   │   ├── __init__.py  # Пакет автотестов STT-слоя.
+│   │   └── test_stt_command_integration.py  # Интеграция STT→команда: реальный worker.run() c настоящим Orchestrator и CommandMatcher (мокнуты лишь Vosk, микрофон и shell) — базовый матч, настройка {сильно}, ключ после команды, правило «ждём следующую строку», {{text}}, sequence по шагам, ложный вызов.
 │   ├── synth/  # Автотесты синтеза речи: движки, конвейер, воспроизведение.
 │   │   ├── test_tts.py  # Тесты TextToSpeech: синтез и фолбэки движков.
 │   │   ├── test_tts_control.py  # Тесты TTS: прерывания, колбэки, _decode_arg, CLI.
