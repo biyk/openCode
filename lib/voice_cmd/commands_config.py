@@ -36,6 +36,15 @@ class CommandConfigMixin:
         """Возвращает конфигурацию интеграции Google (calendar/tasks)."""
         return self._data.get("google", {})
 
+    def get_shopping_config(self) -> dict:
+        """Возвращает секцию `shopping` (таблица списка покупок + dedup).
+
+        Ключи: spreadsheet_id, sheet_name, sheet_id (gid листа) и
+        dedup {enabled, fuzzy, threshold} — поиск дубликатов при
+        добавлении; по умолчанию выключен.
+        """
+        return self._data.get("shopping", {})
+
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""
         return self._data.get("requires", {})

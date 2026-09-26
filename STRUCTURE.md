@@ -60,11 +60,13 @@ voice
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
 │   │   └── diagnose_supervisor.py  # Супервизор диагностики: вотчдог WORKING.MD и повторы.
-│   ├── google/  # Google API: события и мутации календаря, задачи.
-│   │   ├── __init__.py  # Инициализация пакета google — Google API: события и мутации календаря, задачи.
+│   ├── google/  # Google API: события и мутации календаря, задачи, лист списка покупок.
+│   │   ├── __init__.py  # Инициализация пакета google — Google API: события и мутации календаря, задачи, лист списка покупок.
 │   │   ├── google_calendar_events.py  # Миксин календаря: создание и чтение событий.
 │   │   ├── google_calendar_mutate.py  # Миксин мутаций календаря: перенос только даты начала/завершения события, удаление события по id, событие-«галочка» выполнения colorId=7
-│   │   └── google_tasks.py  # Это файл‑модуль, реализующий обёртку над Google Tasks API с OAuth‑авторизацией и предоставляющий методы для создания, получения и завершения задач.
+│   │   ├── google_tasks.py  # Это файл‑модуль, реализующий обёртку над Google Tasks API с OAuth‑авторизацией и предоставляющий методы для создания, получения и завершения задач.
+│   │   ├── shopping_dedup.py  # Совпадение названия товара с позициями списка: дубликат перед добавлением (выключен флагом) и поиск строки на удаление (exact → подстрока → fuzzy)
+│   │   └── shopping_sheet.py  # Клиент Google Таблицы «Список покупок»: чтение строк A:B, шапка, append товара, удаление строки через deleteDimension (индексы 0-based)
 │   ├── opencode/  # Запуск console opencode: раннер и чистка вывода.
 │   │   ├── __init__.py  # Инициализация пакета opencode — Запуск console opencode: раннер и чистка вывода.
 │   │   ├── opencode_cli.py  # Раннер console opencode: запуск, стрим, таймаут.
@@ -129,6 +131,7 @@ voice
 │   ├── google_calendar.py  # Календарь: OAuth, авторизация, CLI list.
 │   ├── plans.py  # Это модуль lib/plans.py, реализующий обработчик голосового запроса о текущих планах, который получает актуальное событие из Google Calendar и возвращает его для озвучки.
 │   ├── reminders.py  # Это модуль, реализующий обработку голосовых команд напоминаний, парсит время и текст, создаёт событие в Google Calendar и предоставляет CLI‑интерфейс.
+│   ├── shopping.py  # Команды «нужно купить {товар}» и «купил {товар}»: строка в таблицу списка покупок / поиск и удаление позиции; CLI python -m lib.shopping add|bought|list
 │   ├── sleep_event.py  # Команда «спать»: находит событие «СОН» (идущее/скорое) в Google Calendar и фиксирует его начало текущим временем; CLI python -m lib.sleep_event
 │   ├── task_start.py  # Команда «я начал/я приступил {задача}»: сегодняшнее мероприятие по названию → uuid из описания → старт задачи в таблице (пишется только G); CLI python -m lib.task_start
 │   ├── tasks.py  # Обработчик задач: создание, CLI complete/create.
@@ -191,14 +194,17 @@ voice
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
 │   │   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.
 │   │   └── test_diagnose_supervise.py  # Тесты диагностики: супервизор и прогон тестов.
-│   ├── google/  # Автотесты Google API: календарь и задачи, в том числе живые.
+│   ├── google/  # Автотесты Google API: календарь, задачи и список покупок, в том числе живые.
 │   │   ├── test_calendar_live.py  # Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.
 │   │   ├── test_google_calendar.py  # Тесты календаря: OAuth-авторизация.
 │   │   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.
 │   │   ├── test_google_calendar_done_event.py  # Юнит-тесты события-галочки colorId=7: insert с длительностью по плану, update по event_id, минута минимум, сбой API
 │   │   ├── test_google_calendar_events.py  # Тесты календаря: события-напоминания.
 │   │   ├── test_google_tasks.py  # Тесты Tasks: OAuth-авторизация.
-│   │   └── test_google_tasks_operations.py  # Тесты Tasks: создание и завершение задач.
+│   │   ├── test_google_tasks_operations.py  # Тесты Tasks: создание и завершение задач.
+│   │   ├── test_shopping.py  # Юнит-тесты списка покупок: добавление с датой, дубликат при включённом dedup, удаление по названию, коды выхода CLI и озвучка (без сети)
+│   │   ├── test_shopping_dedup.py  # Юнит-тесты совпадения названий: нормализация, точное/подстрочное/нечёткое сравнение и что выключенный dedup не блокирует добавление
+│   │   └── test_shopping_sheet.py  # Юнит-тесты транспорта списка покупок: диапазоны, RAW/UNFORMATTED_VALUE, шапка на пустом листе, append и deleteDimension (без сети)
 │   ├── opencode/  # Автотесты раннера console opencode.
 │   │   ├── test_opencode_cli.py  # Тесты opencode: поиск exe, запуск.
 │   │   ├── test_opencode_cli_clean.py  # Тесты opencode: чистка вывода агента.
@@ -259,7 +265,8 @@ voice
 │   │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
 │   │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
 │   │   ├── test_intent.py  # Тесты классификатора: detect.
-│   │   └── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
+│   │   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
+│   │   └── test_shopping_match.py  # Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping
 │   ├── __init__.py  # Пакет tests – автотесты проекта
 │   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами.
 │   ├── resurrector_control.py  # Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.
