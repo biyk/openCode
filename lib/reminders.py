@@ -4,7 +4,7 @@
 бельё») с Google Calendar через lib.google_calendar: каждое напоминание
 становится событием календаря со всплывающим уведомлением.
 
-Время разбирается детерминированным парсером (lib.time_parser),
+Время разбирается детерминированным парсером (lib.scheduling.time_parser),
 LLM не используется. Если время во фразе не указано — напоминание
 ставится через 60 минут от текущего момента.
 """
@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import Optional
 
 from lib.google_calendar import GoogleCalendar, GoogleOAuthError
-from lib.time_parser import ReminderSpec, TimeParseError, TimeParser
+from lib.scheduling.time_parser import ReminderSpec, TimeParseError, TimeParser
 from lib.tts import TextToSpeech
 
 TRIGGER_PHRASES = (

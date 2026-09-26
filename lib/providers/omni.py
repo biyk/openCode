@@ -2,7 +2,7 @@ import requests
 from typing import Optional
 from pathlib import Path
 
-from lib.logger import Logger
+from lib.core.logger import Logger
 from lib.providers import BaseLLMClient
 
 SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text()

@@ -4,9 +4,9 @@ import sys
 import threading
 from typing import Any, Optional
 
-from lib.logger import Logger
-from lib.tts_engines import TtsEnginesMixin
-from lib.tts_playback import TtsPlaybackMixin
+from lib.core.logger import Logger
+from lib.synth.tts_engines import TtsEnginesMixin
+from lib.synth.tts_playback import TtsPlaybackMixin
 
 
 class TextToSpeech(TtsEnginesMixin, TtsPlaybackMixin):

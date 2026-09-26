@@ -145,16 +145,16 @@ class TestMainEntryPoint:
         def raise_on_get(*args, **kwargs):
             raise RuntimeError("stub network")
 
-        monkeypatch.setitem(sys.modules, "lib.output", _stub(TranscriptionOutput=StubOutput))
+        monkeypatch.setitem(sys.modules, "lib.core.output", _stub(TranscriptionOutput=StubOutput))
         monkeypatch.setitem(
-            sys.modules, "lib.commands", _stub(CommandMatcher=StubMatcher)
+            sys.modules, "lib.voice_cmd.commands", _stub(CommandMatcher=StubMatcher)
         )
-        monkeypatch.setitem(sys.modules, "lib.logger", _stub(Logger=StubLogger))
+        monkeypatch.setitem(sys.modules, "lib.core.logger", _stub(Logger=StubLogger))
         monkeypatch.setitem(sys.modules, "lib.tts", _stub(TextToSpeech=StubTTS))
         monkeypatch.setitem(sys.modules, "lib.providers", _stub())
         monkeypatch.setitem(
             sys.modules,
-            "lib.config_loader",
+            "lib.voice_cmd.config_loader",
             _stub(get_device_commands_path=lambda *a, **k: "commands.json"),
         )
         monkeypatch.setitem(

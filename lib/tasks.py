@@ -1,7 +1,7 @@
 """Обработчик голосовых команд задач («добавь задачу …», «заверши задачу …»).
 
 Создание: связывает распознанный текст («добавь задачу: купить хлеб») с
-Google Tasks через lib.google_tasks: текст без триггера становится
+Google Tasks через lib.google.google_tasks: текст без триггера становится
 названием задачи в списке по умолчанию.
 
 Завершение: «заверши задачу купить хлеб» загружает незавершённые задачи,
@@ -18,13 +18,13 @@ import platform
 import sys
 from typing import Optional
 
-from lib import tasks_dedup
-from lib.commands import CommandMatcher
-from lib.config_loader import get_device_commands_path
-from lib.google_tasks import GoogleOAuthError, GoogleTasks
-from lib.laya_decision import LayaDecision
-from lib.tasks_complete import TaskCompleteMixin
-from lib.tasks_parse import TRIGGER_PHRASES, _canonicalize, _clean_candidate
+from lib.taskflow import tasks_dedup
+from lib.voice_cmd.commands import CommandMatcher
+from lib.voice_cmd.config_loader import get_device_commands_path
+from lib.google.google_tasks import GoogleOAuthError, GoogleTasks
+from lib.core.laya_decision import LayaDecision
+from lib.taskflow.tasks_complete import TaskCompleteMixin
+from lib.taskflow.tasks_parse import TRIGGER_PHRASES, _canonicalize, _clean_candidate
 from lib.tts import TextToSpeech
 
 

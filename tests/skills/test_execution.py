@@ -4,7 +4,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from lib.skills import SkillRegistry
+from lib.skills.skills import SkillRegistry
 
 
 class TestSkillRegistryExecution:
@@ -30,8 +30,8 @@ class TestSkillRegistryExecution:
             "steps": [{"action": "open_url", "params": {"url": "https://youtube.com"}}],
         }
         registry, _ = self._make_registry(tmp_path, {"youtube": skill_data})
-        with patch("lib.skill_actions.platform.system", return_value="windows"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="windows"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry.execute("youtube")
         assert result is True
@@ -62,8 +62,8 @@ class TestSkillRegistryExecution:
             "steps": [{"action": "open_url", "params": {"url": "${url}"}}],
         }
         registry, _ = self._make_registry(tmp_path, {"dynamic_url": skill_data})
-        with patch("lib.skill_actions.platform.system", return_value="windows"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="windows"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry.execute("dynamic_url", {"url": "https://test.com"})
         assert result is True
@@ -116,7 +116,7 @@ class TestSkillRegistryExecution:
             "steps": [{"action": "run_cmd", "params": {"cmd": "echo hello"}}],
         }
         registry, _ = self._make_registry(tmp_path, {"cmd_skill": skill_data})
-        with patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry.execute("cmd_skill")
         assert result is True
@@ -131,7 +131,7 @@ class TestSkillRegistryExecution:
             "steps": [{"action": "run_cmd", "params": {"cmd": "exit 1"}}],
         }
         registry, _ = self._make_registry(tmp_path, {"fail_cmd": skill_data})
-        with patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
             result = registry.execute("fail_cmd")
         assert result is False

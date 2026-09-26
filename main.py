@@ -17,20 +17,20 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from lib.cron import CronScheduler  # noqa: E402
-from lib.output import TranscriptionOutput  # noqa: E402
-from lib.transcription_worker import TranscriptionWorker  # noqa: E402
+from lib.scheduling.cron import CronScheduler  # noqa: E402
+from lib.core.output import TranscriptionOutput  # noqa: E402
+from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
 
 # ---------- Главная функция ----------
 
 
 def main():
-    from lib.version_checker import start_version_checker
-    from lib.version_gate import snapshot as _snapshot
+    from lib.versioning.version_checker import start_version_checker
+    from lib.versioning.version_gate import snapshot as _snapshot
 
     snap = _snapshot()
     # Проверка перед стартом (быстрый fail)
-    from lib.version_gate import check_versions_or_exit
+    from lib.versioning.version_gate import check_versions_or_exit
 
     check_versions_or_exit(snap.app_version, snap.project_version)
 

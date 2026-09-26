@@ -12,7 +12,7 @@ metadata:
 
 Parse a spoken task request («добавь задачу купить хлеб») into a task title and create it in Google Tasks (default list «@default»). Deterministic parser (no LLM); the text after the trigger phrase becomes the task title.
 
-This is the exact behavior of `TaskHandler` in `lib/tasks.py` + `GoogleTasks.create_task` in `lib/google_tasks.py`.
+This is the exact behavior of `TaskHandler` in `lib/tasks.py` + `GoogleTasks.create_task` in `lib/google/google_tasks.py`.
 
 ## How to execute
 

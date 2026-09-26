@@ -3,7 +3,7 @@
 import platform
 from unittest.mock import patch
 
-from lib.skills import get_skills_dir
+from lib.skills.skills import get_skills_dir
 
 
 class TestGetSkillsDir:
@@ -12,7 +12,7 @@ class TestGetSkillsDir:
     def test_returns_path_with_hostname(self, monkeypatch):
         """get_skills_dir возвращает путь с папкой skills."""
         monkeypatch.setattr(platform, "node", lambda: "TEST-HOST")
-        with patch("lib.config_loader.get_device_commands_path",
+        with patch("lib.voice_cmd.config_loader.get_device_commands_path",
                    lambda host: f"/config/{host}/commands.json"):
             path = get_skills_dir()
         assert path.name == "skills"

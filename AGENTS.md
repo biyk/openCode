@@ -8,7 +8,7 @@
 ## 1. Version gate (NOW)
 - `main.py` periodically checks that **app version** (`lib/__init__.py::__version__`) equals **project version** (`VERSION`).
 - On mismatch the process must exit (hard exit from the version checker thread via `os._exit(1)`).
-- If tests fail or voice behaviour changed: verify `lib/version_gate.py` + `lib/version_checker.py` first.
+- If tests fail or voice behaviour changed: verify `lib/versioning/version_gate.py` + `lib/versioning/version_checker.py` first.
 
 ## 2. Build / Lint / Test Commands
 
@@ -21,10 +21,10 @@ pip install flake8 pytest-mock
 python -m pytest tests/ -v
 
 # Run a single test file
-python -m pytest tests/test_orchestrator.py -v
+python -m pytest tests/core/test_orchestrator.py -v
 
 # Run a single test
-python -m pytest tests/test_orchestrator.py::test_process_text_llm_answer -v
+python -m pytest tests/core/test_orchestrator.py::test_process_text_llm_answer -v
 
 # IMPORTANT: bare `pytest.exe` (Scripts\pytest.exe) fails to import lib.* on
 # Windows because its sys.path doesn't include repo root. Always use
@@ -41,14 +41,38 @@ python main.py
 
 ## 3. Architecture (wiring)
 - `main.py` — entry point. Main loop: Vosk STT → `_fix_encoding` → `_process_text` → `Orchestrator.process_text`.
-- `lib/orchestrator.py` — deterministic core; reminders are created via `ReminderHandler`.
+- `lib/core/orchestrator.py` — deterministic core; reminders are created via `ReminderHandler`.
+
+### 3.1 Разкладка `lib/` по доменам
+`tests/` зеркалит те же имена папок (`tests/core/`, `tests/google/`, …).
+- `lib/core/` — `orchestrator*`, `laya_decision`, `logger`, `output`.
+- `lib/stt/` — `transcription_worker`, `vosk_model`.
+- `lib/synth/` — `tts_engines`, `tts_playback` (миксины для `lib.tts`).
+- `lib/opencode/` — `opencode_cli`, `opencode_output`.
+- `lib/voice_cmd/` — `commands*`, `aliases`, `intent`, `config_loader` (шаг 1, §10).
+- `lib/scheduling/` — `cron*`, `time_parser*`.
+- `lib/taskflow/` — `tasks_*`, `task_start_sheet`.
+- `lib/google/` — `google_calendar_events|mutate`, `google_tasks`.
+- `lib/browser/` — `cdp_client`, `youtube_browser`, `youtube_live`.
+- `lib/runtime/` — `status*`, `media`.
+- `lib/skills/` — `skills`, `skill_actions`.
+- `lib/diagnostics/` — `diagnose_cli`, `diagnose_supervisor`.
+- `lib/versioning/` — `version`, `version_gate`, `version_checker`.
+- `lib/providers/` — LLM-провайдеры (без изменений).
+
+Правило: модули, которые вызываются как **`python -m lib.X`** из
+`targets/*/commands.json` и SKILL.md (`tts`, `reminders`, `tasks`, `plans`,
+`diagnose`, `browser_control`, `google_calendar`, `sleep_event`,
+`wake_event`, `task_start`), остаются **в корне `lib/`** — их пути — часть
+конфига и навыков; перенос сломает живые shell-команды. Всё остальное —
+по подпапкам.
 
 ## 4. Google Calendar reminders (only)
 - `lib/google_calendar.py` — reminders are **Calendar events** (not Tasks). Uses OAuth (`credentials.json` + `token.json`, token in .gitignore).
 - `lib/reminders.py` — «напомни мне …» parsing is deterministic; if time missing → **+60 минут**.
 - `lib/google_calendar.py` checks token scope by reading `token.json` scopes; if `calendar.events` missing → starts interactive consent.
-- `lib/google_tasks.py` — **tasks** («добавь задачу …») are items in Google Tasks (default list `@default`), created via `lib/tasks.py::TaskHandler`. Uses the same `token.json`; scope `tasks` + `calendar.events` requested together so re-auth does not break reminders.
-- Feature flag: `google.tasks.enabled` in `targets/<host>/commands.json` (wired in `main.py`), orchestrator step 0.6 in `lib/orchestrator.py`.
+- `lib/google/google_tasks.py` — **tasks** («добавь задачу …») are items in Google Tasks (default list `@default`), created via `lib/tasks.py::TaskHandler`. Uses the same `token.json`; scope `tasks` + `calendar.events` requested together so re-auth does not break reminders.
+- Feature flag: `google.tasks.enabled` in `targets/<host>/commands.json` (wired in `main.py`), orchestrator step 0.6 in `lib/core/orchestrator.py`.
 
 ## 5. Audio + stop words
 - `TranscriptionWorker` keeps recording mic audio while TTS plays (stop-word recognition stays active).

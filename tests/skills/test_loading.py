@@ -2,7 +2,7 @@
 
 import json
 
-from lib.skills import SkillRegistry
+from lib.skills.skills import SkillRegistry
 
 
 class TestSkillRegistryLoading:

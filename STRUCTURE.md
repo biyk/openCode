@@ -41,69 +41,95 @@ voice
 │   │   └── wake_video_and_volume.ps1  # Утреннее задание cron: открывает тестовый ролик YouTube новой вкладкой (open-new), проверяет по шагам, что он играет (CDP eval, попытка play() при паузе), и выставляет громкость 30%; провал шага — ошибка задания
 │   └── crontab.json  # Расписание заданий (аналог crontab): классические 5-полевые cron-выражения, задания типов script (cron/jobs/) и shell, флаги enabled/announce/timeout. Утренний сценарий: включить тестовый ролик YouTube (wake_video_and_volume) и поднять громкость (volume_up).
 ├── lib/
+│   ├── browser/  # Браузер через CDP: клиент, сценарии YouTube, live-проверки.
+│   │   ├── __init__.py  # Инициализация пакета browser — Браузер через CDP: клиент, сценарии YouTube, live-проверки.
+│   │   ├── cdp_client.py  # Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click/wait_for_selector.
+│   │   ├── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.
+│   │   └── youtube_live.py  # Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, определяет состояние плеера (играет/пауза) и закрывает вкладку.
+│   ├── core/  # Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
+│   │   ├── __init__.py  # Инициализация пакета core — Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
+│   │   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
+│   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
+│   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
+│   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
+│   │   ├── orchestrator_memory.py  # Миксин оркестратора: голосовое обучение алиасам запомни/забудь, кандидаты, контекст LLM.
+│   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
+│   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
+│   │   └── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
+│   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
+│   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
+│   │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
+│   │   └── diagnose_supervisor.py  # Супервизор диагностики: вотчдог WORKING.MD и повторы.
+│   ├── google/  # Google API: события и мутации календаря, задачи.
+│   │   ├── __init__.py  # Инициализация пакета google — Google API: события и мутации календаря, задачи.
+│   │   ├── google_calendar_events.py  # Миксин календаря: создание и чтение событий.
+│   │   ├── google_calendar_mutate.py  # Миксин мутаций календаря: перенос только даты начала/завершения события, удаление события по id
+│   │   └── google_tasks.py  # Это файл‑модуль, реализующий обёртку над Google Tasks API с OAuth‑авторизацией и предоставляющий методы для создания, получения и завершения задач.
+│   ├── opencode/  # Запуск console opencode: раннер и чистка вывода.
+│   │   ├── __init__.py  # Инициализация пакета opencode — Запуск console opencode: раннер и чистка вывода.
+│   │   ├── opencode_cli.py  # Раннер console opencode: запуск, стрим, таймаут.
+│   │   └── opencode_output.py  # Миксин раннера opencode: чистка вывода агента.
 │   ├── providers/
 │   │   ├── __init__.py  # Это модуль инициализации пакета провайдеров LLM, в котором объявлен базовый абстрактный класс клиента и экспортированы конкретные реализации клиентов.
 │   │   ├── lmstudio.py  # Файл lib/providers/lmstudio.py содержит класс LmStudioClient, реализующий клиент для локального сервера LM Studio с OpenAI‑совместимым API, позволяя отправлять текстовые запросы, получать ответы модели и вести журнал истории.
 │   │   ├── manager.py  # Менеджер LLM провайдеров с поддержкой переключения.
 │   │   ├── omni.py  # Это файл, реализующий клиент OmniRouterClient для общения с локальным прокси‑сервером OmniRouter (OpenAI‑совместимым API) и интегрирующий его в систему логирования и вывода.
 │   │   └── race.py  # Это файл, определяющий класс RaceClient, который параллельно отправляет запросы двум провайдерам LLM (OmniRouterClient и LmStudioClient) и возвращает первый полученный ответ, реализуя конкурентный запрос и логирование.
+│   ├── runtime/  # Состояние системы: хранилище статусов, проверки, медиа-сессии.
+│   │   ├── __init__.py  # Инициализация пакета runtime — Состояние системы: хранилище статусов, проверки, медиа-сессии.
+│   │   ├── media.py  # Это модуль, который через PowerShell‑скрипт проверяет наличие и состояние медиа‑сессий в Windows, предоставляя функции для определения, воспроизводится ли медиа и есть ли активные медиа‑сессии, что необходимо для управления воспроизведением в проекте.
+│   │   ├── status.py  # Хранилище статусов: опрос, кэш, _run_check.
+│   │   ├── status_checkers.py  # Встроенные проверки статусов: vpn, media, browser.
+│   │   └── status_poll.py  # Миксин хранилища статусов: фоновый опрос и заголовок консоли.
+│   ├── scheduling/  # Расписание и время: cron-планировщик, парсер cron, парсер времени.
+│   │   ├── __init__.py  # Инициализация пакета scheduling — Расписание и время: cron-планировщик, парсер cron, парсер времени.
+│   │   ├── cron.py  # Планировщик как cron: читает cron/crontab.json, фоновый поток раз в секунду запускает сработавшие задания (script/shell), дедупликация по минуте, пропуски не догоняются, announce через TTS
+│   │   ├── cron_jobs.py  # Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true, пишет вывод скрипта (stdout) в лог всегда
+│   │   ├── cron_parse.py  # Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()
+│   │   ├── time_parser.py  # Парсер времени напоминаний: TimeParser и ReminderSpec.
+│   │   └── time_parser_strategies.py  # Миксин парсера времени: через/завтра/часы/дни недели.
+│   ├── skills/  # Скиллы: реестр и исполнение шагов.
+│   │   ├── __init__.py  # Инициализация пакета skills — Скиллы: реестр и исполнение шагов.
+│   │   ├── skill_actions.py  # Миксин реестра скиллов: исполнение шагов open_url/run_cmd.
+│   │   └── skills.py  # Реестр скиллов: загрузка, поиск по фразе, исполнение.
+│   ├── stt/  # Распознавание речи: воркер Vosk и загрузка моделей.
+│   │   ├── __init__.py  # Инициализация пакета stt — Распознавание речи: воркер Vosk и загрузка моделей.
+│   │   ├── transcription_worker.py  # Голосовой цикл: Vosk STT, оркестратор, микрофон.
+│   │   └── vosk_model.py  # Загрузка моделей Vosk при необходимости.
+│   ├── synth/  # Движки и воспроизведение TTS (миксины для lib.tts).
+│   │   ├── __init__.py  # Инициализация пакета synth — Движки и воспроизведение TTS (миксины для lib.tts).
+│   │   ├── tts_engines.py  # Миксин TTS: движки gTTS/Piper и временные файлы.
+│   │   └── tts_playback.py  # Миксин TTS: SAPI, плееры, параллельный конвейер.
+│   ├── taskflow/  # Логика задач: разбор фраз, завершение, дедупликация, таблица старта.
+│   │   ├── __init__.py  # Инициализация пакета taskflow — Логика задач: разбор фраз, завершение, дедупликация, таблица старта.
+│   │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
+│   │   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
+│   │   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
+│   │   └── tasks_parse.py  # Разбор фраз задач: триггеры, чистка, нормализация названий.
+│   ├── versioning/  # Версии приложения: gate, checker и доступ к __version__.
+│   │   ├── __init__.py  # Инициализация пакета versioning — Версии приложения: gate, checker и доступ к __version__.
+│   │   ├── version.py  # Это модуль, который импортирует переменную __version__ из пакета lib и предоставляет функцию get_version() для получения текущей версии проекта.
+│   │   ├── version_checker.py  # Это модуль lib/versioning/version_checker.py, который в отдельном потоке периодически проверяет совпадение версии приложения и проекта и завершает программу при обнаружении несоответствия.
+│   │   └── version_gate.py  # Файл lib/versioning/version_gate.py отвечает за проверку соответствия версии приложения и версии проекта, считывает номер версии из файла VERSION и при несовпадении завершает работу.
+│   ├── voice_cmd/  # Первый уровень команд: матчер commands.json, алиасы, intent, конфиг устройств.
+│   │   ├── __init__.py  # Инициализация пакета voice_cmd — Первый уровень команд: матчер commands.json, алиасы, intent, конфиг устройств.
+│   │   ├── aliases.py  # Это модуль, реализующий хранилище алиасов команд с поддержкой загрузки из файла, автообновления, подтверждения и учёта статистики.
+│   │   ├── commands.py  # Матчер команд: выполнение shell, requires/provides.
+│   │   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
+│   │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
+│   │   ├── config_loader.py  # Это модуль‑загрузчик конфигурации, который определяет путь к файлу commands.json для указанного устройства, при необходимости создаёт каталог устройства и копирует туда файловый файл команд.
+│   │   └── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
 │   ├── __init__.py  # Это файл инициализации пакета lib, который задаёт атрибут __version__ для указания текущей версии проекта.
-│   ├── aliases.py  # Это модуль, реализующий хранилище алиасов команд с поддержкой загрузки из файла, автообновления, подтверждения и учёта статистики.
 │   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
-│   ├── cdp_client.py  # Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click/wait_for_selector.
-│   ├── commands.py  # Матчер команд: выполнение shell, requires/provides.
-│   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
-│   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
-│   ├── config_loader.py  # Это модуль‑загрузчик конфигурации, который определяет путь к файлу commands.json для указанного устройства, при необходимости создаёт каталог устройства и копирует туда файловый файл команд.
-│   ├── cron.py  # Планировщик как cron: читает cron/crontab.json, фоновый поток раз в секунду запускает сработавшие задания (script/shell), дедупликация по минуте, пропуски не догоняются, announce через TTS
-│   ├── cron_jobs.py  # Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true, пишет вывод скрипта (stdout) в лог всегда
-│   ├── cron_parse.py  # Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()
 │   ├── diagnose.py  # Диагностика: промпт, git/lock/rollback, прогон тестов.
-│   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
-│   ├── diagnose_supervisor.py  # Супервизор диагностики: вотчдог WORKING.MD и повторы.
 │   ├── google_calendar.py  # Календарь: OAuth, авторизация, CLI list.
-│   ├── google_calendar_events.py  # Миксин календаря: создание и чтение событий.
-│   ├── google_calendar_mutate.py  # Миксин мутаций календаря: перенос только даты начала/завершения события, удаление события по id
-│   ├── google_tasks.py  # Это файл‑модуль, реализующий обёртку над Google Tasks API с OAuth‑авторизацией и предоставляющий методы для создания, получения и завершения задач.
-│   ├── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
-│   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
-│   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
-│   ├── media.py  # Это модуль, который через PowerShell‑скрипт проверяет наличие и состояние медиа‑сессий в Windows, предоставляя функции для определения, воспроизводится ли медиа и есть ли активные медиа‑сессии, что необходимо для управления воспроизведением в проекте.
-│   ├── opencode_cli.py  # Раннер console opencode: запуск, стрим, таймаут.
-│   ├── opencode_output.py  # Миксин раннера opencode: чистка вывода агента.
-│   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
-│   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
-│   ├── orchestrator_memory.py  # Миксин оркестратора: голосовое обучение алиасам запомни/забудь, кандидаты, контекст LLM.
-│   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
-│   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
-│   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
 │   ├── plans.py  # Это модуль lib/plans.py, реализующий обработчик голосового запроса о текущих планах, который получает актуальное событие из Google Calendar и возвращает его для озвучки.
 │   ├── reminders.py  # Это модуль, реализующий обработку голосовых команд напоминаний, парсит время и текст, создаёт событие в Google Calendar и предоставляет CLI‑интерфейс.
-│   ├── skill_actions.py  # Миксин реестра скиллов: исполнение шагов open_url/run_cmd.
-│   ├── skills.py  # Реестр скиллов: загрузка, поиск по фразе, исполнение.
 │   ├── sleep_event.py  # Команда «спать»: находит событие «СОН» (идущее/скорое) в Google Calendar и фиксирует его начало текущим временем; CLI python -m lib.sleep_event
-│   ├── status.py  # Хранилище статусов: опрос, кэш, _run_check.
-│   ├── status_checkers.py  # Встроенные проверки статусов: vpn, media, browser.
-│   ├── status_poll.py  # Миксин хранилища статусов: фоновый опрос и заголовок консоли.
 │   ├── task_start.py  # Команда «я начал/я приступил {задача}»: сегодняшнее мероприятие по названию → uuid из описания → старт задачи в таблице (пишется только G); CLI python -m lib.task_start
-│   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
 │   ├── tasks.py  # Обработчик задач: создание, CLI complete/create.
-│   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
-│   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
-│   ├── tasks_parse.py  # Разбор фраз задач: триггеры, чистка, нормализация названий.
-│   ├── time_parser.py  # Парсер времени напоминаний: TimeParser и ReminderSpec.
-│   ├── time_parser_strategies.py  # Миксин парсера времени: через/завтра/часы/дни недели.
-│   ├── transcription_worker.py  # Голосовой цикл: Vosk STT, оркестратор, микрофон.
 │   ├── tts.py  # Синтез речи: TextToSpeech поверх движков и плеера.
-│   ├── tts_engines.py  # Миксин TTS: движки gTTS/Piper и временные файлы.
-│   ├── tts_playback.py  # Миксин TTS: SAPI, плееры, параллельный конвейер.
-│   ├── version.py  # Это модуль, который импортирует переменную __version__ из пакета lib и предоставляет функцию get_version() для получения текущей версии проекта.
-│   ├── version_checker.py  # Это модуль lib/version_checker.py, который в отдельном потоке периодически проверяет совпадение версии приложения и проекта и завершает программу при обнаружении несоответствия.
-│   ├── version_gate.py  # Файл lib/version_gate.py отвечает за проверку соответствия версии приложения и версии проекта, считывает номер версии из файла VERSION и при несовпадении завершает работу.
-│   ├── vosk_model.py  # Загрузка моделей Vosk при необходимости.
-│   ├── wake_event.py  # Команда «я проснулся»: находит ближайшее начавшееся событие «СОН» и фиксирует его завершение текущим временем; CLI python -m lib.wake_event
-│   ├── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.
-│   └── youtube_live.py  # Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, определяет состояние плеера (играет/пауза) и закрывает вкладку.
+│   └── wake_event.py  # Команда «я проснулся»: находит ближайшее начавшееся событие «СОН» и фиксирует его завершение текущим временем; CLI python -m lib.wake_event
 ├── prompts/
 │   └── chat_template.txt  # Это файл шаблона подсказки для чат‑бота, определяющий стиль и правила ответов.
 ├── scripts/
@@ -139,92 +165,104 @@ voice
 │   │   └── commands.json  # JSON‑файл, определяющий команды управления звуком и воспроизведением, их соответствия голосовым фразам и параметры LLM для тестового устройства.
 │   └── commands.json  # Конфиги голосовых команд Google Calendar и Google Tasks, триггеры, команды, настройки приложений, маппинг, настройки LLM
 ├── tests/
+│   ├── browser/  # Автотесты браузера: CDP-клиент, YouTube-сценарии, live-проверки.
+│   │   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
+│   │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
+│   │   ├── test_youtube_browser.py  # Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.
+│   │   ├── test_youtube_live.py  # Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.
+│   │   └── test_youtube_live_unit.py  # Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика.
+│   ├── core/  # Автотесты ядра: Orchestrator, decision-цепочка, Лайя, лог и вывод.
+│   │   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json
+│   │   ├── test_laya_decision.py  # Юнит-тесты decision-слоя Лайи: HTTP-клиент (успех, none, порог, ошибки, недоступный сервер) и путь оркестратора — команда распознана/не распознана/заблокирована/неизвестна, legacy без decision
+│   │   ├── test_laya_paths.py  # Регресс: корень проекта для auto_launch Laya (_projects_root) — каталог с lib/, а не сам lib (иначе «exe/модель не найдены»)
+│   │   ├── test_logger.py  # Это файл тестов, проверяющий работу класса Logger и вспомогательных функций логирования.
+│   │   ├── test_orchestrator.py  # Тесты Orchestrator: инициализация, эхо-затишье, дословные команды.
+│   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
+│   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
+│   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent и алиасы.
+│   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: голосовое обучение запомни/забудь.
+│   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
+│   │   └── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
+│   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
+│   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
+│   │   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.
+│   │   └── test_diagnose_supervise.py  # Тесты диагностики: супервизор и прогон тестов.
+│   ├── google/  # Автотесты Google API: календарь и задачи, в том числе живые.
+│   │   ├── test_calendar_live.py  # Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.
+│   │   ├── test_google_calendar.py  # Тесты календаря: OAuth-авторизация.
+│   │   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.
+│   │   ├── test_google_calendar_events.py  # Тесты календаря: события-напоминания.
+│   │   ├── test_google_tasks.py  # Тесты Tasks: OAuth-авторизация.
+│   │   └── test_google_tasks_operations.py  # Тесты Tasks: создание и завершение задач.
+│   ├── opencode/  # Автотесты раннера console opencode.
+│   │   ├── test_opencode_cli.py  # Тесты opencode: поиск exe, запуск.
+│   │   ├── test_opencode_cli_clean.py  # Тесты opencode: чистка вывода агента.
+│   │   └── test_opencode_cli_run.py  # Тесты opencode: raw/verbose, дамп при таймауте.
+│   ├── providers/  # Автотесты LLM-провайдеров: manager, omni, lmstudio, race.
+│   │   ├── test_lmstudio.py  # Тестовые файлы для класса LmStudioClient.
+│   │   ├── test_omni.py  # Это файл тестов для класса OmniRouterClient, проверяющий его основные функции, параметры и поведение логирования.
+│   │   ├── test_provider_manager.py  # Это файл тестов, проверяющий работу класса ProviderManager, его инициализацию, загрузку конфигурации, выбор активного провайдера и создание клиентских экземпляров.
+│   │   ├── test_providers_init.py  # Это файл тестов, проверяющий базовый абстрактный класс BaseLLMClient и его поведение.
+│   │   ├── test_race.py  # Тесты RaceClient: гонка ask.
+│   │   └── test_race_classify.py  # Тесты RaceClient: classify.
+│   ├── runtime/  # Автотесты состояния системы: статусы и медиа-сессии.
+│   │   ├── test_media.py  # Это файл тестов, проверяющий функции is_media_playing и is_media_available из модуля lib.media, обеспечивая корректную работу определения статуса воспроизведения медиа.
+│   │   ├── test_status.py  # Тесты статусов: загрузка и реестр.
+│   │   ├── test_status_checks.py  # Тесты статусов: выполнение проверок.
+│   │   └── test_status_poll.py  # Тесты статусов: фоновый опрос.
+│   ├── scheduling/  # Автотесты расписания: cron, парсер времени, напоминания, сон/пробуждение.
+│   │   ├── test_cron_output.py  # Юнит-тесты логирования вывода cron-заданий: stdout в логе при успехе и ошибке, защита от не-bytes
+│   │   ├── test_cron_parse.py  # Юнит-тесты парсера cron-выражений: маски, шаги, диапазоны, имена, правило ИЛИ dom/dow, next_after, невалидные выражения
+│   │   ├── test_cron_scheduler.py  # Юнит-тесты планировщика cron: срабатывание по расписанию, дедупликация, disabled, script/shell, announce, таймаут, перезагрузка по mtime
+│   │   ├── test_plans.py  # Это файл тестов, проверяющий работу обработчика планов (PlansHandler) из модуля lib.plans, включая распознавание запросов, выбор текущей задачи из календаря и проверку готовности авторизации.
+│   │   ├── test_reminders.py  # Тесты напоминаний: разбор фраз, создание.
+│   │   ├── test_reminders_main.py  # Тесты напоминаний: CLI main.
+│   │   ├── test_sleep_event.py  # Юнит-тесты команды «спать»: выбор события «СОН», перенос начала на сейчас (FakeGoogle, без сети)
+│   │   ├── test_time_parser.py  # Это файл тестов, проверяющий корректность разбора русских фраз о напоминаниях парсером времени.
+│   │   └── test_wake_event.py  # Юнит-тесты команды «я проснулся»: выбор начавшегося «СНА», перенос только конца на сейчас (FakeGoogle, без сети)
 │   ├── skills/  # Автотесты системы скиллов: загрузка, поиск, выполнение и проверки действий
 │   │   ├── test_actions.py  # Это файл тестов, проверяющий действия скиллов open_url и run_cmd, их работу на разных ОС и обработку ошибок в классе SkillRegistry.
 │   │   ├── test_execution.py  # Это файл тестов, проверяющий работу класса SkillRegistry, включая выполнение скиллов, валидацию параметров и обработку различных действий.
 │   │   ├── test_loading.py  # Это файл тестов, проверяющий загрузку, индексацию и поиск скиллов в классе SkillRegistry.
 │   │   ├── test_manifest.py  # Это тестовый модуль, проверяющий корректность создания и поведения dataclass SkillManifest и его компонентов.
 │   │   └── test_skills_dir.py  # Тесты для функции get_skills_dir из модуля lib.skills. Проверяют, что функция возвращает корректный путь к папке skills с именем хоста.
+│   ├── synth/  # Автотесты синтеза речи: движки, конвейер, воспроизведение.
+│   │   ├── test_tts.py  # Тесты TextToSpeech: синтез и фолбэки движков.
+│   │   ├── test_tts_control.py  # Тесты TTS: прерывания, колбэки, _decode_arg, CLI.
+│   │   ├── test_tts_pipeline.py  # Тесты TextToSpeech: нарезка фраз и конвейер воспроизведения.
+│   │   ├── test_tts_piper.py  # Тесты TextToSpeech: движок Piper и кэш голосов.
+│   │   └── test_tts_playback.py  # Тесты TextToSpeech: SAPI, файлы, плееры, run_player.
+│   ├── taskflow/  # Автотесты задач: разбор, завершение, дедупликация, старт по таблице.
+│   │   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
+│   │   ├── test_task_start.py  # Юнит-тесты запуска задачи: формула resume (now-O), только G, уже запущена/нет uuid/нет строки, шумовые слова и порог похожести (без сети)
+│   │   ├── test_tasks.py  # Тесты задач: разбор фраз, создание.
+│   │   ├── test_tasks_complete_cli.py  # Тесты задач: CLI complete/create.
+│   │   ├── test_tasks_complete_match.py  # Тесты задач: подбор по названию.
+│   │   ├── test_tasks_complete_parse.py  # Тесты задач: разбор фразы завершения.
+│   │   └── test_tasks_dedup.py  # Тесты задач: поиск дубликата exact/Laya перед созданием.
+│   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, алиасы, intent, конфиг.
+│   │   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
+│   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
+│   │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
+│   │   ├── test_commands_find.py  # Тесты CommandMatcher: концепция трех строк, find_command.
+│   │   ├── test_commands_live.py  # Живые функциональные тесты команд: реально запускают volumeup/volumedown и проверяют изменение системной громкости через Core Audio API.
+│   │   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
+│   │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
+│   │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
+│   │   ├── test_intent.py  # Тесты классификатора: detect.
+│   │   └── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
 │   ├── __init__.py  # Пакет tests – автотесты проекта
 │   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами.
 │   ├── resurrector_control.py  # Помощник тестов: выключает/включает приложение через конфиг resurrector (атомарная запись), ждёт остановки процесса — чтобы тест main.py не конфликтовал с запущенным экземпляром.
-│   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
-│   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
-│   ├── test_calendar_live.py  # Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.
-│   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
 │   ├── test_check_lengths.py  # Тесты проверки, что файлы исходников не превышают лимит строк в 200
 │   ├── test_check_tooltips.py  # Тесты для проверки наличия TOOLTIP-описаний в пакетах и модулях
-│   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
-│   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
-│   ├── test_commands_find.py  # Тесты CommandMatcher: концепция трех строк, find_command.
-│   ├── test_commands_live.py  # Живые функциональные тесты команд: реально запускают volumeup/volumedown и проверяют изменение системной громкости через Core Audio API.
-│   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
-│   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
-│   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
-│   ├── test_cron_output.py  # Юнит-тесты логирования вывода cron-заданий: stdout в логе при успехе и ошибке, защита от не-bytes
-│   ├── test_cron_parse.py  # Юнит-тесты парсера cron-выражений: маски, шаги, диапазоны, имена, правило ИЛИ dom/dow, next_after, невалидные выражения
-│   ├── test_cron_scheduler.py  # Юнит-тесты планировщика cron: срабатывание по расписанию, дедупликация, disabled, script/shell, announce, таймаут, перезагрузка по mtime
-│   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json
 │   ├── test_dependencies.py  # Это файл тестов, проверяющий, что библиотека sounddevice установлена и корректно работает.
 │   ├── test_device_commands.py  # Это файл тестов, который проверяет корректность и соответствие команд, описанных в JSON‑файле device‑commands, включая их наличие, формат JSON, платформенно‑зависимые ключи и правильность PowerShell‑команд для Windows.
-│   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
-│   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.
-│   ├── test_diagnose_supervise.py  # Тесты диагностики: супервизор и прогон тестов.
-│   ├── test_google_calendar.py  # Тесты календаря: OAuth-авторизация.
-│   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.
-│   ├── test_google_calendar_events.py  # Тесты календаря: события-напоминания.
-│   ├── test_google_tasks.py  # Тесты Tasks: OAuth-авторизация.
-│   ├── test_google_tasks_operations.py  # Тесты Tasks: создание и завершение задач.
-│   ├── test_intent.py  # Тесты классификатора: detect.
-│   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
-│   ├── test_laya_decision.py  # Юнит-тесты decision-слоя Лайи: HTTP-клиент (успех, none, порог, ошибки, недоступный сервер) и путь оркестратора — команда распознана/не распознана/заблокирована/неизвестна, legacy без decision
-│   ├── test_lmstudio.py  # Тестовые файлы для класса LmStudioClient.
-│   ├── test_logger.py  # Это файл тестов, проверяющий работу класса Logger и вспомогательных функций логирования.
 │   ├── test_main.py  # Тесты main: кодировка и модели Vosk.
 │   ├── test_main_entry.py  # Тесты main: точка входа приложения.
 │   ├── test_main_run.py  # Тесты воркера: очередь аудио.
 │   ├── test_main_run_abort.py  # Тесты воркера: стоп-слова и ошибки.
-│   ├── test_main_worker.py  # Тесты воркера: инициализация и колбэки.
-│   ├── test_media.py  # Это файл тестов, проверяющий функции is_media_playing и is_media_available из модуля lib.media, обеспечивая корректную работу определения статуса воспроизведения медиа.
-│   ├── test_omni.py  # Это файл тестов для класса OmniRouterClient, проверяющий его основные функции, параметры и поведение логирования.
-│   ├── test_opencode_cli.py  # Тесты opencode: поиск exe, запуск.
-│   ├── test_opencode_cli_clean.py  # Тесты opencode: чистка вывода агента.
-│   ├── test_opencode_cli_run.py  # Тесты opencode: raw/verbose, дамп при таймауте.
-│   ├── test_orchestrator.py  # Тесты Orchestrator: инициализация, эхо-затишье, дословные команды.
-│   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
-│   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
-│   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent и алиасы.
-│   ├── test_orchestrator_memory.py  # Тесты Orchestrator: голосовое обучение запомни/забудь.
-│   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
-│   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
-│   ├── test_plans.py  # Это файл тестов, проверяющий работу обработчика планов (PlansHandler) из модуля lib.plans, включая распознавание запросов, выбор текущей задачи из календаря и проверку готовности авторизации.
-│   ├── test_provider_manager.py  # Это файл тестов, проверяющий работу класса ProviderManager, его инициализацию, загрузку конфигурации, выбор активного провайдера и создание клиентских экземпляров.
-│   ├── test_providers_init.py  # Это файл тестов, проверяющий базовый абстрактный класс BaseLLMClient и его поведение.
-│   ├── test_race.py  # Тесты RaceClient: гонка ask.
-│   ├── test_race_classify.py  # Тесты RaceClient: classify.
-│   ├── test_reminders.py  # Тесты напоминаний: разбор фраз, создание.
-│   ├── test_reminders_main.py  # Тесты напоминаний: CLI main.
-│   ├── test_sleep_event.py  # Юнит-тесты команды «спать»: выбор события «СОН», перенос начала на сейчас (FakeGoogle, без сети)
-│   ├── test_status.py  # Тесты статусов: загрузка и реестр.
-│   ├── test_status_checks.py  # Тесты статусов: выполнение проверок.
-│   ├── test_status_poll.py  # Тесты статусов: фоновый опрос.
-│   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
-│   ├── test_task_start.py  # Юнит-тесты запуска задачи: формула resume (now-O), только G, уже запущена/нет uuid/нет строки, шумовые слова и порог похожести (без сети)
-│   ├── test_tasks.py  # Тесты задач: разбор фраз, создание.
-│   ├── test_tasks_complete_cli.py  # Тесты задач: CLI complete/create.
-│   ├── test_tasks_complete_match.py  # Тесты задач: подбор по названию.
-│   ├── test_tasks_complete_parse.py  # Тесты задач: разбор фразы завершения.
-│   ├── test_tasks_dedup.py  # Тесты задач: поиск дубликата exact/Laya перед созданием.
-│   ├── test_time_parser.py  # Это файл тестов, проверяющий корректность разбора русских фраз о напоминаниях парсером времени.
-│   ├── test_tts.py  # Тесты TextToSpeech: синтез и фолбэки движков.
-│   ├── test_tts_control.py  # Тесты TTS: прерывания, колбэки, _decode_arg, CLI.
-│   ├── test_tts_pipeline.py  # Тесты TextToSpeech: нарезка фраз и конвейер воспроизведения.
-│   ├── test_tts_piper.py  # Тесты TextToSpeech: движок Piper и кэш голосов.
-│   ├── test_tts_playback.py  # Тесты TextToSpeech: SAPI, файлы, плееры, run_player.
-│   ├── test_wake_event.py  # Юнит-тесты команды «я проснулся»: выбор начавшегося «СНА», перенос только конца на сейчас (FakeGoogle, без сети)
-│   ├── test_youtube_browser.py  # Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.
-│   ├── test_youtube_live.py  # Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.
-│   └── test_youtube_live_unit.py  # Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика.
+│   └── test_main_worker.py  # Тесты воркера: инициализация и колбэки.
 ├── AGENTS.md  # Руководство для агентов Voice Control: правила коммитов (только по команде), version gate, команды сборки/тестов, архитектура (Vosk STT → Orchestrator), Google Calendar/ Tasks, аудио и стоп-слова, LLM-провайдеры (race), концепция голосовых команд (commands.json, 90% порог, концепция трёх строк).
 ├── COMMANDS.md  # Это файл‑документация, в котором описаны голосовые команды, их триггеры, соответствующие навыки, параметры и вызываемые скрипты, служит справочником для работы голосового ассистента.
 ├── README.md  # README.md — это файл описания проекта, содержащий инструкцию по установке, использованию и функционалу голосового помощника для Windows.

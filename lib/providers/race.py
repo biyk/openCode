@@ -3,7 +3,7 @@ import time
 from typing import Optional
 from queue import Empty, Queue
 
-from lib.logger import Logger
+from lib.core.logger import Logger
 from lib.providers import BaseLLMClient
 from lib.providers.lmstudio import LmStudioClient
 from lib.providers.omni import OmniRouterClient

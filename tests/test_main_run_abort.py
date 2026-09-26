@@ -2,7 +2,7 @@
 
 
 import queue
-import lib.transcription_worker
+import lib.stt.transcription_worker
 
 
 class TestTranscriptionWorkerRunAbort:
@@ -10,7 +10,7 @@ class TestTranscriptionWorkerRunAbort:
 
     def _make_worker(self, mocker):
         """Создаёт worker без вызова __init__ (без сети и файлов)."""
-        cls = lib.transcription_worker.TranscriptionWorker
+        cls = lib.stt.transcription_worker.TranscriptionWorker
         worker = cls.__new__(cls)
         worker.lang_code = "ru"
         worker._running = mocker.MagicMock()
@@ -27,10 +27,10 @@ class TestTranscriptionWorkerRunAbort:
 
     def _patch_run_deps(self, mocker, recognizer=None, stop_recognizer=None):
         """Патчит зависимости run() и возвращает recognizer."""
-        mocker.patch("lib.transcription_worker._fix_encoding", side_effect=lambda x: x)
-        mocker.patch("lib.transcription_worker.SetLogLevel")
-        mocker.patch("lib.vosk_model.ensure_vosk_model", return_value="model")
-        mocker.patch("lib.transcription_worker.Model")
+        mocker.patch("lib.stt.transcription_worker._fix_encoding", side_effect=lambda x: x)
+        mocker.patch("lib.stt.transcription_worker.SetLogLevel")
+        mocker.patch("lib.stt.vosk_model.ensure_vosk_model", return_value="model")
+        mocker.patch("lib.stt.transcription_worker.Model")
         default_recognizer = mocker.MagicMock()
         main_recognizer = recognizer or default_recognizer
         default_stop = mocker.MagicMock()
@@ -42,8 +42,10 @@ class TestTranscriptionWorkerRunAbort:
                 return main_recognizer
             return stop_rec
 
-        mocker.patch("lib.transcription_worker.KaldiRecognizer", side_effect=_make_recognizer)
-        mocker.patch("lib.transcription_worker.sd.RawInputStream", return_value=mocker.MagicMock())
+        mocker.patch("lib.stt.transcription_worker.KaldiRecognizer", side_effect=_make_recognizer)
+        mocker.patch(
+            "lib.stt.transcription_worker.sd.RawInputStream",
+            return_value=mocker.MagicMock())
         return main_recognizer
 
     def test_run_stop_recognizer_aborts_when_speaking(self, mocker):
@@ -123,7 +125,7 @@ class TestTranscriptionWorkerRunAbort:
     def test_run_prints_error_on_exception(self, mocker):
         """Исключение в run() печатается как ошибка STT."""
         worker = self._make_worker(mocker)
-        mocker.patch("lib.vosk_model.ensure_vosk_model", side_effect=RuntimeError("boom"))
+        mocker.patch("lib.stt.vosk_model.ensure_vosk_model", side_effect=RuntimeError("boom"))
 
         worker.run()
 

@@ -2,7 +2,7 @@ import json
 import os
 import platform
 import pytest
-from lib.commands import CommandMatcher
+from lib.voice_cmd.commands import CommandMatcher
 
 
 class TestDeviceCommands:
@@ -11,7 +11,7 @@ class TestDeviceCommands:
     @pytest.fixture
     def device_commands_path(self):
         """Возвращает путь к commands.json устройства."""
-        from lib.config_loader import get_device_commands_path
+        from lib.voice_cmd.config_loader import get_device_commands_path
         hostname = platform.node()
         return get_device_commands_path(hostname)
 

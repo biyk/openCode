@@ -27,7 +27,7 @@ import subprocess
 import sys
 from typing import Optional
 
-from lib.opencode_cli import REPO_ROOT
+from lib.opencode.opencode_cli import REPO_ROOT
 
 DIAGNOSE_ID = "diagnose"
 WORKFILE = "WORKING.MD"
@@ -182,5 +182,5 @@ def run_tests(repo_root: Optional[str] = None) -> tuple[bool, str]:
 
 
 if __name__ == "__main__":
-    from lib.diagnose_cli import main
+    from lib.diagnostics.diagnose_cli import main
     raise SystemExit(main())

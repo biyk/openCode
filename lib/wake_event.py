@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from lib.google_calendar import GoogleCalendar
-from lib.google_calendar_events import GoogleCalendarEventsMixin
+from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 from lib.sleep_event import SLEEP_TITLE_RE
 
 # Сон, от которого просыпаются, начался не дальше суток назад.

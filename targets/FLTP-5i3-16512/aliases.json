@@ -31,6 +31,31 @@
             "command": "volumeup",
             "hits": 0,
             "confirmed": false
+        },
+        "поставил задачу за стирать кроссовки": {
+            "command": "task-add",
+            "hits": 0,
+            "confirmed": false
+        },
+        "я сейчас сказал поставишь слова": {
+            "command": "task-add",
+            "hits": 0,
+            "confirmed": false
+        },
+        "сделай кромку": {
+            "command": "volumeup",
+            "hits": 0,
+            "confirmed": false
+        },
+        "арина убери со стола": {
+            "command": "stop",
+            "hits": 0,
+            "confirmed": false
+        },
+        "же поставь задачу сделать хлеб": {
+            "command": "task-add",
+            "hits": 0,
+            "confirmed": false
         }
     }
 }

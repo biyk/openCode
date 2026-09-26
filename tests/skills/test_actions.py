@@ -4,7 +4,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from lib.skills import SkillRegistry
+from lib.skills.skills import SkillRegistry
 
 
 class TestSkillRegistryActions:
@@ -29,8 +29,8 @@ class TestSkillRegistryActions:
     def test_action_open_url_windows(self, tmp_path):
         """_action_open_url работает на windows."""
         registry, _ = self._make_registry(tmp_path)
-        with patch("lib.skill_actions.platform.system", return_value="windows"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="windows"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
@@ -41,8 +41,8 @@ class TestSkillRegistryActions:
     def test_action_open_url_darwin(self, tmp_path):
         """_action_open_url работает на darwin."""
         registry, _ = self._make_registry(tmp_path)
-        with patch("lib.skill_actions.platform.system", return_value="darwin"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="darwin"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
@@ -51,8 +51,8 @@ class TestSkillRegistryActions:
     def test_action_open_url_linux(self, tmp_path):
         """_action_open_url работает на linux."""
         registry, _ = self._make_registry(tmp_path)
-        with patch("lib.skill_actions.platform.system", return_value="linux"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="linux"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
@@ -63,8 +63,8 @@ class TestSkillRegistryActions:
     def test_action_open_url_called_process_error(self, tmp_path):
         """_action_open_url возвращает False при ошибке subprocess."""
         registry, _ = self._make_registry(tmp_path)
-        with patch("lib.skill_actions.platform.system", return_value="windows"), \
-             patch("lib.skill_actions.subprocess.run") as mock_run:
+        with patch("lib.skills.skill_actions.platform.system", return_value="windows"), \
+             patch("lib.skills.skill_actions.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is False
@@ -77,7 +77,7 @@ class TestSkillRegistryActions:
     def test_action_run_cmd_exception(self, tmp_path):
         """_action_run_cmd ловит исключения subprocess."""
         registry, _ = self._make_registry(tmp_path)
-        with patch("lib.skill_actions.subprocess.run",
+        with patch("lib.skills.skill_actions.subprocess.run",
                    side_effect=subprocess.CalledProcessError(1, "cmd")):
             result = registry._action_run_cmd({"cmd": "echo test"})
         assert result is False

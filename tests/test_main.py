@@ -7,9 +7,9 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
-import lib.vosk_model as vm
-from lib.transcription_worker import _fix_encoding
-from lib.vosk_model import ensure_vosk_model
+import lib.stt.vosk_model as vm
+from lib.stt.transcription_worker import _fix_encoding
+from lib.stt.vosk_model import ensure_vosk_model
 
 
 class TestEncodingFix:

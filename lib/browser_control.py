@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from lib.cdp_client import (
+from lib.browser.cdp_client import (
     DEFAULT_PORT,
     _activate,
     _list_tabs,
@@ -35,7 +35,7 @@ from lib.cdp_client import (
     is_running,
     wait_for_tab,
 )
-from lib.youtube_browser import youtube_open_first, youtube_play
+from lib.browser.youtube_browser import youtube_open_first, youtube_play
 
 if sys.platform == "win32":
     try:

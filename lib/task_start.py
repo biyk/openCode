@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 from typing import Any, Optional
 
 from lib.google_calendar import GoogleCalendar
-from lib.task_start_sheet import TaskStartSheet
+from lib.taskflow.task_start_sheet import TaskStartSheet
 
 # UUID в описании события-задачи (колонка D листа = стабилизатор Sheet↔Calendar)
 UUID_RE = re.compile(

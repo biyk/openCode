@@ -17,7 +17,7 @@ find a matching task by title, and mark it as completed. Deterministic parser
 
 This is the exact behavior of `TaskHandler.complete_matching` in
 `lib/tasks.py` + `GoogleTasks.list_tasks` / `GoogleTasks.complete_task` in
-`lib/google_tasks.py`.
+`lib/google/google_tasks.py`.
 
 ## How to execute — RUN THE COMMAND, DO NOT LOOK
 

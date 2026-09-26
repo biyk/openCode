@@ -1,6 +1,6 @@
 """Тесты для манифеста скилла (SkillManifest)."""
 
-from lib.skills import SkillManifest, SkillStep
+from lib.skills.skills import SkillManifest, SkillStep
 
 
 class TestSkillManifest:

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from lib.google_calendar import GoogleCalendar
-from lib.google_calendar_events import GoogleCalendarEventsMixin
+from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 
 # «СОН» как отдельное слово в заголовке (регистр не важен, ё=е).
 SLEEP_TITLE_RE = re.compile(r"\bсон\b", re.IGNORECASE)
