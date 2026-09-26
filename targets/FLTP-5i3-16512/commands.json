@@ -27,6 +27,11 @@
             "windows": "powershell -ExecutionPolicy Bypass -File \"bin/get_volume.ps1\" -Set {{level}}",
             "default": "powershell -ExecutionPolicy Bypass -File \"bin/get_volume.ps1\" -Set {{level}}"
         },
+        "monitoroff": {
+            "linux": "xset dpms force off",
+            "windows": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/monitoroff.ps1\"",
+            "default": "powershell -ExecutionPolicy Bypass -File \"targets/FLTP-5i3-16512/commands/monitoroff.ps1\""
+        },
         "sleepfix": {
             "linux": "python -m lib.sleep_event",
             "windows": "python -m lib.sleep_event",
@@ -101,6 +106,7 @@
         "volumeup": "увеличить громкость",
         "volumedown": "уменьшить громкость",
         "sleepvolume": "ночной режим: опустить громкость до 1%",
+        "monitoroff": "погасить экран (отключить монитор; разбудит любой ввод)",
         "sleepfix": "ночной режим: перенести начало события «СОН» на сейчас",
         "wakefix": "пробуждение: перенести завершение начавшегося события «СОН» на сейчас и засчитать по ✅ задачу «Пробуждение»",
         "taskstart": "запуск задачи: по названию найти сегодняшнее мероприятие, взять uuid из описания и записать start_date в Google Таблицу",
@@ -137,8 +143,8 @@
             "steps": ["openyoutube", "youtube_news"]
         },
         "sleepmode": {
-            "description": "ночной режим: громкость до 1% + зафиксировать начало события «СОН» в календаре",
-            "steps": ["sleepvolume", "sleepfix"]
+            "description": "ночной режим: громкость до 1% + погасить экран + зафиксировать начало события «СОН» в календаре",
+            "steps": ["sleepvolume", "monitoroff", "sleepfix"]
         }
     },
     "match": {
@@ -227,7 +233,7 @@
         "criteria": {
             "volumeup": "увеличить громкость звука, сделать громче",
             "volumedown": "уменьшить громкость звука, сделать тише",
-            "sleepmode": "пользователь ложится спать: сделать тихо и зафиксировать сон",
+            "sleepmode": "пользователь ложится спать: сделать тихо, погасить экран и зафиксировать сон",
             "wakefix": "пользователь проснулся или встал: зафиксировать пробуждение",
             "task-add": "пользователь просит поставить, добавить, записать или создать задачу: «поставь задачу», «поставь …», «добавь задачу», «запиши»; название задачи — инфинитив: «приготовить гречку», «починить велосипед»",
             "playpause": "пауза или продолжить воспроизведение музыки",

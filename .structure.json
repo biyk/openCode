@@ -100,6 +100,7 @@
   "targets/FLTP-5i3-16512/commands/mediastop.ps1": "Это PowerShell‑скрипт, который отправляет системный клавишный код Stop для медиа‑плеера и при необходимости через две секунды нажимает Play/Pause, чтобы гарантировать паузу.",
   "targets/FLTP-5i3-16512/commands/volumedown.ps1": "Это PowerShell‑скрипт, имитирующий нажатие клавиши уменьшения громкости в Windows, чтобы уменьшать системный звук на заданный процент.",
   "targets/FLTP-5i3-16512/commands/volumeup.ps1": "Это PowerShell‑скрипт, повышающий громкость, имитируя нажатие клавиши Volume Up заданное количество раз.",
+  "targets/FLTP-5i3-16512/commands/monitoroff.ps1": "PowerShell-скрипт гасит монитор: шлёт HWND_BROADCAST (0xFFFF) WM_SYSCOMMAND (0x0112) с SC_MONITORPOWER (0xF170) и lParam=2 (off) через user32 SendMessageTimeout — экран гаснет, будит любой ввод (мышь/клавиатура); блокировки и сна ПК нет.",
   "targets/test_device/commands.json": "JSON‑файл, определяющий команды управления звуком и воспроизведением, их соответствия голосовым фразам и параметры LLM для тестового устройства.",
   "tests/skills/test_actions.py": "Это файл тестов, проверяющий действия скиллов open_url и run_cmd, их работу на разных ОС и обработку ошибок в классе SkillRegistry.",
   "tests/skills/test_execution.py": "Это файл тестов, проверяющий работу класса SkillRegistry, включая выполнение скиллов, валидацию параметров и обработку различных действий.",
