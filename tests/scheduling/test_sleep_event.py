@@ -1,13 +1,20 @@
 """Юнит-тесты lib/sleep_event.py — фиксированный GoogleCalendar без сети.
 
 Проверяют выбор события «СОН» (идущее/скорое, без завершившихся и
-посторонних заголовков) и перенос его начала на текущий момент.
+посторонних заголовков), перенос его начала на текущий момент и
+побочный сдвиг утреннего cron-задания на now + 7ч30.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
-from lib.sleep_event import SleepEventHandler
+from lib.scheduling import cron_edit
+from lib.sleep_event import (
+    WAKE_JOB_ID,
+    SleepEventHandler,
+    shift_wake_job,
+)
 
 TZ = timezone(timedelta(hours=3))
 NOW = datetime(2026, 9, 25, 23, 30, tzinfo=TZ)
@@ -89,3 +96,33 @@ def test_fix_sleep_start_none_when_calendar_fails():
     google = FakeGoogle([ev], update_ok=False)
     h = SleepEventHandler(google=google, now=NOW)
     assert h.fix_sleep_start() is None
+
+
+def _write_crontab(tmp_path, job_id=WAKE_JOB_ID) -> str:
+    path = str(tmp_path / "crontab.json")
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump({"jobs": [{"id": job_id, "schedule": "15 9 * * *",
+                             "script": "wake_video_and_volume.ps1"}]},
+                  file, ensure_ascii=False, indent=4)
+    return path
+
+
+def test_shift_wake_job_moves_to_now_plus_7h30(tmp_path, monkeypatch):
+    """«я спать» переносит wake_video_and_volume на сейчас + 7ч30."""
+    path = _write_crontab(tmp_path)
+    monkeypatch.setattr(cron_edit, "CRONTAB_FILE", path)
+    now = datetime(2026, 9, 27, 23, 40, tzinfo=TZ)
+    shift_wake_job(now)
+    with open(path, encoding="utf-8") as file:
+        job = json.load(file)["jobs"][0]
+    assert job["schedule"] == "10 7 * * *"  # 23:40 + 7:30 → 07:10
+
+
+def test_shift_wake_job_missing_job_is_noop(tmp_path, monkeypatch):
+    """Нет задания в расписании — файл не тронут, исключения нет."""
+    path = _write_crontab(tmp_path, job_id="other")
+    monkeypatch.setattr(cron_edit, "CRONTAB_FILE", path)
+    shift_wake_job(datetime(2026, 9, 27, 23, 40, tzinfo=TZ))
+    with open(path, encoding="utf-8") as file:
+        job = json.load(file)["jobs"][0]
+    assert job["schedule"] == "15 9 * * *"

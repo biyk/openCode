@@ -120,3 +120,54 @@ class GoogleCalendarMutateMixin:
             return True
         except Exception as e:
             return swallowed("gcal.delete_event", e, False)
+
+    def move_event(self, event_id: str, new_start: datetime,
+                   new_end: datetime) -> bool:
+        """Переносит событие на [new_start, new_end] (обе границы сразу).
+
+        Нужно при перестановке задач из окна сна на свободные окна.
+        False — если границы невалидны или запрос не прошёл.
+        """
+        self._ensure_ready()
+        if new_start.tzinfo is None:
+            new_start = new_start.astimezone()
+        if new_end.tzinfo is None:
+            new_end = new_end.astimezone()
+        if new_end <= new_start:
+            return False  # конец раньше начала — Google не примет
+        body = {
+            "start": {"dateTime": new_start.isoformat()},
+            "end": {"dateTime": new_end.isoformat()},
+        }
+        try:
+            self._calendar_service.events().patch(
+                calendarId=self._calendar_id, eventId=event_id,
+                body=body).execute()
+        except Exception as e:
+            return swallowed("gcal.move_event.patch", e, False)
+        return True
+
+    def create_task_event(self, summary: str, description: str,
+                          start: datetime, end: datetime) -> str:
+        """Вставляет запланированное событие задачи (автоплан, БЕЗ colorId).
+
+        colorId не ставится намеренно (calendar.md §8): иначе UI сочтёт
+        событие выполненным. Пустая строка — запрос не прошёл.
+        """
+        self._ensure_ready()
+        if start.tzinfo is None:
+            start = start.astimezone()
+        if end.tzinfo is None:
+            end = end.astimezone()
+        body = {
+            "summary": summary,
+            "description": description,
+            "start": {"dateTime": start.isoformat()},
+            "end": {"dateTime": end.isoformat()},
+        }
+        try:
+            ev = self._calendar_service.events().insert(
+                calendarId=self._calendar_id, body=body).execute()
+        except Exception as e:
+            return swallowed("gcal.create_task_event", e, "")
+        return str(ev.get("id", ""))

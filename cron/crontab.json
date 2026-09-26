@@ -2,21 +2,9 @@
     "jobs": [
         {
             "id": "wake_video_and_volume",
-            "schedule": "15 9 * * *",
+            "schedule": "22 8 * * *",
             "script": "wake_video_and_volume.ps1",
             "timeout": 180,
-            "announce": false
-        },
-        {
-            "id": "volume_up_1",
-            "schedule": "16 9 * * *",
-            "script": "volume_up.ps1",
-            "announce": false
-        },
-        {
-            "id": "volume_up_2",
-            "schedule": "17 9 * * *",
-            "script": "volume_up.ps1",
             "announce": false
         }
     ]

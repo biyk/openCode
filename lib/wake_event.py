@@ -6,6 +6,11 @@
 (время начала не трогает). Т.е. команда отмечает, во сколько сон
 реально закончился.
 
+После фиксации подъёма перестраивает день: задачи, попавшие в окно сна,
+сдвигаются на свободные окна позже (в исходном порядке), а остаток дня
+автозаполняется задачами real_life_tasks (см. restart/calendar.md). В
+Google Таблицы при этом ничего не пишется — только Calendar.
+
 Дополнительно команда засчитывает по ✅ задачу «Пробуждение» из
 JS-приложения (done.md): галочка в календаре, строка real_life_tasks,
 журнал task_executions и награда героя. Засчёт не блокирует фиксацию
@@ -23,6 +28,9 @@ from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 from lib.sleep_event import SLEEP_TITLE_RE
 from lib.taskflow.done_task import mark_task_done
+from lib.taskflow.real_life_sheet import RealLifeSheet
+from lib.taskflow.wake_fill import fill_calendar
+from lib.taskflow.wake_slots import reschedule_sleep_events
 
 # Сон, от которого просыпаются, начался не дальше суток назад.
 LOOKBACK = timedelta(hours=24)
@@ -86,6 +94,31 @@ class WakeEventHandler:
         ev["end"] = self.now.isoformat()
         return ev
 
+    def replan_day(self, sleep_ev: dict) -> tuple[int, int]:
+        """После пробуждения перестраивает день вокруг реальной точки подъёма.
+
+        1) задачи, начавшиеся внутри окна сна [sleep_start, now), сдвигаются
+           на свободные окна позже — в исходном порядке и с той же
+           длительностью; 2) остаток дня (now → 23:00) автозаполняется
+           задачами real_life_tasks по приоритету (calendar.md). В Таблицы
+           не пишет. Возвращает (число_перенесённых, число_запланированных).
+        """
+        sleep_start = GoogleCalendarEventsMixin._parse_event_datetime(
+            sleep_ev.get("start"))
+        if sleep_start is not None and sleep_start.tzinfo is None:
+            sleep_start = sleep_start.astimezone()
+        if sleep_start is None:
+            sleep_start = self.now
+        day_start = self.now.replace(hour=0, minute=0,
+                                     second=0, microsecond=0)
+        events = self._google.list_events_between(
+            day_start, day_start + timedelta(days=1))
+        moved, updated = reschedule_sleep_events(
+            self._google, events, sleep_start, self.now)
+        placed = fill_calendar(self._google, RealLifeSheet(self._google),
+                               updated, self.now)
+        return moved, placed
+
 
 def count_wake_task(now: datetime) -> bool:
     """✅ по задаче «Пробуждение»: True — если засчитана (или уже была).
@@ -121,6 +154,12 @@ def _main(argv: Optional[list[str]] = None) -> int:
         return 0 if counted else 1
     print(f"[wake] конец «{ev['summary']}» перенесён на "
           f"{handler.now:%d.%m.%Y %H:%M}")
+    try:
+        moved, placed = handler.replan_day(ev)
+        print(f"[wake] из окна сна перенесено: {moved}, "
+              f"запланировано на день: {placed}")
+    except Exception as e:  # переплан не должен ронять команду пробуждения
+        print(f"[wake] день не перепланирован: {e}")
     return 0
 
 

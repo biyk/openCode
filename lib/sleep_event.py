@@ -5,6 +5,10 @@
 момент (время окончания не трогает). Т.е. команда отмечает, во сколько
 сон реально начался.
 
+Дополнительно сдвигает утреннее cron-задание «wake_video_and_volume» на
+сейчас + 7ч30м (lib/scheduling/cron_edit.py) — планировщик подхватит
+правку crontab.json по mtime без перезапуска.
+
 CLI: `python -m lib.sleep_event` — вызывается как шаг sequence `sleepmode`
 после опускания громкости. Коды выхода: 0 — начало зафиксировано,
 1 — событие не найдено или запрос к календарю не прошёл.
@@ -16,6 +20,7 @@ from typing import Optional
 
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
+from lib.scheduling.cron_edit import shift_job_schedule
 
 # «СОН» как отдельное слово в заголовке (регистр не важен, ё=е).
 SLEEP_TITLE_RE = re.compile(r"\bсон\b", re.IGNORECASE)
@@ -24,6 +29,10 @@ SLEEP_TITLE_RE = re.compile(r"\bсон\b", re.IGNORECASE)
 # начнётся» — в пределах суток (событие «СОН» создают на сегодня/завтра).
 LOOKBACK = timedelta(hours=12)
 LOOKAHEAD = timedelta(hours=24)
+
+# Утреннее задание пробуждения и интервал «сон → подъём» для сдвига.
+WAKE_JOB_ID = "wake_video_and_volume"
+WAKE_OFFSET = timedelta(hours=7, minutes=30)
 
 
 class SleepEventHandler:
@@ -84,13 +93,31 @@ class SleepEventHandler:
         return ev
 
 
+def shift_wake_job(now: datetime) -> None:
+    """Переносит задание «wake_video_and_volume» на now + 7ч30.
+
+    Только побочный эффект команды: провал (нет файла/задания) — печать
+    в консоль, коду выхода не влияет.
+    """
+    expr = shift_job_schedule(WAKE_JOB_ID, now, WAKE_OFFSET)
+    if expr is None:
+        print(f"[sleep] cron-задание «{WAKE_JOB_ID}» не найдено, "
+              "расписание не сдвинуто")
+        return
+    target = now + WAKE_OFFSET
+    print(f"[sleep] задание «{WAKE_JOB_ID}» перенесено на "
+          f"{target:%d.%m.%Y %H:%M} (cron: {expr})")
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     handler = SleepEventHandler()
     try:
         ev = handler.fix_sleep_start()
     except Exception as e:  # нет токена/сети — сообщаем и падаем
         print(f"[sleep] ошибка календаря: {e}")
+        shift_wake_job(handler.now)
         return 1
+    shift_wake_job(handler.now)
     if ev is None:
         print("[sleep] событие «СОН» (идущее или ближайшее) не найдено")
         return 1

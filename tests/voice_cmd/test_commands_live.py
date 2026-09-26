@@ -84,8 +84,8 @@ def test_sleepmode_phrase_matches_command(matcher):
 
 
 def test_sleepmode_sequence_steps_resolvable(matcher):
-    """Sequence sleepmode: sleepvolume + monitoroff + sleepfix (в этом порядке)."""
-    assert matcher.sequences()["sleepmode"]["steps"] == ["sleepvolume", "monitoroff", "sleepfix"]
+    """Sequence sleepmode: sleepvolume + sleepfix + monitoroff (экран — последним)."""
+    assert matcher.sequences()["sleepmode"]["steps"] == ["sleepvolume", "sleepfix", "monitoroff"]
     assert "get_volume.ps1" in (matcher.get_command("sleepvolume") or "")
     assert "monitoroff.ps1" in (matcher.get_command("monitoroff") or "")
     assert "lib.sleep_event" in (matcher.get_command("sleepfix") or "")

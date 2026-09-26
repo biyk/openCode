@@ -99,6 +99,18 @@ class RealLifeSheet:
                         "title": str(values[COLS["task_title"]] or "").strip()}
         return None
 
+    def read_all_tasks(self) -> list[dict[str, Any]]:
+        """Все строки real_life_tasks (кроме шапки) как словари по колонкам COLS.
+
+        Нужно автопланированию («заполнить календарь»): оно читает лист
+        целиком и ничего в него не пишет (calendar.md §0/§14).
+        """
+        out = []
+        for row in self._get(f"{SHEET_TASKS}!A1:T")[1:]:
+            values = _pad(row)
+            out.append({name: values[i] for name, i in COLS.items()})
+        return out
+
     # ---------- событие-«галочка» ----------
 
     def find_done_event(self, task_uuid: str, now: datetime) -> Optional[dict]:
