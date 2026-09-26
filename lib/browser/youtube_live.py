@@ -44,7 +44,10 @@ def youtube_open_test_video(url: str,
     """Открывает тестовый ролик в новой вкладке и ждёт плеер.
 
     Возвращает вкладку (обязательно закрыть через close_tab после теста)
-    или None, если вкладку/плеер не удалось получить.
+    или None, если вкладку/плеер не удалось получить. Плеер ждём
+    циклом до таймаута: <video> появляется в DOM не сразу, а после
+    ускорения CDP (127.0.0.1 вместо localhost) одиночная проба
+    сразу после открытия вкладки стала гонкой.
     """
     tab = cdc.open_new_tab(url, port)
     if not tab:
@@ -53,12 +56,15 @@ def youtube_open_test_video(url: str,
     # Вкладку нужно сделать активной: OS-медиаклавиша (playpause)
     # адресуется активному табу, иначе пауза уйдёт на боевой ролик.
     cdc._activate(tab, port)
+    state = "no-video"
     deadline = time.time() + PLAYER_TIMEOUT_S
     while time.time() < deadline:
         if "watch?v=" in _tab_url(tab):
-            break
+            state = _player_state(tab)
+            if state != "no-video":
+                break
         time.sleep(1)
-    if _player_state(tab) == "no-video":
+    if state == "no-video":
         print("[Browser] Плеер тестового ролика не загрузился "
               f"за {PLAYER_TIMEOUT_S:.0f} секунд")
         cdc.close_tab(tab, port)

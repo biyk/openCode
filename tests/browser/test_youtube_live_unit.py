@@ -51,3 +51,16 @@ class TestOpenTestVideo:
         mocker.patch.object(yl, "PLAYER_TIMEOUT_S", 0.1)
         assert yl.youtube_open_test_video("https://youtube.com") is None
         mock_close.assert_called_once()
+
+    def test_open_waits_for_player(self, mocker):
+        """Регресс гонки: <video> появляется не сразу — ждём, а не сдаёмся."""
+        mocker.patch("lib.browser.cdp_client.open_new_tab", return_value={"id": "7"})
+        mocker.patch.object(
+            yl, "_tab_url", return_value="https://youtube.com/watch?v=x")
+        probes = iter(["no-video", "no-video", "paused"])
+        mocker.patch("lib.browser.cdp_client.eval_js",
+                     side_effect=lambda tab, script: (True, next(probes)))
+        mocker.patch("lib.browser.youtube_live.time.sleep")
+        mocker.patch.object(yl, "PLAYER_SETTLE_S", 0.0)
+        tab = yl.youtube_open_test_video("https://youtube.com/watch?v=x")
+        assert tab == {"id": "7"}

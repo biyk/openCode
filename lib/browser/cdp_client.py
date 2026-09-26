@@ -8,6 +8,8 @@ import websocket
 from typing import Optional
 
 DEFAULT_PORT = 9222
+# Только IPv4: localhost сначала пробуется как ::1 — отказ ~2 с (tests/speed).
+CDP_HOST = "127.0.0.1"
 
 
 def _http_request(url: str, data: Optional[dict] = None) -> dict:
@@ -25,7 +27,7 @@ def _http_request(url: str, data: Optional[dict] = None) -> dict:
 def _list_tabs(port: int = DEFAULT_PORT) -> list:
     """Возвращает список вкладок через CDP /json/list."""
     try:
-        return _http_request(f"http://localhost:{port}/json/list")
+        return _http_request(f"http://{CDP_HOST}:{port}/json/list")
     except Exception as e:
         print(f"[Browser] Ошибка получения вкладок: {e}")
         return []
@@ -34,7 +36,7 @@ def _list_tabs(port: int = DEFAULT_PORT) -> list:
 def is_running(port: int = DEFAULT_PORT) -> bool:
     """Проверяет, слушает ли браузер CDP порт."""
     try:
-        _http_request(f"http://localhost:{port}/json/version")
+        _http_request(f"http://{CDP_HOST}:{port}/json/version")
         return True
     except Exception:
         return False
@@ -76,7 +78,7 @@ def find_tab(url_part: str, port: int = DEFAULT_PORT) -> Optional[dict]:
 def _activate(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Переключает фокус на вкладку через CDP."""
     try:
-        _http_request(f"http://localhost:{port}/json/activate/{tab.get('id')}")
+        _http_request(f"http://{CDP_HOST}:{port}/json/activate/{tab.get('id')}")
         return True
     except Exception:
         return False
@@ -91,7 +93,7 @@ def open_new_tab(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
     try:
         q = urllib.parse.quote(url, safe="")
         req = urllib.request.Request(
-            f"http://localhost:{port}/json/new?{q}", method="PUT")
+            f"http://{CDP_HOST}:{port}/json/new?{q}", method="PUT")
         with urllib.request.urlopen(req, timeout=5) as resp:
             tab = json.loads(resp.read().decode("utf-8"))
         return tab
@@ -108,7 +110,7 @@ def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """
     try:
         with urllib.request.urlopen(
-                f"http://localhost:{port}/json/close/{tab.get('id')}",
+                f"http://{CDP_HOST}:{port}/json/close/{tab.get('id')}",
                 timeout=5):
             return True
     except Exception as e:
@@ -117,10 +119,11 @@ def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
 
 
 def _ws_for(tab: dict) -> Optional[websocket.WebSocket]:
-    """Открывает WebSocket соединение к вкладке."""
+    """Открывает WebSocket к вкладке (localhost в URL меняем на IPv4)."""
     ws_url = tab.get("webSocketDebuggerUrl")
     if not ws_url:
         return None
+    ws_url = ws_url.replace("//localhost:", f"//{CDP_HOST}:")
     return websocket.create_connection(ws_url, timeout=30)
 
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from lib.browser.cdp_client import (
-    DEFAULT_PORT,
+    CDP_HOST, DEFAULT_PORT,
     _activate,
     _list_tabs,
     _tab_for_site,
@@ -107,7 +107,7 @@ def open_url(url: str, port: int = DEFAULT_PORT,
         return existing
     try:
         q = urllib.parse.quote(url, safe="")
-        req = urllib.request.Request(f"http://localhost:{port}/json/new?{q}", method="PUT")
+        req = urllib.request.Request(f"http://{CDP_HOST}:{port}/json/new?{q}", method="PUT")
         with urllib.request.urlopen(req, timeout=5) as resp:
             tab = json.loads(resp.read().decode("utf-8"))
         print(f"[Browser] Открыта вкладка: {url}")

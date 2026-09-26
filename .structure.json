@@ -297,5 +297,6 @@
   "tests/speed/test_laya_speed.py": "Замеры decision-слоя: latency /health, полного detect и доли health в detect (кэш health пока неактуален — 0.4%)",
   "tests/speed/test_race_speed.py": "Замеры LLM-гонки: overhead classify и цена повторного одинакового запроса (baseline для кэша); живые провайдеры только с VOICE_SPEED_LIVE=1",
   "SPEED.md": "Документ скоростных замеров: как запускать tests/speed, baseline-метрики, план оптимизаций и журнал «до/после»",
+  "tests/speed/test_cdp_speed.py": "Замеры CDP-транспорта: localhost (IPv6-стол ~2 с) против 127.0.0.1, WebSocket-коннект для eval_js, цена is_running",
   "tests/runtime/test_status_ensure_ttl.py": "Юнит-тесты негативного TTL ensure(): свежий статус не перепроверяется, протухший — перепроверяется, recheck_ttl=0 возвращает старое поведение"
 }

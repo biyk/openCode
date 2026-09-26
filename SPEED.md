@@ -69,12 +69,14 @@ python -m pytest tests/speed -k ensure -v -s                  # одна гру�
    опрос проверял меньше TTL (5 с) назад. Метрики:
    `status.ensure_fresh_off` (было 5.98 s → стало ~0), `ensure_all_off`
    не изменился по замыслу — это осознанный «протухший» путь.
-2. **`browser_youtube` за один запрос** — `/json/list` сам доказывает,
-   что CDP жив; минус ~2 s на каждую проверку (и в фоновом опросе).
+2. ~~**`browser_youtube` за один запрос**~~ — не потребовалось: корнем
+   был пункт 4, после IPv4-фикса оба запроса суммарно ~3 мс.
 3. **Кэш повторных `classify()`** в RaceClient (TTL по тексту) —
    минус ~1 полный гон на эхо-повторы STT и дубли LLM-запросов.
-4. Разобраться с 2 s на CDP-запросах (резолв `localhost`? прокси из
-   окружения? `NoProxy`?) — метрики `checker.browser*`.
+4. ~~**Разобраться с 2 s на CDP-запросах**~~ — ✅ сделано 2026-09-26:
+   Chrome CDP слушает только IPv4, а `localhost` сначала пробуется как
+   `::1`, отказ на Windows приходит через ~2 с. Переход на `127.0.0.1`
+   (+ переписывание `ws://localhost` в webSocketDebuggerUrl).
 
 ## Журнал изменений
 
@@ -82,6 +84,7 @@ python -m pytest tests/speed -k ensure -v -s                  # одна гру�
 |---|---|---|---|
 | 2026-09-26 | baseline, замеров ещё не было | — | см. таблицы выше |
 | 2026-09-26 | **Негативный TTL (5 с) в `ensure()`**: свежий результат фонового опроса не перепроверяется синхронно (`lib/runtime/status.py`, `status_poll.py`) | status.ensure_fresh_off = **5.9777 s** | **~0 s** (медиана; пик 2.2 s — частично протухшие замеры) |
+| 2026-09-26 | **CDP на 127.0.0.1** (IPv6-стол 2 с у localhost; HTTP + WebSocket) + фикс гонки в `youtube_open_test_video` (плеер ждём циклом) | cdp.is_running 2.02 s; checker.browser 2.32 s; browser_youtube 4.05 s; ensure_all_off 7.13 s; missing_requires_worst 4.11 s | **0.001 / 0.001 / 0.003 / 1.42 / 0.045 s**; каждый eval_js быстрее на 2 с (cdp.ws_connect 2.02→0.002) |
 
 Примечание к TTL: путь `ensure_all_off`/`missing_requires_worst` с
 протухшими отметками специально остаётся медленным — это осознанная

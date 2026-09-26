@@ -242,6 +242,7 @@ voice
 │   │   ├── bench.py  # Рекордер замеров: медиана/min/max по повторам, история метрик в results.json и печать дельты к прежнему значению
 │   │   ├── conftest.py  # Шлюз папки speed: skip всей папки без VOICE_SPEED=1 и сессионная фикстура bench (Recorder)
 │   │   ├── results.json  # История скоростных метрик (медиана на каждый прогон) — сравнение «до/после» оптимизаций
+│   │   ├── test_cdp_speed.py  # Замеры CDP-транспорта: localhost (IPv6-стол ~2 с) против 127.0.0.1, WebSocket-коннект для eval_js, цена is_running
 │   │   ├── test_config_speed.py  # Замеры конфиг-слоя: инициализация матчера, reload-noop, find_command (попадание/промах), alias resolve — проверка, что mtime-кэш действительно дёшев
 │   │   ├── test_laya_speed.py  # Замеры decision-слоя: latency /health, полного detect и доли health в detect (кэш health пока неактуален — 0.4%)
 │   │   ├── test_race_speed.py  # Замеры LLM-гонки: overhead classify и цена повторного одинакового запроса (baseline для кэша); живые провайдеры только с VOICE_SPEED_LIVE=1
