@@ -1,14 +1,14 @@
 """Скорость конфиг-слоя: то, что уже кэшируется по mtime.
 
-Базовый уровень: команды и алиасы перечитываются только при изменении
+Базовый уровень: команды и база знаний перечитываются только при изменении
 файла. Замеряем, что эти пути действительно дешёвые в горячем цикле —
 иначе оптимизации ниже (статусы, Laya, LLM) искать бессмысленно.
 """
 
 import platform
 
-from lib.voice_cmd.aliases import AliasStore
 from lib.voice_cmd.commands import CommandMatcher
+from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.config_loader import get_device_commands_path
 
 
@@ -17,7 +17,7 @@ def _commands_file() -> str:
 
 
 class TestConfigSpeed:
-    """Загрузка/переиспользование commands.json и aliases.json."""
+    """Загрузка/переиспользование commands.json и knowledge.json."""
 
     def test_matcher_init(self, bench):
         """Полная инициализация матчера (json + TextToSpeech)."""
@@ -45,9 +45,9 @@ class TestConfigSpeed:
                          ["алиса совершенно не команда вот прям совсем"]),
                      runs=20)
 
-    def test_alias_resolve(self, bench):
-        """AliasStore.resolve: reload(noop) + поиск по нормализации."""
-        store = AliasStore(
-            AliasStore.path_for_commands_file(_commands_file()))
-        bench.record("aliases.resolve",
+    def test_knowledge_resolve(self, bench):
+        """KnowledgeStore.resolve: reload(noop) + поиск по нормализации."""
+        store = KnowledgeStore(
+            KnowledgeStore.path_for_commands_file(_commands_file()))
+        bench.record("knowledge.resolve",
                      lambda: store.resolve("алиса открой я туб"), runs=50)

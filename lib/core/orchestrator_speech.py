@@ -47,8 +47,9 @@ class OrchestratorSpeechMixin:
         dev-режима — полный выход из приложения (on_exit). Возвращает True,
         если фраза была управляющей и обработана здесь.
         """
-        core = self._matcher.core_phrase(text) if self._aliases is not None \
-            else text.strip()
+        core = self._matcher.core_phrase(text)
+        if not isinstance(core, str):
+            core = text.strip()
         low = (core or text).lower()
 
         if _is_dev_enable_phrase(low):
@@ -70,6 +71,13 @@ class OrchestratorSpeechMixin:
             return True
 
         return False
+
+    def _say(self, message: str) -> None:
+        """Короткое голосовое сообщение (в консоль + озвучка)."""
+        self._output.print_info(message)
+        self._speaking = True
+        self._abort_playback.clear()
+        self._speak_async(message)
 
     def _report_blocked(self, cmd_id: str, missing: list[str]) -> None:
         """Сообщает, каких статусов не хватает (консоль + голос).

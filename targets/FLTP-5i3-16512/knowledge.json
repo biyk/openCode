@@ -1,5 +1,16 @@
 {
-    "confirmed": {},
+    "confirmed": {
+        "включи и ютюб": {
+            "kind": "command",
+            "hits": 0,
+            "command": "openyoutube"
+        },
+        "паузы": {
+            "kind": "command",
+            "hits": 10,
+            "command": "playpause"
+        }
+    },
     "laya": {
         "добавь в список покупок осушитель воздуха": {
             "kind": "command",

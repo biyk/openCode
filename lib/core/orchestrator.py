@@ -15,7 +15,6 @@ import time
 from collections import deque
 from typing import Any, Callable, Optional
 
-from lib.voice_cmd.aliases import AliasStore
 from lib.voice_cmd.commands import CommandMatcher
 from lib.opencode.opencode_cli import OpenCodeCliRunner
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
@@ -50,7 +49,6 @@ class Orchestrator(
         suppress_after: float = 0.5,
         clear_speech_buffer: Optional[Callable[[], None]] = None,
         intent: Any = None,
-        aliases: Optional[AliasStore] = None,
         knowledge: Any = None,
         opencode: Optional[OpenCodeCliRunner] = None,
         decision: Any = None,
@@ -63,7 +61,6 @@ class Orchestrator(
         self._suppress_after = suppress_after
         self._clear_speech_buffer = clear_speech_buffer or (lambda: None)
         self._intent = intent or None
-        self._aliases = aliases or None
         self._knowledge = knowledge or None
         self._opencode = opencode or None
         self._decision = decision or None
@@ -73,7 +70,6 @@ class Orchestrator(
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
-        self._last_resolution: Optional[tuple[str, str]] = None
         self._opencode_queue: queue.Queue[tuple[str, bool]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
@@ -121,11 +117,7 @@ class Orchestrator(
             return
         # Сначала выводим распознанный текст в консоль и лог
         self._output.print_text(text)
-        # 0. Мета-команды обучения алиасов («запомни»/«забудь»).
-        if (self._aliases is not None and self._matcher.has_trigger(text)
-                and self._handle_memory_command(text)):
-            return
-        # 1..3. commands.json → алиасы → Laya/legacy → opencode-cli.
+        # 1..3. commands.json → база знаний → Laya/legacy → opencode-cli.
         self._process_commands_level(text)
 
     def _speak_async(self, answer: str) -> None:

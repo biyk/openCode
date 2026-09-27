@@ -52,10 +52,14 @@ class TestPageSyntax:
         assert "kindSel" not in PAGE
         assert "KINDS" not in PAGE
 
-    def test_laya_cross_resets_instead_of_deleting(self):
-        # ✕ на «Лайе» — reset (в undefined), удаление только в undefined.
+    def test_cross_actions_per_bucket(self):
+        # ✕ на «Подтверждено» — purge (commands.json + база знаний);
+        # на «Лайе» — reset (в undefined), в «Не распознано» — forget.
+        assert 'action:"purge"' in PAGE
         assert 'tr.dataset.bucket=="laya"?"reset":"forget"' in PAGE
-        assert 'bucket=="confirmed")?"":\'<button class=del>' in PAGE
+        assert 'bucket=="confirmed"' in PAGE
+        # в «Подтверждено» ✕ ставим и на locked-строках (т.к. чистим конфиг).
+        assert "(e.locked||bucket==\"confirmed\")?\"\"" not in PAGE
 
     @pytest.mark.parametrize("wrapper", ["async function _main(){%s}",
                                          "%s"])

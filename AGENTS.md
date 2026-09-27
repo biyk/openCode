@@ -39,7 +39,7 @@ python main.py
 
 ## 4. Архитектура (wiring)
 - Цепочка: `main.py` → `lib/stt/transcription_worker.py` (цикл: Vosk → `_fix_encoding` → обработка) → `Orchestrator.process_text` в `lib/core/orchestrator.py`.
-- `Orchestrator` — набор миксинов в `lib/core/`: `orchestrator.py` (детерминированное ядро), `orchestrator_decision.py` (уровень Laya), `orchestrator_memory.py` (алиасы запомни/забудь), `orchestrator_opencode.py` (фолбэк), `orchestrator_speech.py` (стоп-слова, dev-режим).
+- `Orchestrator` — набор миксинов в `lib/core/`: `orchestrator.py` (детерминированное ядро), `orchestrator_decision.py` (уровень Laya), `orchestrator_memory.py` (laya/undefined-кандидаты базы знаний), `orchestrator_opencode.py` (фолбэк), `orchestrator_speech.py` (стоп-слова, dev-режим).
 - Уровни обработки текста (по порядку):
   1. `commands.json` — детерминированный матч (правило «трёх строк», §10);
   2. decision-слой Laya — распознанные Laya команды, `lib/core/laya_decision.py`, §4.2;
@@ -53,7 +53,7 @@ python main.py
 - `lib/stt/` — `transcription_worker`, `vosk_model`.
 - `lib/synth/` — `tts_engines`, `tts_playback`.
 - `lib/opencode/` — `opencode_cli`, `opencode_output`.
-- `lib/voice_cmd/` — `commands*`, `aliases`, `intent`, `config_loader` (шаг 1, §10).
+- `lib/voice_cmd/` — `commands*`, `knowledge`, `intent`, `config_loader` (шаг 1, §10).
 - `lib/scheduling/` — `cron*`, `time_parser*`, `sleep_event`/`wake_event` тесты здесь.
 - `lib/taskflow/` — `tasks_*`, `task_start_sheet`.
 - `lib/google/` — `google_calendar_events|mutate`, `google_tasks`.

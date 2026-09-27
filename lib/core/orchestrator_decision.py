@@ -65,29 +65,13 @@ class OrchestratorDecisionMixin:
                 f"[Command] Команда {cmd_id} найдена, но заблокирована: "
                 f"нет статуса: {', '.join(missing)}")
         # Команды из commands.json нет (или она заблокирована) — дальше
-        # старые уровни: алиасы/decision/opencode.
+        # уровни: decision/legacy-opencode.
         if not self._matcher.has_trigger(text):
             return
         literal_id = cmd_id  # найденная (даже заблокированная) команда
         if cmd_id is None:
             self._output.print_info(
                 "[Command] В commands.json команда не найдена")
-        # 1.5. Известное коверканье из базы алиасов — без вызова LLM.
-        if cmd_id is None and self._aliases is not None:
-            core = self._matcher.core_phrase(text)
-            alias_id = self._aliases.resolve(core)
-            if alias_id is not None:
-                missing = self._matcher.missing_requires(alias_id)
-                if not missing:
-                    self._output.print_info(
-                        f"[Alias] Распознана команда: {alias_id}")
-                    self._aliases.bump(core)
-                    self._execute_decision(alias_id, text)
-                    return
-                blocked = [(alias_id, missing)]
-            else:
-                self._output.print_debug(
-                    "[Alias] В алиасах совпадений нет")
         # 1.6. База знаний: подтверждённые досмотром команда/мероприятие —
         # без вызова LLM и без нечёткого матчинга по календарю.
         if cmd_id is None and self._knowledge is not None:
@@ -167,7 +151,7 @@ class OrchestratorDecisionMixin:
                 )
                 return
         self._output.print_debug(
-            f"[OpenCode Decision] No literal, no alias, no intent match. "
+            f"[OpenCode Decision] No literal, no knowledge, no intent match. "
             f"Sending to opencode-cli. Text: {text}"
         )
         self._record_undefined(text)

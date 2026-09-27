@@ -2,7 +2,7 @@
 
 Проверяют: подтверждённая запись разрешает команду/мероприятие без LLM и
 без нечёткого матчинга; распознанное Лайей падает в корзину laya; а
-нераспознанное — в undefined.
+нераспознанное — в undefined. Алиас-путь упразднён — единый канал знаний.
 """
 
 import json
@@ -26,11 +26,9 @@ def _build(tmp_path, seed=None, core="дичь", needs_text=False, decision=None
     matcher.needs_text.return_value = needs_text
     matcher.execute_by_id.return_value = True
     matcher.match_config.return_value = {}
-    aliases = MagicMock()
-    aliases.resolve.return_value = None            # алиас-путь пропускаем
     orch = Orchestrator(matcher=matcher, output=MagicMock(),
-                        tts=MagicMock(), aliases=aliases,
-                        knowledge=knowledge, decision=decision)
+                        tts=MagicMock(), knowledge=knowledge,
+                        decision=decision)
     return orch, matcher, knowledge
 
 

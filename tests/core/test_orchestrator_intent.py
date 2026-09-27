@@ -1,11 +1,11 @@
-"""Тесты Orchestrator: mini-LLM intent и алиасы."""
+"""Тесты Orchestrator: mini-LLM intent."""
 
 
 from lib.core.orchestrator import Orchestrator
 
 
 class TestOrchestratorIntent:
-    """Классификатор команд и база алиасов."""
+    """Классификатор команд mini-LLM."""
 
     def _make(self, mocker, **kwargs):
         """Создаёт оркестратор с мок-зависимостями."""
@@ -24,15 +24,6 @@ class TestOrchestratorIntent:
             orch._matcher.status_snapshot.return_value = {}
             orch._matcher.requires_map.return_value = {}
         return orch
-
-    def _aliases(self, tmp_path, data=None):
-        """Настоящий AliasStore во временном файле."""
-        import json
-        from lib.voice_cmd.aliases import AliasStore
-        path = str(tmp_path / "aliases.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data or {"aliases": {}, "pending": {}}, f)
-        return AliasStore(path)
 
     def test_process_text_literal_blocked_goes_to_intent(self, mocker):
         """Дословная, но заблокированная команда — в intent с контекстом."""
@@ -114,50 +105,3 @@ class TestOrchestratorIntent:
         spy = mocker.patch.object(orch, "_speak_async")
         orch.process_text("пожалуйста открой ютуб")
         spy.assert_called_once_with("Проверь доступность прокси")
-
-    def test_process_text_alias_hit_executes(self, mocker, tmp_path):
-        """Известное коверканье запускается без LLM."""
-        orch = self._make(mocker)
-        orch._aliases = self._aliases(tmp_path, {"aliases": {
-            "включи и ютюб": {"command": "openyoutube", "hits": 0,
-                              "confirmed": True}}, "pending": {}})
-        orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
-        orch._matcher.core_phrase.return_value = "включи и ютюб"
-        orch._matcher.missing_requires.return_value = []
-        orch._matcher.execute_by_id.return_value = True
-        orch.process_text("алиса включи и ютюб пожалуйста")
-        orch._matcher.execute_by_id.assert_called_once_with("openyoutube")
-        orch._output.print_info.assert_any_call(
-            "[Alias] Распознана команда: openyoutube")
-
-    def test_process_text_literal_beats_alias(self, mocker, tmp_path):
-        """Дословный шаблон важнее алиаса на тот же текст."""
-        orch = self._make(mocker)
-        orch._aliases = self._aliases(tmp_path)
-        orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("openyoutube", [], False)
-        orch._matcher.missing_requires.return_value = []
-        orch._matcher.execute_by_id.return_value = True
-        orch._matcher.core_phrase.return_value = "открой ютуб"
-        orch.process_text("алиса открой ютуб пожалуйста")
-        orch._matcher.execute_by_id.assert_called_once_with("openyoutube")
-        orch._output.print_info.assert_any_call(
-            "[Command] Распознана команда: openyoutube")
-
-    def test_process_text_alias_blocked_goes_to_intent(self, mocker, tmp_path):
-        """Заблокированный алиас — в intent с контекстом."""
-        intent = mocker.MagicMock()
-        intent.detect.return_value = None
-        orch = self._make(mocker, intent=intent)
-        orch._aliases = self._aliases(tmp_path, {"aliases": {
-            "включи и ютюб": {"command": "openyoutube", "hits": 0,
-                              "confirmed": True}}, "pending": {}})
-        orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
-        orch._matcher.core_phrase.return_value = "включи и ютюб"
-        orch._matcher.missing_requires.return_value = ["proxy"]
-        orch.process_text("алиса включи и ютюб пожалуйста")
-        orch._matcher.execute_by_id.assert_not_called()
-        text, context = intent.detect.call_args.args
-        assert context["blocked"] == [("openyoutube", ["proxy"])]

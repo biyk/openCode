@@ -1,10 +1,11 @@
 # lib/voice_cmd/knowledge_review_ui.py
 """HTML-страница доски «проверка знаний»: одна страница, 4 вкладки.
 
-Подтверждено (галочка активна; снял → undefined), Лайя (правка
+Подтверждено (галочка активна; снял → undefined; ✕ чистит устаревшую
+фразу из commands.json и базы знаний), Лайя (правка
 команды/параметров + подтвердить; ✕ снимает догадку ИИ в undefined,
 а не удаляет), Не распознано (кнопка «распознать»: Laya → LLM, затем
-подтвердить; только здесь ✕ удаляет из базы), Сервер (статус Laya +
+подтвердить; ✕ удаляет из базы), Сервер (статус Laya +
 адрес/модель LLM). Колонка «что делает» убрана — всё есть команда: «какая»
 выбирается в «команда», само-отчёт = taskstart/taskdone. Для этих команд
 под полем параметра — список задач real_life_tasks (клик подставляет).
@@ -91,9 +92,11 @@ function row(text,e,bucket){
    ?'<label><input type=checkbox class=okc checked> подтверждено</label>'
    :"<button class=conf>✓ подтвердить</button>");
  const btns=e.locked?"":' <button class=app>сохранить</button>';
- // ✕ удаляет только в «Не распознано»; на «Лайе» снимает догадку ИИ,
- // в «Подтверждено» удаление не нужно (галочка → undefined).
- const del=(e.locked||bucket=="confirmed")?"":'<button class=del>✕</button>';
+ // ✕: в «Подтверждено» чистит фразу из commands.json И базы (purge);
+ // на «Лайе» снимает догадку ИИ (reset); в «Не распознано» удаляет (forget).
+ const del=bucket=="confirmed"
+  ?'<button class=del title="удалить из commands.json и базы знаний">✕</button>'
+  :(e.locked?"":'<button class=del>✕</button>');
  const task=e.command=="taskstart"||e.command=="taskdone";
  const extra=!e.locked&&task?tasksBox():"";
  return `<tr data-text="${esc(text)}" data-bucket="${bucket}" data-kind=\
@@ -124,8 +127,9 @@ ${esc(s.llm_model)}"></label></p>\
 async function load(){S=await api("/api/board");render()}
 function render(){
  document.getElementById("t-confirmed").innerHTML=table("confirmed",\
-"Подтверждено","Работают в рантайме: шаблоны commands.json и алиасы — "
-+"только чтение; записи доски (галочка) снимаются в «Не распознано».");
+"Подтверждено","Работают в рантайме: шаблоны commands.json — только "
++"чтение; записи доски (галочка) снимаются в «Не распознано». ✕ удаляет "
++"устаревшую фразу из commands.json и базы знаний.");
  document.getElementById("t-laya").innerHTML=table("laya","Лайя",\
 "Распознано Лайей или LLM, ждёт досмотра. «✓ подтвердить» сохранит "
 +"правку и перенесёт в «Подтверждено».");
@@ -172,8 +176,14 @@ await api("/api/recognize_all",{});pollRec();return}
  if(b.classList.contains("conf")){const p=pick(tr);await api("/api/act",
   {action:"update",...p});await api("/api/act",{action:"confirm",text});
   load();return}
- if(b.classList.contains("del")){await api("/api/act",
-  {action:tr.dataset.bucket=="laya"?"reset":"forget",text});load();return}});
+ if(b.classList.contains("del")){
+  if(tr.dataset.bucket=="confirmed"){
+   if(!confirm("Удалить фразу «"+text+"» из commands.json и базы знаний?"))
+    return;
+   await api("/api/act",{action:"purge",text});
+  }else{await api("/api/act",
+   {action:tr.dataset.bucket=="laya"?"reset":"forget",text});}
+  load();return}});
 document.addEventListener("input",ev=>{
  const c=ev.target;
  if(c.classList&&c.classList.contains("tf"))filterTasks(c)});

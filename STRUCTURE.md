@@ -56,7 +56,7 @@ voice
 │   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
 │   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
-│   │   ├── orchestrator_memory.py  # Миксин оркестратора: голосовое обучение алиасам запомни/забудь, кандидаты, контекст LLM.
+│   │   ├── orchestrator_memory.py  # Миксин оркестратора: laya/undefined-кандидаты базы знаний из пайплайна, контекст LLM для intent-фолбэка.
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
 │   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
@@ -128,9 +128,8 @@ voice
 │   │   ├── version.py  # Это модуль, который импортирует переменную __version__ из пакета lib и предоставляет функцию get_version() для получения текущей версии проекта.
 │   │   ├── version_checker.py  # Это модуль lib/versioning/version_checker.py, который в отдельном потоке периодически проверяет совпадение версии приложения и проекта и завершает программу при обнаружении несоответствия.
 │   │   └── version_gate.py  # Файл lib/versioning/version_gate.py отвечает за проверку соответствия версии приложения и версии проекта, считывает номер версии из файла VERSION и при несовпадении завершает работу.
-│   ├── voice_cmd/  # Первый уровень команд: матчер commands.json, алиасы, intent, конфиг устройств.
-│   │   ├── __init__.py  # Инициализация пакета voice_cmd — Первый уровень команд: матчер commands.json, алиасы, intent, конфиг устройств.
-│   │   ├── aliases.py  # Это модуль, реализующий хранилище алиасов команд с поддержкой загрузки из файла, автообновления, подтверждения и учёта статистики.
+│   ├── voice_cmd/  # Первый уровень команд: матчер commands.json, база знаний, intent, конфиг устройств.
+│   │   ├── __init__.py  # Инициализация пакета voice_cmd — Первый уровень команд: матчер commands.json, база знаний, intent, конфиг устройств.
 │   │   ├── commands.py  # Матчер команд: выполнение shell, requires/provides.
 │   │   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
 │   │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
@@ -138,7 +137,7 @@ voice
 │   │   ├── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
 │   │   ├── knowledge.py  # База знаний (targets/<host>/knowledge.json): единая база «фраза → решение» с корзинами confirmed/laya/undefined и kind=command/start/finish; в рантайме решают только confirmed (resolve/resolve_event), laya/undefined наполняются из пайплайна для доски «проверка знаний»
 │   │   ├── knowledge_review.py  # Точка входа доски «проверка знаний»: launch — идемпотентно поднимает detached review-сервер и открывает страницу в дебаг-браузере; serve/status — для ручной проверки
-│   │   ├── knowledge_review_board.py  # Операции доски знаний: снимок confirmed из трёх источников (match-шаблоны commands.json + алиасы aliases.json как locked read-only + knowledge.confirmed), confirm/demote/forget/update/reset (Лайя→undefined), статус Laya, названия задач real_life_tasks с кэшем
+│   │   ├── knowledge_review_board.py  # Операции доски знаний: снимок confirmed из двух источников (match-шаблоны commands.json как locked read-only + knowledge.confirmed редактируемые), confirm/demote/forget/update/reset (Лайя→undefined), статус Laya, названия задач real_life_tasks с кэшем
 │   │   ├── knowledge_review_bulk.py  # Массовое распознавание корзины undefined: все фразы по очереди через Лайю и LLM (try_recognize), распознанные уезжают в корзину laya на досмотр; прогресс start/status в daemon-потоке
 │   │   ├── knowledge_review_recognize.py  # Распознавание фразы для доски: сначала Лайя (decision), затем LLM (LM Studio) с перечнем команд; настройки доски в targets/<host>/review.json
 │   │   ├── knowledge_review_scan.py  # Сканер логов для доски знаний: [TEXT]-строки с триггерами из logs/*.log → детектор (commands.json, Лайя), нераспознанные фразы в корзину undefined, просканированные логи в logs/zip/YYYYMMDD.zip
@@ -184,7 +183,6 @@ voice
 │   │   │   ├── monitoroff.ps1  # PowerShell-скрипт гасит монитор: шлёт HWND_BROADCAST (0xFFFF) WM_SYSCOMMAND (0x0112) с SC_MONITORPOWER (0xF170) и lParam=2 (off) через user32 SendMessageTimeout — экран гаснет, будит любой ввод (мышь/клавиатура); блокировки и сна ПК нет.
 │   │   │   ├── volumedown.ps1  # Это PowerShell‑скрипт, имитирующий нажатие клавиши уменьшения громкости в Windows, чтобы уменьшать системный звук на заданный процент.
 │   │   │   └── volumeup.ps1  # Это PowerShell‑скрипт, повышающий громкость, имитируя нажатие клавиши Volume Up заданное количество раз.
-│   │   ├── aliases.json  # Файл aliases.json содержит набор пользовательских алиасов команд и ожидающих подтверждения запросов, используемых в проекте для сопоставления голосовых фраз с внутренними командами.
 │   │   ├── commands.json  # Голосовые команды для Windows: воспроизведение, громкость, YouTube, календарь, задачи, диагностика
 │   │   ├── knowledge.json  # База знаний фраз устройства: корзины confirmed (решает в рантайме) / laya / undefined, наполняется пайплайном и сканером логов, досматривается на доске «проверка знаний».
 │   │   ├── review.json  # Настройки доски «проверка знаний» устройства: порт HTTP-сервера, адрес и модель LLM для распознавания; правятся на вкладке «Сервер».
@@ -217,9 +215,9 @@ voice
 │   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
-│   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent и алиасы.
+│   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent.
 │   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
-│   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: голосовое обучение запомни/забудь.
+│   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
 │   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9
@@ -279,7 +277,7 @@ voice
 │   │   ├── conftest.py  # Шлюз папки speed: skip всей папки без VOICE_SPEED=1 и сессионная фикстура bench (Recorder)
 │   │   ├── results.json  # История скоростных метрик (медиана на каждый прогон) — сравнение «до/после» оптимизаций
 │   │   ├── test_cdp_speed.py  # Замеры CDP-транспорта: localhost (IPv6-стол ~2 с) против 127.0.0.1, WebSocket-коннект для eval_js, цена is_running
-│   │   ├── test_config_speed.py  # Замеры конфиг-слоя: инициализация матчера, reload-noop, find_command (попадание/промах), alias resolve — проверка, что mtime-кэш действительно дёшев
+│   │   ├── test_config_speed.py  # Замеры конфиг-слоя: инициализация матчера, reload-noop, find_command (попадание/промах), knowledge resolve — проверка, что mtime-кэш действительно дёшев
 │   │   ├── test_laya_speed.py  # Замеры decision-слоя: latency /health, полного detect и доли health в detect (кэш health пока неактуален — 0.4%)
 │   │   ├── test_race_speed.py  # Замеры LLM-гонки: overhead classify и цена повторного одинакового запроса (baseline для кэша); живые провайдеры только с VOICE_SPEED_LIVE=1
 │   │   └── test_status_speed.py  # Замеры проверок статусов (живые: TCP, PowerShell, CDP) и худшего пути блокировки команды ensure()/missing_requires()
@@ -310,8 +308,7 @@ voice
 │   │   ├── test_tasks_dedup.py  # Тесты задач: поиск дубликата exact/Laya перед созданием.
 │   │   ├── test_wake_fill.py  # Юнит-тесты автозаполнения: приоритет taskSort, фильтр подлежащих, идемпотентность по uuid, excludes, съедание окна, что Таблицы не пишутся (без сети)
 │   │   └── test_wake_slots.py  # Юнит-тесты окон и переноса из сна: compute_free_slots (дырки/мин.слот/курсор), перенос событий окна сна позже в порядке и с той же длительностью (без сети)
-│   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, алиасы, intent, конфиг.
-│   │   ├── test_aliases.py  # Это файл тестов, проверяющий работу класса AliasStore и функции normalize_core, обеспечивая корректную загрузку, разрешение, добавление, подтверждение, удаление и подсчёт использований алиасов.
+│   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.
 │   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
 │   │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
 │   │   ├── test_commands_find.py  # Тесты CommandMatcher: концепция трех строк, find_command.
@@ -322,7 +319,7 @@ voice
 │   │   ├── test_intent.py  # Тесты классификатора: detect.
 │   │   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
 │   │   ├── test_knowledge.py  # Юнит-тесты KnowledgeStore: path, resolve/resolve_event (решают только confirmed), record с приоритетом корзин (confirmed не понижается), confirm/demote/forget/bump/entries, запись на диск и hot-reload
-│   │   ├── test_knowledge_review.py  # Тесты доски «проверка знаний»: слияние confirmed из match/алиасов/знаний, review.json-конфиг, apply_act (confirm/demote/forget/update и reset Лайи в undefined), живой HTTP-API board/act/settings
+│   │   ├── test_knowledge_review.py  # Тесты доски «проверка знаний»: снимок confirmed из match/знаний, review.json-конфиг, apply_act (confirm/demote/forget/update и reset Лайи в undefined), живой HTTP-API board/act/settings
 │   │   ├── test_knowledge_review_bulk.py  # Тесты массового распознавания: переезд догадок (Лайя и LLM) в корзину laya, устойчивость к сбою на фразе, защита от двойного запуска, прогон в потоке и HTTP-API /api/recognize_all
 │   │   ├── test_knowledge_review_page.py  # Тесты HTML-страницы доски: валидность JS (node --check, битые переносы и склейки строк), наличие ключевых контролов (в т.ч. отсутствия колонки «что делает» и ✕-reset на «Лайе»), живой GET / и /api/ping
 │   │   ├── test_knowledge_review_recognize.py  # Тесты распознавания фразы для доски: разбор JSON в прозе LLM, отказ неизвестной команде и finish без события, приоритет Лайи перед LLM, via=none при провале всех

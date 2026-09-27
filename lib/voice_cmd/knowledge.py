@@ -15,27 +15,29 @@ event — заголовок). В рантайме участвуют тольк
 laya/undefined → confirmed делает человек («проверка знаний»).
 """
 
-from __future__ import annotations
-
 import json
 import os
 import threading
 from typing import Optional
 
 from lib.core.errors import swallowed
-from lib.voice_cmd.aliases import normalize_core
 
 # Вид решения
 COMMAND, START, FINISH = "command", "start", "finish"
-# Статусы-корзины
+# Статусы-корзины; подтверждённое решение не понижаем автозаписью,
+# laya сильнее undefined.
 CONFIRMED, LAYA, UNDEFINED = "confirmed", "laya", "undefined"
 BUCKETS = (CONFIRMED, LAYA, UNDEFINED)
-# Подтверждённое решение не понижаем автозаписью; laya сильнее undefined.
 _RANK = {CONFIRMED: 3, LAYA: 2, UNDEFINED: 1}
 
 
+def normalize_core(text: str) -> str:
+    """Нормализация фразы: нижний регистр, ё→е, схлопывание пробелов."""
+    return " ".join(text.lower().replace("ё", "е").split())
+
+
 class KnowledgeStore:
-    """Хранилище базы знаний с hot-reload (по образцу AliasStore)."""
+    """Хранилище базы знаний с hot-reload (по mtime файла)."""
 
     def __init__(self, knowledge_file: Optional[str] = None) -> None:
         self._file = knowledge_file
@@ -95,7 +97,7 @@ class KnowledgeStore:
 
     # ---- разрешение (в рантайме живёт только confirmed) ----
     def resolve(self, text: str) -> Optional[str]:
-        """Confirmed-команда → id (drop-in для AliasStore.resolve)."""
+        """Confirmed-команда → id (точ lookup по нормализованному ядру)."""
         self.reload()
         entry = self._data[CONFIRMED].get(normalize_core(text))
         if entry and entry.get("kind", COMMAND) == COMMAND and entry.get("command"):

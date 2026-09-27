@@ -14,7 +14,7 @@ import pytest
 from lib.voice_cmd.knowledge import CONFIRMED, LAYA, UNDEFINED, KnowledgeStore
 from lib.voice_cmd.knowledge_review_recognize import load_review, save_review
 from lib.voice_cmd.knowledge_review_board import (
-    apply_act, board_snapshot, laya_status,
+    apply_act, board_snapshot, delete_confirmed_phrase, laya_status,
 )
 from lib.voice_cmd.knowledge_review_server import make_server
 
@@ -61,20 +61,18 @@ class TestReviewConfig:
 
 
 class TestBoardAndActs:
-    def test_confirmed_merges_locked_sources(self, cfile, tmp_path):
-        (tmp_path / "aliases.json").write_text(json.dumps(
-            {"aliases": {"делай громче": {"command": "volumeup",
-                                          "hits": 4, "confirmed": True}},
-             "pending": {}}), encoding="utf-8")
+    def test_confirmed_locks_match_and_edits_knowledge(self, cfile, tmp_path):
         store = _store(tmp_path)
         store.record(CONFIRMED, "включи и ютюб", command="openyoutube")
         conf = board_snapshot(store, cfile,
                               {"port": 8765})["boards"][CONFIRMED]
+        # match-шаблон из commands.json — locked read-only
         assert conf["стоп музыка"]["locked"] is True
         assert conf["стоп музыка"]["command"] == "stop"
-        assert conf["делай громче"]["source"] == "aliases.json"
-        assert conf["делай громче"]["hits"] == 4
+        assert conf["стоп музыка"]["source"] == "commands.json"
+        # подтверждённая запись знаний — редактируемая (не locked)
         assert "locked" not in conf["включи и ютюб"]
+        assert conf["включи и ютюб"]["source"] == "знания"
 
     def test_board_snapshot(self, cfile, tmp_path):
         store = _store(tmp_path, {"тише": "volumedown"})
@@ -121,6 +119,30 @@ class TestBoardAndActs:
         assert laya_status(cfile) == {"enabled": False, "url": "",
                                       "up": False}
 
+    def test_purge_removes_from_both_stores(self, cfile, tmp_path):
+        # confirmed-мусор чистится и из commands.json.match, и из знаний.
+        store = _store(tmp_path)
+        store.record(CONFIRMED, "стоп музыка", command="stop")
+        assert delete_confirmed_phrase(store, cfile, "стоп музыка") == {
+            "knowledge": True, "match": 1}
+        assert "стоп музыка" not in store.entries(CONFIRMED)
+        data = json.loads(open(cfile, encoding="utf-8").read())
+        assert "stop" not in data["match"]          # список опустел → cid снят
+        assert data["commands"]["stop"] == "cmd"     # команда не тронута
+        assert data["decision"] == {"enabled": False}
+
+    def test_purge_removes_only_matching_template(self, tmp_path):
+        cfile = str(tmp_path / "commands.json")
+        with open(cfile, "w", encoding="utf-8") as f:
+            json.dump({"match": {"volumeup": ["громче", "сделай громче"]},
+                       "decision": {"enabled": False}},
+                      f, ensure_ascii=False)
+        store = _store(tmp_path)
+        assert delete_confirmed_phrase(store, cfile, "Громче") == {
+            "knowledge": False, "match": 1}
+        data = json.loads(open(cfile, encoding="utf-8").read())
+        assert data["match"]["volumeup"] == ["сделай громче"]
+
 
 class TestHttpApi:
     def test_ping_board_act(self, cfile, tmp_path):
@@ -135,6 +157,24 @@ class TestHttpApi:
             assert _http(port, "/api/act",
                          {"action": "confirm", "text": "тише"}) == {"ok": True}
             assert "тише" in store.entries(CONFIRMED)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_purge_locked_phrase_via_api(self, cfile, tmp_path):
+        store = _store(tmp_path)
+        httpd = make_server(store, cfile, {"port": 0}, 0)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conf = _http(port, "/api/board")["boards"][CONFIRMED]
+            assert "стоп музыка" in conf          # locked-строка есть
+            r = _http(port, "/api/act",
+                      {"action": "purge", "text": "стоп музыка"})
+            assert r["ok"] is True and r["match"] == 1
+            conf = _http(port, "/api/board")["boards"][CONFIRMED]
+            assert "стоп музыка" not in conf      # исчезла со снимка
         finally:
             httpd.shutdown()
             httpd.server_close()

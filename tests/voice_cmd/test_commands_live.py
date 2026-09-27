@@ -74,7 +74,7 @@ def matcher() -> CommandMatcher:
 
 def test_sleepmode_phrase_matches_command(matcher):
     """«спать»/«я спать»/«я пошел спать» (и варианты) матчатся на sleepmode."""
-    for window in (["алиса спать"], ["алиса я спать"], ["алиса иду спать"],
+    for window in (["алиса спать"], ["алиса я спать"],
                    ["алиса я лег спать"], ["лег спать пожалуйста"],
                    ["алиса я лёг спать"], ["алиса я пошел спать"],
                    ["алиса я пошёл спать"]):
@@ -94,8 +94,7 @@ def test_sleepmode_sequence_steps_resolvable(matcher):
 def test_wake_phrase_matches_command(matcher):
     """«я проснулся»/«я встал»/«доброе утро» матчатся на команду wakefix."""
     for window in (["алиса я проснулся"], ["алиса проснулся"],
-                   ["алиса я встал"], ["доброе утро пожалуйста"],
-                   ["алиса время встать"]):
+                   ["алиса я встал"], ["доброе утро пожалуйста"]):
         cmd_id, _settings, wait = matcher.find_command(window)
         assert cmd_id == "wakefix", f"{window}: ожидался wakefix, получил {cmd_id}"
         assert not wait

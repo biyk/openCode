@@ -1,11 +1,11 @@
 # lib/voice_cmd/knowledge_review_board.py
 """Операции доски знаний: снимок, движения корзин, статусы серверов.
 
-Снимок confirmed сливает источники: шаблоны "match" из commands.json и
-подтверждённые алиасы aliases.json (они работают в рантайме, на доске —
-только для чтения, locked=true) + подтверждённые записи knowledge.json
-(source=«знания», редактируемые). laya/undefined — только knowledge.json,
-их наполняет живой пайплайн (перезапущенный воркер).
+Снимок confirmed сливает источники: шаблоны "match" из commands.json
+(работают в рантайме, на доске — только для чтения, locked=true) +
+подтверждённые записи knowledge.json (source=«знания», редактируемые).
+laya/undefined — только knowledge.json, их наполняет живой пайплайн
+(перезапущенный воркер).
 """
 
 from __future__ import annotations
@@ -17,9 +17,8 @@ import urllib.request
 from typing import Optional
 
 from lib.core.errors import swallowed
-from lib.voice_cmd.aliases import normalize_core
 from lib.voice_cmd.knowledge import (
-    BUCKETS, CONFIRMED, LAYA, UNDEFINED, KnowledgeStore,
+    BUCKETS, CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
 )
 
 
@@ -37,7 +36,7 @@ def commands_lists(commands_file: str) -> tuple[list[str], dict]:
 
 
 def locked_confirmed(commands_file: str) -> dict:
-    """Уже работающие фразы вне knowledge.json: match + алиасы (read-only)."""
+    """Уже работающие фразы вне knowledge.json: match-шаблоны (read-only)."""
     try:
         with open(commands_file, encoding="utf-8") as f:
             data = json.load(f)
@@ -50,20 +49,6 @@ def locked_confirmed(commands_file: str) -> dict:
             out[normalize_core(ph)] = {"kind": "command", "command": cid,
                                        "hits": 0, "locked": True,
                                        "source": "commands.json"}
-    apath = os.path.join(os.path.dirname(commands_file), "aliases.json")
-    try:
-        with open(apath, encoding="utf-8") as f:
-            aliases = (json.load(f) or {}).get("aliases") or {}
-    except FileNotFoundError:
-        aliases = {}
-    except Exception as e:
-        swallowed("review.locked_aliases", e)
-        aliases = {}
-    for core, entry in aliases.items():
-        out.setdefault(core, {"kind": "command",
-                              "command": str(entry.get("command") or ""),
-                              "hits": int(entry.get("hits") or 0),
-                              "locked": True, "source": "aliases.json"})
     return out
 
 
@@ -136,6 +121,45 @@ def _bucket_of(store: KnowledgeStore, text: str) -> Optional[str]:
         if text in store.entries(b):
             return b
     return None
+
+
+def delete_confirmed_phrase(store: KnowledgeStore, commands_file: str,
+                            text: str) -> dict:
+    """Чистит устаревшую confirmed-фразу из ОБОИХ хранилищ сразу.
+
+    knowledge.json — forget по всем корзинам; commands.json — убираем шаблон
+    из match[cid] (сверка по normalize_core), при опустошении снимаем cid.
+    Прочие секции конфига (commands/sequences/descriptions/criteria) не трогаем.
+    """
+    core = normalize_core(text)
+    removed = store.forget(core)
+    try:
+        with open(commands_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        swallowed("review.delete_phrase.read", e)
+        return {"knowledge": removed, "match": 0}
+    match = data.get("match") or {}
+    removed_match = 0
+    for cid in list(match):
+        kept = [t for t in match[cid] if normalize_core(t) != core]
+        if len(kept) != len(match[cid]):
+            removed_match += len(match[cid]) - len(kept)
+            if kept:
+                match[cid] = kept
+            else:
+                del match[cid]
+    if removed_match:
+        data["match"] = match
+        try:
+            tmp = commands_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+                f.write("\n")
+            os.replace(tmp, commands_file)
+        except Exception as e:
+            swallowed("review.delete_phrase.write", e)
+    return {"knowledge": removed, "match": removed_match}
 
 
 def apply_act(store: KnowledgeStore, act: dict) -> bool:
