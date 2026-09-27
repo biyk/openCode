@@ -3,20 +3,27 @@
 Вынесено из lib/core/orchestrator.py, чтобы держать файлы ≤ 200 строк.
 """
 
+from typing import Optional
+
 
 class OrchestratorDecisionMixin:
     """Шаг 1..3: commands.json, алиасы, decision-слой Laya, legacy fallback."""
 
-    def _execute_decision(self, cmd_id: str, text: str) -> bool:
-        """Запускает команду алиаса/Laya, подставляя ядро фразы в {{text}}.
+    def _execute_decision(self, cmd_id: str, text: str,
+                          forced_text: Optional[str] = None) -> bool:
+        """Запускает команду знания/Laya, подставляя ядро фразы в {{text}}.
 
-        Laya и алиасы возвращают только id команды; команды со свободным
-        текстом (taskstart, calendar-reminder) иначе запускаются с пустым
-        аргументом. Для них слова фразы без триггеров уходят как settings.
+        Laya и база знаний возвращают только id команды; команды со свободным
+        текстом (task-add, calendar-reminder) иначе запускаются с пустым
+        аргументом. Если на доске для confirmed-записи выбран ключ (event),
+        он идёт в {{text}} как есть — рантайм не перерезает фразу заново.
         """
         settings = ()
         if self._matcher.needs_text(cmd_id):
-            settings = self._decision_text(cmd_id, text)
+            if forced_text:
+                settings = (forced_text,)
+            else:
+                settings = self._decision_text(cmd_id, text)
         if settings:
             return self._matcher.execute_by_id(cmd_id, settings)
         return self._matcher.execute_by_id(cmd_id)
@@ -76,14 +83,14 @@ class OrchestratorDecisionMixin:
         # без вызова LLM и без нечёткого матчинга по календарю.
         if cmd_id is None and self._knowledge is not None:
             kcore = self._matcher.core_phrase(text)
-            kid = self._knowledge.resolve(kcore)
+            kid, ktext = self._knowledge.resolve_text(kcore)
             if kid is not None:
                 missing = self._matcher.missing_requires(kid)
                 if not missing:
                     self._output.print_info(
                         f"[Knowledge] Распознана команда: {kid}")
                     self._knowledge.bump(kcore)
-                    self._execute_decision(kid, text)
+                    self._execute_decision(kid, text, ktext)
                     return
                 blocked = [(kid, missing)]
             else:

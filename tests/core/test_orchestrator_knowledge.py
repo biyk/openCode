@@ -53,6 +53,19 @@ class TestConfirmedResolution:
             "taskdone", ("Завтрак. Принять витамины",))
         orch._event_matcher.find_task_event.assert_not_called()
 
+    def test_confirmed_command_uses_curated_event(self, tmp_path):
+        # ключ с доски (event) доходит до рантайма: {{text}} = event как есть,
+        # а не перерезанная коверканная фраза с командными словами внутри
+        orch, matcher, _ = _build(
+            tmp_path, core="по стать задачу починить резинку", needs_text=True,
+            seed={"confirmed": {"по стать задачу починить резинку": {
+                "kind": "command", "command": "task-add",
+                "event": "починить резинку", "hits": 0}}})
+        matcher.match_config.return_value = {"task-add": ["поставь задачу"]}
+        orch.process_text("алиса по стать задачу починить резинку")
+        matcher.execute_by_id.assert_called_once_with(
+            "task-add", ("починить резинку",))
+
     def test_laya_stays_unresolved(self, tmp_path):
         # laya-корзина НЕ участвует в рантайме — уходим в Лайю-детект
         decision = MagicMock()

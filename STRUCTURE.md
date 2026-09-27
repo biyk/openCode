@@ -135,7 +135,7 @@ voice
 │   │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
 │   │   ├── config_loader.py  # Это модуль‑загрузчик конфигурации, который определяет путь к файлу commands.json для указанного устройства, при необходимости создаёт каталог устройства и копирует туда файловый файл команд.
 │   │   ├── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
-│   │   ├── knowledge.py  # База знаний (targets/<host>/knowledge.json): единая база «фраза → решение» с корзинами confirmed/laya/undefined и kind=command/start/finish; в рантайме решают только confirmed (resolve/resolve_event), laya/undefined наполняются из пайплайна для доски «проверка знаний»
+│   │   ├── knowledge.py  # База знаний (targets/<host>/knowledge.json): единая база «фраза → решение» с корзинами confirmed/laya/undefined и kind=command/start/finish; в рантайме решают только confirmed (resolve/resolve_text/resolve_event; event с доски идёт в {{text}} как есть), laya/undefined наполняются из пайплайна для доски «проверка знаний»
 │   │   ├── knowledge_review.py  # Точка входа доски «проверка знаний»: launch — идемпотентно поднимает detached review-сервер и открывает страницу в дебаг-браузере; serve/status — для ручной проверки
 │   │   ├── knowledge_review_board.py  # Операции доски знаний: снимок confirmed из двух источников (match-шаблоны commands.json как locked read-only + knowledge.confirmed редактируемые), confirm/demote/forget/update/reset (Лайя→undefined), статус Laya, названия задач real_life_tasks с кэшем
 │   │   ├── knowledge_review_bulk.py  # Массовое распознавание корзины undefined: все фразы по очереди через Лайю и LLM (try_recognize), распознанные уезжают в корзину laya на досмотр; прогресс start/status в daemon-потоке
@@ -216,7 +216,7 @@ voice
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
 │   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent.
-│   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
+│   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, curated-event с доски идёт в {{text}} без перерезки, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.

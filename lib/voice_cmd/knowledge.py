@@ -1,18 +1,10 @@
 # lib/voice_cmd/knowledge.py
-"""База знаний: единая база «фраза → решение» с статусами review-доски.
+"""База знаний: «фраза → решение» с корзинами статусов review-доски.
 
-Хранится в targets/<host>/knowledge.json — три корзины по статусу:
-  {
-    "confirmed": { "включи и ютюб": {"kind":"command","command":"openyoutube","hits":2} },
-    "laya":      { "тише": {"kind":"command","command":"volumedown","hits":1} },
-    "undefined": { "ы ы ы": {"kind":"command","hits":0} }
-  }
-
-kind — «command» (команда), «start»/«finish» (начало/конец мероприятия, поле
-event — заголовок). В рантайме участвуют только confirmed-записи: они
-разрешают фразу в команду/мероприятие без LLM. laya — распознано Лайей,
-ждёт подтверждения; undefined — не распознано ничего. Досмотр и перевод
-laya/undefined → confirmed делает человек («проверка знаний»).
+targets/<host>/knowledge.json: confirmed (решает в рантайме без LLM),
+laya (распознано Лайей, ждёт досмотра), undefined (не распознано).
+kind — «command» либо «start»/«finish» (мероприятие, поле event — заголовок).
+Досмотр и перевод laya/undefined → confirmed делает человек.
 """
 
 import json
@@ -98,11 +90,19 @@ class KnowledgeStore:
     # ---- разрешение (в рантайме живёт только confirmed) ----
     def resolve(self, text: str) -> Optional[str]:
         """Confirmed-команда → id (точ lookup по нормализованному ядру)."""
+        return self.resolve_text(text)[0]
+
+    def resolve_text(self, text: str) -> tuple[Optional[str], Optional[str]]:
+        """Confirmed-команда → (id, event|None); (None, None) если не команда.
+
+        event — curated-текст с доски (параметр {{text}}): если задан,
+        рантайм подставляет его как есть, не перерезая фразу заново.
+        """
         self.reload()
         entry = self._data[CONFIRMED].get(normalize_core(text))
         if entry and entry.get("kind", COMMAND) == COMMAND and entry.get("command"):
-            return str(entry["command"])
-        return None
+            return str(entry["command"]), entry.get("event")
+        return None, None
 
     def resolve_event(self, text: str) -> Optional[tuple[str, str]]:
         """Confirmed-мероприятие → (action, event_title) либо None."""
