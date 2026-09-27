@@ -6,8 +6,10 @@
 сон реально начался.
 
 Дополнительно сдвигает утреннее cron-задание «wake_video_and_volume» на
-сейчас + 7ч30м (lib/scheduling/cron_edit.py) — планировщик подхватит
-правку crontab.json по mtime без перезапуска.
+сейчас + 7ч30м (lib/scheduling/cron_edit.py) и ставит в Планировщике
+Windows разовый будильник WakeToRun на сейчас + 7ч20м
+(lib/scheduling/wake_alarm.py) — система проснётся сама, успеет
+прогреться, а её cron включит ролик ровно в +7ч30.
 
 CLI: `python -m lib.sleep_event` — вызывается как шаг sequence `sleepmode`
 после опускания громкости. Коды выхода: 0 — начало зафиксировано,
@@ -21,6 +23,7 @@ from typing import Optional
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 from lib.scheduling.cron_edit import shift_job_schedule
+from lib.scheduling.wake_alarm import schedule_wake_alarm
 
 # «СОН» как отдельное слово в заголовке (регистр не важен, ё=е).
 SLEEP_TITLE_RE = re.compile(r"\bсон\b", re.IGNORECASE)
@@ -33,6 +36,8 @@ LOOKAHEAD = timedelta(hours=24)
 # Утреннее задание пробуждения и интервал «сон → подъём» для сдвига.
 WAKE_JOB_ID = "wake_video_and_volume"
 WAKE_OFFSET = timedelta(hours=7, minutes=30)
+# Будильник планировщика — за 10 минут до задания: прогрев/фоновые задачи.
+WAKE_ALARM_OFFSET = timedelta(hours=7, minutes=20)
 
 
 class SleepEventHandler:
@@ -109,21 +114,41 @@ def shift_wake_job(now: datetime) -> None:
           f"{target:%d.%m.%Y %H:%M} (cron: {expr})")
 
 
+def arm_wake_alarm(now: datetime) -> None:
+    """Будильник WakeToRun в Планировщике Windows на now + 7ч20.
+
+    Нужен, т.к. при погашенном экране ноут уходит в S0/гибернацию и
+    внутренний cron там заморожен; планировщик ОС будит машиной сам.
+    """
+    moment = now + WAKE_ALARM_OFFSET
+    error = schedule_wake_alarm(moment)
+    if error is not None:
+        print(f"[sleep] будильник пробуждения не поставлен: {error}")
+        return
+    print(f"[sleep] планировщик разбудит систему в {moment:%d.%m.%Y %H:%M}")
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     handler = SleepEventHandler()
     try:
         ev = handler.fix_sleep_start()
     except Exception as e:  # нет токена/сети — сообщаем и падаем
         print(f"[sleep] ошибка календаря: {e}")
-        shift_wake_job(handler.now)
+        _arm_wakeup_side_effects(handler.now)
         return 1
-    shift_wake_job(handler.now)
+    _arm_wakeup_side_effects(handler.now)
     if ev is None:
         print("[sleep] событие «СОН» (идущее или ближайшее) не найдено")
         return 1
     print(f"[sleep] начало «{ev['summary']}» перенесено на "
           f"{handler.now:%d.%m.%Y %H:%M}")
     return 0
+
+
+def _arm_wakeup_side_effects(now: datetime) -> None:
+    """Побочные эффекты «я спать»: сдвиг cron-задания + будильник ОС."""
+    shift_wake_job(now)
+    arm_wake_alarm(now)
 
 
 if __name__ == "__main__":

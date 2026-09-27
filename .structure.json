@@ -227,6 +227,8 @@
   "lib/scheduling/cron_parse.py": "Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()",
   "lib/scheduling/cron_edit.py": "Правка расписания в cron/crontab.json: shift_job_schedule ставит заданиям по id «минута час * * *» от now+offset (атомарная запись); используется командой «я спать» для wake_video_and_volume; CLI python -m lib.scheduling.cron_edit",
   "tests/scheduling/test_cron_edit.py": "Юнит-тесты правки crontab.json: сдвиг на now+7ч30, сохранение прочих полей, отсутствующие задание/файл, нестандартное расписание, атомарность записи",
+  "lib/scheduling/wake_alarm.py": "Разовая задача-будильник WakeToRun в Планировщике Windows (пробуждение из S0/гибернации): schedule_wake_alarm через powershell Register-ScheduledTask, отказ — текст, не исключение; ставится командой «я спать» на now+7ч20",
+  "tests/scheduling/test_wake_alarm.py": "Юнит-тесты будильника WakeToRun (powershell мок): состав команды -At/-Force, успех=None, ошибка=последняя строка stderr, таймаут не бросает исключение, смещение +7ч20 в arm_wake_alarm",
   "tests/scheduling/test_cron_parse.py": "Юнит-тесты парсера cron-выражений: маски, шаги, диапазоны, имена, правило ИЛИ dom/dow, next_after, невалидные выражения",
   "tests/scheduling/test_cron_scheduler.py": "Юнит-тесты планировщика cron: срабатывание по расписанию, дедупликация, disabled, script/shell, announce, таймаут, перезагрузка по mtime",
   "tests/scheduling/test_cron_output.py": "Юнит-тесты логирования вывода cron-заданий: stdout в логе при успехе и ошибке, защита от не-bytes",
