@@ -87,8 +87,15 @@ class OrchestratorEventMatchMixin:
                 f"[EventMatch]   «{summary}» \u2192 {score:.2f}")
         try:
             finder = self._get_event_matcher()
-            event = finder.find_task_event(core, filter_fn=is_undone,
-                                           report=report)
+            try:
+                event = finder.find_task_event(core, filter_fn=is_undone,
+                                               report=report)
+            except OSError as e:
+                # Сетевая нестабильность (SSLEOFError у протухшего
+                # keep-alive) — одна повторная попытка новым соединением.
+                swallowed("event_match.retry", e)
+                event = finder.find_task_event(core, filter_fn=is_undone,
+                                               report=report)
         except Exception as e:
             swallowed("event_match.find", e)
             return False
@@ -112,6 +119,19 @@ class OrchestratorEventMatchMixin:
         cmd_id = "taskstart" if action == "start" else "taskdone"
         self._output.print_info(f"[EventMatch] Действие={action} → {cmd_id}")
         return self._execute_decision(cmd_id, text)
+
+    def _execute_event_action(self, action: str, event_title: str) -> bool:
+        """Подтверждённая синоним-фраза мероприятия: старт/финиш напрямую.
+
+        Мимо нечёткого find_task_event и Лайи: заголовок уже известен из
+        базы знаний, идёт как {{text}} в taskstart/taskdone.
+        """
+        cmd_id = "taskstart" if action == "start" else "taskdone"
+        self._output.print_info(
+            f"[Knowledge] Мероприятие: «{event_title}» → {action} ({cmd_id})")
+        if self._matcher.needs_text(cmd_id):
+            return self._matcher.execute_by_id(cmd_id, (event_title,))
+        return self._matcher.execute_by_id(cmd_id)
 
     def _detect_event_action(self, core: str) -> Optional[str]:
         """Определяет «start» или «complete»: Laya → эвристика."""

@@ -8,6 +8,8 @@ ensure_browser: без браузера live-тесты не проверяют 
 Если же что-то УЖЕ играет (системное медиа или боевой ролик),
 тест скипается: открытие ютуба и плей/пауза пропускаются, чтобы не
 вмешиваться в воспроизведение и не ловить ложные падения.
+YouTube доступен только через прокси: прокси-гейт проверяется раньше
+всего — без прокси модуль скипается, не поднимая браузер.
 """
 from __future__ import annotations
 
@@ -23,6 +25,8 @@ from lib.browser_control import ensure_browser
 from lib.voice_cmd.commands import CommandMatcher
 from lib.voice_cmd.config_loader import get_device_commands_path
 from lib.runtime.media import is_media_playing
+from lib.runtime.status import StatusStore
+from lib.runtime.status_checkers import _check_proxy
 
 TEST_VIDEO_ID = "y65necIJU2Y"
 TEST_VIDEO_URL = "https://www.youtube.com/watch?v=" + TEST_VIDEO_ID
@@ -31,14 +35,28 @@ TEST_VIDEO_URL = "https://www.youtube.com/watch?v=" + TEST_VIDEO_ID
 PAUSE_SETTLE_S = 2.0
 
 
+def _proxy_ready() -> bool:
+    """Проверяет прокси так же, как рантайм: статус proxy из status.json."""
+    commands_file = get_device_commands_path(platform.node())
+    store = StatusStore(StatusStore.path_for_commands_file(commands_file))
+    if store.enabled:
+        return store.refresh("proxy")
+    # Конфига статусов нет — дефолтная проверка 192.168.1.107:1080.
+    return bool(_check_proxy())
+
+
 @pytest.fixture(scope="module", autouse=True)
 def browser_ready():
-    """Поднимает дебаг-браузер (CDP 9222) перед live-тестами YouTube.
+    """Пропускает live-тесты без прокси; иначе поднимает браузер (CDP 9222).
 
-    Если браузер уже открыт — просто проверяет порт. Если закрыт —
-    запускает (Brave, отдельный профиль) и ждёт готовности. Не удалось
-    запустить → тест падает: skip без браузера бессмыслен.
+    YouTube достигается только через прокси — без него тесты проверить
+    ничего не могут, поэтому скип ставится до запуска браузера. Если
+    браузер уже открыт — просто проверяется порт. Если закрыт —
+    запускается (Brave, отдельный профиль) и ждётся готовность. Не
+    удалось запустить → тест падает: skip без браузера бессмыслен.
     """
+    if not _proxy_ready():
+        pytest.skip("прокси недоступен — youtube live-тесты пропускаются")
     if not ensure_browser():
         pytest.fail(
             "дебаг-браузер (Brave, порт 9222) не запустился — "

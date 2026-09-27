@@ -109,10 +109,31 @@ def test_past_tense_phrase_matches_event_by_word_overlap():
     """
     h, _, _ = handler([
         event("Почистить зубы утро"),
-        event("Почистить зубы вечер. Расстелить кровать"),
+        event("Вынести мусор. Полить цветы"),
     ])
     ev = h.find_task_event("я почистил зубы")
     assert ev is not None and ev["summary"] == "Почистить зубы утро"
+
+
+def test_compound_title_matches_either_segment():
+    """«Завтрак. Принять витамины» матчится по любой точке отдельно."""
+    h, _, _ = handler([event("Прогулка"), event("Завтрак. Принять витамины")])
+    ev = h.find_task_event("принять витамины")
+    assert ev is not None and ev["summary"] == "Завтрак. Принять витамины"
+
+
+def test_compound_segments_point_to_one_event():
+    """Обе точки составного заголовка указывают на одно мероприятие."""
+    h, _, _ = handler([event("Распечатать тест дюз. прочистка принтера")])
+    assert h.find_task_event("распечатать тест дюз") is not None
+    assert h.find_task_event("прочистка принтера") is not None
+
+
+def test_parens_and_emoji_are_cut_from_title():
+    """Скобки и эмодзи не мешают матчингу: вырезаются до сравнения."""
+    h, _, _ = handler([event("\u25b8 Утренник (детский сад) \U0001f30c")])
+    ev = h.find_task_event("утренник")
+    assert ev is not None and "Утренник" in ev["summary"]
 
 
 def test_unrelated_phrase_does_not_match_event():

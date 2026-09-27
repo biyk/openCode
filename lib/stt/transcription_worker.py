@@ -7,6 +7,7 @@ import threading
 from typing import Optional
 
 from lib.voice_cmd.aliases import AliasStore
+from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.commands import CommandMatcher
 from lib.voice_cmd.config_loader import get_device_commands_path
 from lib.voice_cmd.intent import build_intent
@@ -81,6 +82,12 @@ class TranscriptionWorker:
         # Decision-слой Laya (заменяет mini-intent, когда настроен);
         # intent не создаём — новый путь его не использует.
         self._decision = build_decision(self._matcher, self._output)
+        # Алиасы (П6.0, детерминированы) и база знаний (доска «проверки
+        # знаний»): laya/undefined наполняются из пайплайна, решают confirmed.
+        self._aliases = AliasStore(
+            AliasStore.path_for_commands_file(commands_file))
+        self._knowledge = KnowledgeStore(
+            KnowledgeStore.path_for_commands_file(commands_file))
         self._orchestrator = Orchestrator(
             matcher=self._matcher,
             output=self._output,
@@ -88,14 +95,11 @@ class TranscriptionWorker:
             stop_words=STOP_WORDS,
             suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
             intent=intent,
+            aliases=self._aliases,
+            knowledge=self._knowledge,
             decision=self._decision,
             on_exit=self._dev_mode_exit,
         )
-
-        # Алиасы (база соответствий П6.0, всегда активны — детерминированы)
-        self._aliases = AliasStore(
-            AliasStore.path_for_commands_file(commands_file))
-        self._orchestrator._aliases = self._aliases
 
         # Фолбэк: console opencode (скиллы из cli/.opencode/skill),
         # флаг opencode_cli.enabled в commands.json

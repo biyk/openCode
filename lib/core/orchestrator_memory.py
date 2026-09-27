@@ -29,6 +29,18 @@ class OrchestratorMemoryMixin:
         self._last_resolution = (core, cmd_id)
         if literal_id is None and core:
             self._aliases.add(core, cmd_id, confirmed=False)
+            knowledge = getattr(self, "_knowledge", None)
+            if knowledge is not None:
+                knowledge.record_laya(core, cmd_id)
+
+    def _record_undefined(self, text: str) -> None:
+        """Ничего не распознано — фраза в корзину undefined доски знаний."""
+        knowledge = getattr(self, "_knowledge", None)
+        if knowledge is None:
+            return
+        core = self._matcher.core_phrase(text)
+        if core:
+            knowledge.record_undefined(core)
 
     def _known_ids(self) -> set[str]:
         """Все известные id команд (включая sequences)."""

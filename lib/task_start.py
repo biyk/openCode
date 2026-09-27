@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Callable, Optional
 
+from lib.core.event_text import (STOP_TOKENS, clean_title, strip_noise,
+                                 title_segments)
 from lib.core.tuning import (
     EVENT_MATCH_DEBUG_TOP, TITLE_THRESHOLD, TOKEN_RATIO, TOKEN_ROOT_PREFIX)
 from lib.google_calendar import GoogleCalendar
@@ -25,27 +27,19 @@ from lib.taskflow.task_start_sheet import TaskStartSheet
 UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
     re.IGNORECASE)
-# Слова-паразиты перед названием задачи в речи («я начал задачу починить…»)
-NOISE_WORDS = {"задача", "задачу", "мероприятие", "дело", "к"}
-# Порог похожести названия и правила «одно ли слово» — в lib.core.tuning
-# (TITLE_THRESHOLD, TOKEN_ROOT_PREFIX, TOKEN_RATIO).
-# Местоимения/связки — не значимые слова для матчинга мероприятия
-# («я почистил зубы» → ядро «почистил зубы»). Не путать с NOISE_WORDS:
-# те срезаются только в начале, эти игнорируются по всему тексту.
-_STOP_TOKENS = {"я", "ты", "мы", "он", "она", "оно", "вы", "они",
-                "мне", "меня", "мной", "моё", "мое", "мой", "моя",
-                "это", "то", "и", "в", "на", "с", "у", "да"}
+# Пороги и правила «одно ли слово» — в lib.core.tuning. Слова-паразиты,
+# скобки/эмодзи и разбиение по точкам — в lib.core.event_text.
 
 
 def _norm(text: str) -> str:
-    """Нормализация названия: нижний регистр, ё→е, без пунктуации."""
-    text = " ".join(text.lower().replace("ё", "е").split())
+    """Нормализация: очистка (скобки/эмодзи), нижний регистр, ё→е, без пунктуации."""
+    text = " ".join(clean_title(text).lower().replace("ё", "е").split())
     return "".join(ch for ch in text if ch.isalnum() or ch == " ").strip()
 
 
 def _content_tokens(norm: str) -> list[str]:
     """Значимые слова нормализованной строки (без местоимений/связок)."""
-    return [t for t in norm.split() if t and t not in _STOP_TOKENS]
+    return [t for t in norm.split() if t and t not in STOP_TOKENS]
 
 
 def _same_word(a: str, b: str) -> bool:
@@ -67,6 +61,14 @@ def _overlap_score(target: str, title: str) -> float:
         return 0.0
     matched = sum(1 for w in ct if any(_same_word(t, w) for t in tt))
     return 2 * matched / (len(tt) + len(ct))
+
+
+def _segment_score(target: str, seg: str) -> float:
+    """Похожность одной точки составного заголовка на фразу-мишень."""
+    if f" {seg} " in f" {target} ":
+        return 1.0
+    return max(SequenceMatcher(None, target, seg).ratio(),
+               _overlap_score(target, seg))
 
 
 class TaskStartHandler:
@@ -91,14 +93,14 @@ class TaskStartHandler:
                         ) -> Optional[dict]:
         """Мероприятие сегодня с наиболее близким названием (или None).
 
-        Название-подстрока фразы (Laya отдаёт всю фразу без команды)
-        считается полным совпадением; при нескольких таких — берётся
-        самое длинное название. filter_fn — необязательный предикат:
-        событие, для которого он False, пропускается (напр. выполненное
-        с colorId=7 не участвует в поиске). report(summary, score) —
-        отладочный прогон лучших кандидатов (см. EVENT_MATCH_DEBUG_TOP).
+        Составной заголовок («Завтрак. Принять витамины») матчится по
+        каждой точке отдельно — обе указывают на одно мероприятие; скобки
+        и эмодзи вырезаются перед сравнением. Название-подстрока фразы
+        считается полным совпадением; при нескольких таких — самое длинное.
+        filter_fn — предикат-фильтр событий (напр. выполненные colorId=7
+        пропускаются). report(summary, score) — прогон лучших кандидатов.
         """
-        target = _norm(self._strip_noise(name))
+        target = _norm(strip_noise(name))
         if not target:
             return None
         best: Optional[tuple[tuple[float, int], dict]] = None
@@ -106,21 +108,19 @@ class TaskStartHandler:
         for ev in self._today_events():
             if filter_fn is not None and not filter_fn(ev):
                 continue
-            title = _norm(ev.get("summary") or "")
-            if not title:
-                continue
             summary = ev.get("summary") or ""
-            if title == target:
+            segs = [s for s in (_norm(x) for x in title_segments(summary))
+                    if s]
+            if not segs:
+                continue
+            longest = max(len(s) for s in segs)
+            if any(seg == target for seg in segs):
                 if report is not None:
                     report(summary, 1.0)
                 return ev
-            if f" {title} " in f" {target} ":
-                score = 1.0
-            else:
-                score = max(SequenceMatcher(None, target, title).ratio(),
-                            _overlap_score(target, title))
+            score = max(_segment_score(target, seg) for seg in segs)
             scored.append((score, summary))
-            key = (score, len(title))
+            key = (score, longest)
             if best is None or key > best[0]:
                 best = (key, ev)
         if report is not None:
@@ -130,14 +130,6 @@ class TaskStartHandler:
         if best is not None and best[0][0] >= TITLE_THRESHOLD:
             return best[1]
         return None
-
-    @staticmethod
-    def _strip_noise(name: str) -> str:
-        """Убирает ведущее слово-паразит («задачу помыть пол» → «помыть пол»)."""
-        tokens = name.split()
-        while tokens and tokens[0].lower().replace("ё", "е") in NOISE_WORDS:
-            tokens = tokens[1:]
-        return " ".join(tokens)
 
     @staticmethod
     def event_uuid(event: dict) -> Optional[str]:

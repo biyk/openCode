@@ -51,6 +51,7 @@ class Orchestrator(
         clear_speech_buffer: Optional[Callable[[], None]] = None,
         intent: Any = None,
         aliases: Optional[AliasStore] = None,
+        knowledge: Any = None,
         opencode: Optional[OpenCodeCliRunner] = None,
         decision: Any = None,
         on_exit: Optional[Callable[[], None]] = None,
@@ -63,6 +64,7 @@ class Orchestrator(
         self._clear_speech_buffer = clear_speech_buffer or (lambda: None)
         self._intent = intent or None
         self._aliases = aliases or None
+        self._knowledge = knowledge or None
         self._opencode = opencode or None
         self._decision = decision or None
         self._event_matcher = None

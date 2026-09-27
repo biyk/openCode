@@ -40,6 +40,16 @@ def test_add_and_bought_do_not_steal_each_other(matcher):
         "shop-bought", ["хлеб"], False)
 
 
+def test_add_to_shopping_list_phrase(matcher):
+    """Регресс: «добавь в список покупок X» — level 1, без Laya/EventMatch."""
+    assert matcher.find_command(
+        ["алиса добавь в список покупок осушитель воздуха"]) == (
+        "shop-add", ["осушитель", "воздуха"], False)
+    assert matcher.find_command(
+        ["алиса внеси в список покупок молоко"]) == (
+        "shop-add", ["молоко"], False)
+
+
 def test_command_on_line_after_key(matcher):
     """Ключ в одной строке, команда в следующей — три строки потока (§10)."""
     assert matcher.find_command(["алиса", "надо купить сыр"]) == (

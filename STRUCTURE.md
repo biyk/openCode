@@ -49,6 +49,7 @@ voice
 │   ├── core/  # Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── __init__.py  # Инициализация пакета core — Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── errors.py  # Учёт проглоченных ошибок: swallowed() логирует глухой except и возвращает default; для OAuth-сбоев добавляет подсказку про reauth.py.
+│   │   ├── event_text.py  # Текст названий мероприятий для матчинга: clean_title (вырезает скобки и эмодзи), title_segments (режет составной заголовок «Завтрак. Принять витамины» по точкам, не трогая «шт.») и strip_noise (срезает ведущие слова-паразиты)
 │   │   ├── laya_batch.py  # Транспорт и батчинг choice-вопроса Лайи: run_query (один POST /v1/systemone, ошибки не глотает), plan_batches (разбор критериев на примерно равные батчи ≤ max_opts) и query_batches (двухступенчатый выбор: победитель батча → финальный вопрос среди победителей) — обход лимита 422
 │   │   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
 │   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
@@ -134,7 +135,14 @@ voice
 │   │   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
 │   │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
 │   │   ├── config_loader.py  # Это модуль‑загрузчик конфигурации, который определяет путь к файлу commands.json для указанного устройства, при необходимости создаёт каталог устройства и копирует туда файловый файл команд.
-│   │   └── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
+│   │   ├── intent.py  # Мини-слой классификации голосовой команды через LLM: IntentClassifier сопоставляет распознанный текст с id команды из списка (с учётом триггеров, статусов и ошибок STT) и возвращает id либо None (NONE → обычный диалог).
+│   │   ├── knowledge.py  # База знаний (targets/<host>/knowledge.json): единая база «фраза → решение» с корзинами confirmed/laya/undefined и kind=command/start/finish; в рантайме решают только confirmed (resolve/resolve_event), laya/undefined наполняются из пайплайна для доски «проверка знаний»
+│   │   ├── knowledge_review.py  # Точка входа доски «проверка знаний»: launch — идемпотентно поднимает detached review-сервер и открывает страницу в дебаг-браузере; serve/status — для ручной проверки
+│   │   ├── knowledge_review_board.py  # Операции доски знаний: снимок confirmed из трёх источников (match-шаблоны commands.json + алиасы aliases.json как locked read-only + knowledge.confirmed), confirm/demote/forget/update, статус Laya
+│   │   ├── knowledge_review_recognize.py  # Распознавание фразы для доски: сначала Лайя (decision), затем LLM (LM Studio) с перечнем команд; настройки доски в targets/<host>/review.json
+│   │   ├── knowledge_review_scan.py  # Сканер логов для доски знаний: [TEXT]-строки с триггерами из logs/*.log → детектор (commands.json, Лайя), нераспознанные фразы в корзину undefined, просканированные логи в logs/zip/YYYYMMDD.zip
+│   │   ├── knowledge_review_server.py  # HTTP-сервер доски знаний (stdlib http.server, 127.0.0.1): раздача HTML-страницы и JSON-API board/act/recognize/settings; операции доски — в knowledge_review_board
+│   │   └── knowledge_review_ui.py  # HTML-страница доски знаний: одна страница, вкладки Подтверждено / Лайя / Не распознано / Сервер (правка, подтверждение, распознавание, сканирование логов, настройки LLM)
 │   ├── __init__.py  # Это файл инициализации пакета lib, который задаёт атрибут __version__ для указания текущей версии проекта.
 │   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
 │   ├── diagnose.py  # Диагностика: промпт, git/lock/rollback, прогон тестов.
@@ -144,7 +152,7 @@ voice
 │   ├── shopping.py  # Команды «нужно купить {товар}» и «купил {товар}»: строка в таблицу списка покупок / поиск и удаление позиции; CLI python -m lib.shopping add|bought|list
 │   ├── sleep_event.py  # Команда «спать»: находит событие «СОН» (идущее/скорое) в Google Calendar и фиксирует его начало текущим временем; CLI python -m lib.sleep_event
 │   ├── task_complete.py  # Команда «завершил задачу {название}»: без названия — текущая запущенная (⏹), с названием — сегодняшнее мероприятие; ветвь ⏹/✅ выбирается по start_date; CLI python -m lib.task_complete
-│   ├── task_start.py  # Команда «я начал/я приступил {задача}»: сегодняшнее мероприятие по названию → uuid из описания → старт задачи в таблице (пишется только G); CLI python -m lib.task_start
+│   ├── task_start.py  # Команда «я начал/я приступил {задача}»: сегодняшнее мероприятие по названию (составной заголовок матчится по каждой точке, скобки/эмодзи вырезаются) → uuid из описания → старт задачи в таблице (пишется только G); CLI python -m lib.task_start
 │   ├── tasks.py  # Обработчик задач: создание, CLI complete/create.
 │   ├── tts.py  # Синтез речи: TextToSpeech поверх движков и плеера.
 │   └── wake_event.py  # Команда «я проснулся»: находит ближайшее начавшееся событие «СОН», фиксирует его завершение текущим временем, засчитывает по ✅ задачу «Пробуждение», затем переносит задачи из окна сна на окна позже и автозаполняет остаток дня (restart/calendar.md); CLI python -m lib.wake_event
@@ -195,6 +203,8 @@ voice
 │   ├── core/  # Автотесты ядра: Orchestrator, decision-цепочка, Лайя, лог и вывод.
 │   │   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json
 │   │   ├── test_errors.py  # Тесты swallowed(): возврат default, уровень лога, подсказка reauth для RefreshError/401.
+│   │   ├── test_event_match_retry.py  # Тест ретрая event-match: сетевой сбой (SSLEOFError/OSError) в find_task_event повторяется один раз, вторая неудача — штатный пропуск
+│   │   ├── test_event_text.py  # Юнит-тесты текста названий: clean_title (скобки/эмодзи/безопасный None), title_segments (разбиение по точке/запятой, «шт.» не режется, отбрасывание кусков <2), strip_noise (слова-паразиты, ё/е)
 │   │   ├── test_laya_batch.py  # Юнит-тесты батчинга Лайи: plan_batches (≈равные батчи ≤ max_opts), query_batches (один вопрос vs разбиение, выбор max confidence, сумма elapsed) и run_query на моке urlopen
 │   │   ├── test_laya_decision.py  # Юнит-тесты decision-слоя Лайи: HTTP-клиент (успех, none, порог, ошибки, недоступный сервер) и путь оркестратора — команда распознана/не распознана/заблокирована/неизвестна, legacy без decision
 │   │   ├── test_laya_paths.py  # Регресс: корень проекта для auto_launch Laya (_projects_root) — каталог с lib/, а не сам lib (иначе «exe/модель не найдены»)
@@ -205,6 +215,7 @@ voice
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
 │   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent и алиасы.
+│   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: голосовое обучение запомни/забудь.
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
@@ -307,6 +318,9 @@ voice
 │   │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
 │   │   ├── test_intent.py  # Тесты классификатора: detect.
 │   │   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
+│   │   ├── test_knowledge.py  # Юнит-тесты KnowledgeStore: path, resolve/resolve_event (решают только confirmed), record с приоритетом корзин (confirmed не понижается), confirm/demote/forget/bump/entries, запись на диск и hot-reload
+│   │   ├── test_knowledge_review.py  # Тесты доски «проверка знаний»: слияние confirmed из match/алиасов/знаний, review.json-конфиг, apply_act, разбор ответов LLM, Laya→LLM-распознавание и живой HTTP-API
+│   │   ├── test_knowledge_review_scan.py  # Тесты сканера логов: извлечение фраз с триггерами, игнор распознанных, архив в zip по дате, пропуск активного лога, поток start/status и HTTP-API /api/scan
 │   │   └── test_shopping_match.py  # Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping
 │   ├── __init__.py  # Пакет tests – автотесты проекта
 │   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами; в конце сессии озвучивает «Тестирование завершено».

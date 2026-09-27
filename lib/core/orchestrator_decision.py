@@ -88,6 +88,25 @@ class OrchestratorDecisionMixin:
             else:
                 self._output.print_debug(
                     "[Alias] В алиасах совпадений нет")
+        # 1.6. База знаний: подтверждённые досмотром команда/мероприятие —
+        # без вызова LLM и без нечёткого матчинга по календарю.
+        if cmd_id is None and self._knowledge is not None:
+            kcore = self._matcher.core_phrase(text)
+            kid = self._knowledge.resolve(kcore)
+            if kid is not None:
+                missing = self._matcher.missing_requires(kid)
+                if not missing:
+                    self._output.print_info(
+                        f"[Knowledge] Распознана команда: {kid}")
+                    self._knowledge.bump(kcore)
+                    self._execute_decision(kid, text)
+                    return
+                blocked = [(kid, missing)]
+            else:
+                hit = self._knowledge.resolve_event(kcore)
+                if hit is not None:
+                    self._knowledge.bump(kcore)
+                    return self._execute_event_action(hit[0], hit[1])
         # 1.7. Само-отчёт («я почистил зубы», «закончил зарядку») — не просьба
         # к ассистенту, а старт/финиш сегодняшнего мероприятия. Пробуем
         # привязать к невыполненному событию ДО Лайи: иначе Лайя ложно тянет
@@ -103,6 +122,7 @@ class OrchestratorDecisionMixin:
                 # к невыполненному мероприятию сегодня (start/complete).
                 if self._try_event_match(text):
                     return
+                self._record_undefined(text)
                 # Заглушка OmniRouter (auto/fast): сам запрос пока не делаем.
                 self._output.print_info(
                     "[Decision] Лайя: команда не распознана — запрос ушёл бы "
@@ -113,9 +133,11 @@ class OrchestratorDecisionMixin:
             self._output.print_info(
                 f"[Decision] Лайя: команда распознана «{resolved}» "
                 f"(c={confidence:.2f} t={elapsed:.3f})")
+            # Пишем в корзину laya сразу: ложные срабатывания (в т.ч. те,
+            # что упадут на requires) тоже должны попасть на досмотр.
+            self._remember_candidate(text, resolved, literal_id)
             if self._execute_decision(resolved, text):
                 self._output.print_text(resolved)
-                self._remember_candidate(text, resolved, literal_id)
                 return
             missing = self._matcher.missing_requires(resolved)
             if missing:
@@ -148,5 +170,6 @@ class OrchestratorDecisionMixin:
             f"[OpenCode Decision] No literal, no alias, no intent match. "
             f"Sending to opencode-cli. Text: {text}"
         )
+        self._record_undefined(text)
         self._output.print_info("... отправка запроса в opencode-cli (фон)")
         self._enqueue_opencode(text)
