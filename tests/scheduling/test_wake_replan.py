@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import lib.wake_event as wake_module
-from lib.wake_event import WakeEventHandler
+from lib.wake_event import WAKE_TASK_UUID, WakeEventHandler
 
 TZ = timezone(timedelta(hours=3))
 NOW = datetime(2026, 9, 26, 8, 0, tzinfo=TZ)
@@ -105,6 +105,26 @@ def test_replan_day_only_fills_when_no_sleep_overlap(monkeypatch):
     assert placed == 1
     assert google.created[0][1] == "u-2"
     assert google.created[0][2] == NOW
+
+
+def test_replan_day_keeps_wake_done_event(monkeypatch):
+    """Галочка «Пробуждения» не уезжает из окна сна и не дублируется."""
+    sleep_start = NOW - timedelta(hours=6)
+    events = [
+        event("sleep", "СОН", sleep_start, NOW),
+        event("wake-done", "Пробуждение", sleep_start + timedelta(hours=1),
+              sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
+        event("z", "Зарядка", sleep_start + timedelta(hours=3),
+              sleep_start + timedelta(hours=4)),
+    ]
+    handler, google = make_handler(
+        events, [task("Пробуждение", WAKE_TASK_UUID, 60)], monkeypatch)
+    moved, placed = handler.replan_day(dict(events[0]))
+
+    assert [m[0] for m in google.moved] == ["z"]   # галочка не тронута
+    assert moved == 1
+    assert placed == 0                       # она уже в календаре
+    assert google.created == []
 
 
 def test_replan_day_is_idempotent(monkeypatch):

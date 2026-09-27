@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from lib.taskflow.wake_slots import (compute_free_slots, event_datetime,
-                                     reschedule_sleep_events)
+                                     reschedule_sleep_events, WAKE_TASK_UUID)
 
 TZ = timezone(timedelta(hours=3))
 WAKE = datetime(2026, 9, 26, 8, 0, tzinfo=TZ)
@@ -96,6 +96,36 @@ def test_reschedule_skips_sleep_and_after_wake():
     moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
     assert moved == 0
     assert g.moved == []
+
+
+def test_reschedule_skips_wake_done_event():
+    """Галочка «Пробуждения» (uuid в описании) не уезжает из окна сна."""
+    sleep_start = WAKE - timedelta(hours=6)
+    events = [
+        ev("sleep", "СОН", sleep_start, WAKE),
+        ev("wake", "Пробуждение", sleep_start + timedelta(hours=1),
+           sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
+    ]
+    g = FakeGoogle()
+    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    assert moved == 0
+    assert g.moved == []
+
+
+def test_reschedule_wake_done_event_does_not_block_others():
+    """«Пробуждение» стоит, обычные задачи окна сна переносятся после него."""
+    sleep_start = WAKE - timedelta(hours=6)
+    events = [
+        ev("sleep", "СОН", sleep_start, WAKE),
+        ev("wake", "Пробуждение", sleep_start + timedelta(hours=1),
+           sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
+        ev("t1", "Зарядка", sleep_start + timedelta(hours=3),
+           sleep_start + timedelta(hours=4)),
+    ]
+    g = FakeGoogle()
+    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    assert moved == 1
+    assert [m[0] for m in g.moved] == ["t1"]
 
 
 def test_reschedule_stop_when_move_fails():

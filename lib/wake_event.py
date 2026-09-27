@@ -14,7 +14,8 @@ Google Таблицы при этом ничего не пишется — то�
 Дополнительно команда засчитывает по ✅ задачу «Пробуждение» из
 JS-приложения (done.md): галочка в календаре, строка real_life_tasks,
 журнал task_executions и награда героя. Засчёт не блокирует фиксацию
-пробуждения: при его ошибке команда печатает предупреждение.
+пробуждения: при его ошибке команда печатает предупреждение. Сама
+галочка «Пробуждения» стоит на месте: перенос из окна сна её не трогает.
 
 CLI: `python -m lib.wake_event`. Коды выхода: 0 — конец зафиксирован
 (или хотя бы засчитана задача), 1 — событие не найдено и задача не
@@ -30,14 +31,13 @@ from lib.sleep_event import SLEEP_TITLE_RE
 from lib.taskflow.done_task import mark_task_done
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.wake_fill import fill_calendar
-from lib.taskflow.wake_slots import reschedule_sleep_events
+# uuid задачи «Пробуждение» + перенос из окна сна — в wake_slots.
+from lib.taskflow.wake_slots import (reschedule_sleep_events, WAKE_TASK_UUID)
 
 # Сон, от которого просыпаются, начался не дальше суток назад.
 LOOKBACK = timedelta(hours=24)
 # Небольшой зазор в будущее: «началось до момента» округляем по now.
 LOOKAHEAD = timedelta(hours=1)
-# Задача «Пробуждение» в real_life_tasks (её uuid) — засчитывается ✅.
-WAKE_TASK_UUID = "f29ef6e3-f1f9-418c-a657-49ffa5dc9497"
 
 
 class WakeEventHandler:
@@ -99,7 +99,8 @@ class WakeEventHandler:
 
         1) задачи, начавшиеся внутри окна сна [sleep_start, now), сдвигаются
            на свободные окна позже — в исходном порядке и с той же
-           длительностью; 2) остаток дня (now → 23:00) автозаполняется
+           длительностью; галочка «Пробуждения» и «СОН» стоят на месте;
+           2) остаток дня (now → 23:00) автозаполняется
            задачами real_life_tasks по приоритету (calendar.md). В Таблицы
            не пишет. Возвращает (число_перенесённых, число_запланированных).
         """

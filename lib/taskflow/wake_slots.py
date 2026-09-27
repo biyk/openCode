@@ -3,7 +3,8 @@
 Свободные окна считаем как в restart/calendar.md §5: от начала рабочего
 окна до 23:00, шаг не короче 15 минут. Перенос: события, начавшиеся
 внутри окна сна, ставятся на свободные окна ПОСЛЕ пробуждения в исходном
-порядке и с той же длительностью.
+порядке и с той же длительностью. События «СОН» и галочку
+«Пробуждения» не трогаем: подъём засчитывается именно в момент пробуждения.
 """
 
 from datetime import datetime, timedelta
@@ -15,6 +16,11 @@ from lib.sleep_event import SLEEP_TITLE_RE
 # Параметры рабочего дня (calendar.md §5): конец 23:00, мин. слот 15 мин.
 MIN_SLOT_MIN = 15
 WORK_END_HOUR = 23
+
+# Задача «Пробуждение» в real_life_tasks (её uuid). Её событие-«галочка»
+# ставится на интервал до момента подъёма, то есть всегда попадает в окно
+# сна, — и переносу не подлежит: это запись о уже выполненном действии.
+WAKE_TASK_UUID = "f29ef6e3-f1f9-418c-a657-49ffa5dc9497"
 
 
 def event_datetime(raw: Any) -> Optional[datetime]:
@@ -81,7 +87,8 @@ def reschedule_sleep_events(google: Any, events: list[dict],
 
     Берёт их в исходном порядке (по началу), для каждого ищет ПЕРВОЕ
     свободное окно после пробуждения достаточной длительности и двигает
-    туда с сохранением длительности. Возвращает (число_переносов,
+    туда с сохранением длительности. События «СОН» и галочку
+    «Пробуждения» не трогает. Возвращает (число_переносов,
     обновлённый список событий — для последующего автозаполнения).
     """
     day_end = wake_now.replace(hour=WORK_END_HOUR, minute=0,
@@ -90,6 +97,8 @@ def reschedule_sleep_events(google: Any, events: list[dict],
     for ev in events:
         if is_sleep_event(ev.get("summary")):
             continue
+        if WAKE_TASK_UUID in (ev.get("description") or ""):
+            continue  # галочка «Пробуждения» остаётся на своём месте
         start = event_datetime(ev.get("start"))
         end = event_datetime(ev.get("end"))
         if start is None or end is None:
