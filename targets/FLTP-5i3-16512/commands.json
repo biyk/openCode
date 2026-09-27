@@ -221,7 +221,7 @@
     "decision": {
         "enabled": true,
         "url": "http://127.0.0.1:8080",
-        "threshold": 0.5,
+        "threshold": 0.9,
         "timeout": 15,
         "auto_launch": {
             "exe": "laya-lab/bin/laya.exe",

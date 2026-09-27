@@ -19,6 +19,7 @@ from lib.voice_cmd.aliases import AliasStore
 from lib.voice_cmd.commands import CommandMatcher
 from lib.opencode.opencode_cli import OpenCodeCliRunner
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
+from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
 from lib.core.orchestrator_memory import OrchestratorMemoryMixin
 from lib.core.orchestrator_opencode import OrchestratorOpencodeMixin
 from lib.core.orchestrator_speech import OrchestratorSpeechMixin
@@ -31,6 +32,7 @@ COMMAND_WINDOW_SIZE = 4
 
 class Orchestrator(
     OrchestratorDecisionMixin,
+    OrchestratorEventMatchMixin,
     OrchestratorMemoryMixin,
     OrchestratorOpencodeMixin,
     OrchestratorSpeechMixin,
@@ -63,6 +65,7 @@ class Orchestrator(
         self._aliases = aliases or None
         self._opencode = opencode or None
         self._decision = decision or None
+        self._event_matcher = None
         self._on_exit = on_exit or None
         self._dev_mode = False
         self._speaking = False

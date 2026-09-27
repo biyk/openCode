@@ -158,6 +158,7 @@ class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
                 "start": start,
                 "end": end,
                 "description": ev.get("description", ""),
+                "colorId": str(ev.get("colorId", "")),
             })
         return result
 

@@ -13,18 +13,18 @@
 from typing import Callable, Optional
 
 from lib.taskflow.tasks_parse import _normalize
+from lib.core.tuning import (
+    DEDUP_BATCH_THRESHOLD, DEDUP_THRESHOLD, LAYA_MAX_OPTS)
 
 # Порог подтверждающего парного вопроса: дубликатом считается только
-# уверенный ответ Laya (c >= 0.9). Ниже — считаем задачу новой:
-# калибровка показала, что при низких c модель лепит дубли на
-# несвязанные пары («провести химические опыты» vs «Выбить квартплату
-# через суд» пришло с c=0.22).
-DUP_THRESHOLD = 0.9
+# уверенный ответ Laya. Ниже — считаем задачу новой (калибровка: при
+# низких c модель лепит дубли на несвязанные пары). Значение — в tuning.
+DUP_THRESHOLD = DEDUP_THRESHOLD
 # Вопрос по пачке — только кандидат: годится любой выбор не none
-# (уверенность на 15 вариантах шумная, ~0.02-0.9).
-BATCH_THRESHOLD = 0.0
-# Лимит laya.max_opts: сервер принимает не больше 16 вариантов в вопросе.
-MAX_OPTS = 16
+# (уверенность на 15 вариантах шумная). Значение — в tuning.
+BATCH_THRESHOLD = DEDUP_BATCH_THRESHOLD
+# Лимит laya.max_opts: сервер принимает не больше этого вариантов (tuning).
+MAX_OPTS = LAYA_MAX_OPTS
 # Названий на вопрос: остальные варианты занимает none (добавляет detect()).
 BATCH_OPTS = MAX_OPTS - 1
 # Не спрашиваем модель о десятках задач за раз.

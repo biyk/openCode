@@ -111,6 +111,21 @@ class GoogleCalendarMutateMixin:
             return swallowed("gcal.update_event_end.patch", e, False)
         return True
 
+    def set_event_color(self, event_id: str, color_id: str) -> bool:
+        """Ставит colorId события (patch), не трогая время/текст.
+
+        Маркер «сделано» без пересоздания: напр. «СОН» закрашивается
+        DONE_COLOR после первого подъёма. False — запрос не прошёл.
+        """
+        self._ensure_ready()
+        try:
+            self._calendar_service.events().patch(
+                calendarId=self._calendar_id, eventId=event_id,
+                body={"colorId": str(color_id)}).execute()
+        except Exception as e:
+            return swallowed("gcal.set_event_color", e, False)
+        return True
+
     def delete_event(self, event_id: str) -> bool:
         """Удаляет событие по id. True — если запрос прошёл."""
         self._ensure_ready()

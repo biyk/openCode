@@ -101,6 +101,49 @@ def test_longest_matching_title_wins():
     assert ev is not None and ev["summary"] == "Приготовить гречку"
 
 
+def test_past_tense_phrase_matches_event_by_word_overlap():
+    """«я почистил зубы» → «Почистить зубы утро»: вид/падеж и лишнее «утро».
+
+    SequenceMatcher по строке даёт ~0.71 (< 0.75); матчинг по корням
+    слов (Дайс) поднимает до 0.8 и ловит событие.
+    """
+    h, _, _ = handler([
+        event("Почистить зубы утро"),
+        event("Почистить зубы вечер. Расстелить кровать"),
+    ])
+    ev = h.find_task_event("я почистил зубы")
+    assert ev is not None and ev["summary"] == "Почистить зубы утро"
+
+
+def test_unrelated_phrase_does_not_match_event():
+    """Нечёткий матчинг не должен выдумывать совпадения."""
+    h, _, _ = handler([event("Почистить зубы утро"), event("Вынести мусор")])
+    assert h.find_task_event("позвонить маме") is None
+
+
+def test_report_lists_top_candidates_by_score():
+    """report(summary, score) — лучшие кандидаты по убыванию похожести."""
+    h, _, _ = handler([event("Почистить зубы утро"), event("Вынести мусор"),
+                       event("Позвонить маме")])
+    seen: list[tuple[str, float]] = []
+    ev = h.find_task_event("почистить зубы",
+                           report=lambda s, c: seen.append((s, c)))
+    assert ev is not None and ev["summary"] == "Почистить зубы утро"
+    assert [s for s, _ in seen][0] == "Почистить зубы утро"
+    scores = [c for _, c in seen]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_report_shows_near_miss_below_threshold():
+    """Ниже порога событие None, но ближайший кандидат со скором виден."""
+    h, _, _ = handler([event("Завтрак. Принять витамины")])
+    seen: list[tuple[str, float]] = []
+    assert h.find_task_event(
+        "я позавтракал", report=lambda s, c: seen.append((s, c))) is None
+    assert seen and seen[0][0] == "Завтрак. Принять витамины"
+    assert seen[0][1] < 0.75   # видно, что не дотянул до порога
+
+
 def test_unknown_task_and_missing_uuid_and_row_are_errors():
     h, _, sheet = handler([event("Отчёт")])
     assert h.start_task("сжечь мост")["ok"] is False

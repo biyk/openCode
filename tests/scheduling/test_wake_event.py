@@ -26,6 +26,7 @@ class FakeGoogle:
         self._events = events
         self._update_ok = update_ok
         self.updated: tuple[str, datetime] | None = None
+        self.colored: tuple[str, str] | None = None
 
     def list_events_between(self, time_min, time_max, limit=50):
         return [dict(e) for e in self._events]
@@ -34,10 +35,14 @@ class FakeGoogle:
         self.updated = (event_id, new_end)
         return self._update_ok
 
+    def set_event_color(self, event_id: str, color_id: str) -> bool:
+        self.colored = (event_id, color_id)
+        return True
+
 
 def make_event(eid: str, summary: str, start: datetime,
-               end: datetime) -> dict:
-    return {"id": eid, "summary": summary,
+               end: datetime, color_id: str = "") -> dict:
+    return {"id": eid, "summary": summary, "colorId": color_id,
             "start": iso(start), "end": iso(end)}
 
 
@@ -159,3 +164,36 @@ def test_main_fails_when_neither_action_worked(monkeypatch):
     """Ни сон не найден, ни задача не засчитана — код 1."""
     assert run_main(monkeypatch, [], Recorded(
         error=RuntimeError("нет сети"))) == 1
+
+
+def _run_main_google(monkeypatch, events, recorded):
+    """_main на фейковом календаре; возвращает google для проверок мутаций."""
+    patch_done(monkeypatch, recorded)
+    google = FakeGoogle(events)
+    handler = WakeEventHandler(google=google, now=NOW)
+    monkeypatch.setattr(handler, "replan_day", lambda e: (0, 0))
+    monkeypatch.setattr(wake_module, "WakeEventHandler", lambda: handler)
+    return google, wake_module._main([])
+
+
+def test_main_ignores_wakefix_after_first_wakeup(monkeypatch, capsys):
+    """«СОН» colorId=7 — сегодня уже встали: wakefix ложный, не трогаем."""
+    ev = make_event("cur", "СОН", NOW - timedelta(hours=8),
+                    NOW + timedelta(hours=1), color_id="7")
+    recorded = Recorded()
+    google, code = _run_main_google(monkeypatch, [ev], recorded)
+    assert code == 0
+    assert recorded.calls == []           # задачу не пересчитываем
+    assert google.updated is None         # конец «СНА» не двигаем
+    assert google.colored is None         # и не перекрашиваем
+    assert "ложное срабатывание" in capsys.readouterr().out
+
+
+def test_main_first_wakeup_marks_sleep_done(monkeypatch):
+    """Первый wakefix: перенос конца «СНА» + закраска в colorId=7."""
+    ev = make_event("cur", "СОН", NOW - timedelta(hours=8),
+                    NOW + timedelta(hours=1))
+    google, code = _run_main_google(monkeypatch, [ev], Recorded())
+    assert code == 0
+    assert google.updated == ("cur", NOW)
+    assert google.colored == ("cur", "7")

@@ -88,11 +88,21 @@ class OrchestratorDecisionMixin:
             else:
                 self._output.print_debug(
                     "[Alias] В алиасах совпадений нет")
+        # 1.7. Само-отчёт («я почистил зубы», «закончил зарядку») — не просьба
+        # к ассистенту, а старт/финиш сегодняшнего мероприятия. Пробуем
+        # привязать к невыполненному событию ДО Лайи: иначе Лайя ложно тянет
+        # бытовое прошедшее действие к «wakefix» (утренний ритуал ≡ проснулся).
+        if self._is_self_report(text) and self._try_event_match(text):
+            return
         # 2. Decision-слой: дисижн-модель Laya (commands.json не совпало).
         if self._decision is not None:
             self._output.print_info("[Decision] Обращение к Лайе...")
             detected = self._decision.detect(text)
             if detected is None:
+                # Лайя не распознала команду — пробуем привязать фразу
+                # к невыполненному мероприятию сегодня (start/complete).
+                if self._try_event_match(text):
+                    return
                 # Заглушка OmniRouter (auto/fast): сам запрос пока не делаем.
                 self._output.print_info(
                     "[Decision] Лайя: команда не распознана — запрос ушёл бы "

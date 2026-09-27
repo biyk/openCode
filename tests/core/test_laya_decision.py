@@ -42,14 +42,18 @@ def _ok_answer(choice, confidence):
 
 
 def _mock_server(mocker, answer=None):
-    """/health — 200; POST /v1/systemone — answer (или пустые ответы)."""
+    """/health — 200; POST /v1/systemone — answer (или пустые ответы).
+
+    Health пробивается в laya_decision, сам choice-запрос — в laya_batch;
+    мок ставим на оба модуля, иначе запрос уйдёт в реальную сеть.
+    """
     def fake_urlopen(url_or_req, timeout=None):
         if isinstance(url_or_req, str):
             return FakeResponse()
         return FakeResponse({"answers": answer or {}})
 
-    mocker.patch("lib.core.laya_decision.urllib.request.urlopen",
-                 side_effect=fake_urlopen)
+    for mod in ("lib.core.laya_decision", "lib.core.laya_batch"):
+        mocker.patch(mod + ".urllib.request.urlopen", side_effect=fake_urlopen)
 
 
 class TestLayaDecisionDetect:

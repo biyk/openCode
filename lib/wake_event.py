@@ -25,8 +25,10 @@ CLI: `python -m lib.wake_event`. Коды выхода: 0 — конец заф�
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core.errors import swallowed
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
+from lib.google.google_calendar_mutate import DONE_COLOR
 from lib.sleep_event import SLEEP_TITLE_RE
 from lib.taskflow.done_task import mark_task_done
 from lib.taskflow.real_life_sheet import RealLifeSheet
@@ -94,6 +96,13 @@ class WakeEventHandler:
         ev["end"] = self.now.isoformat()
         return ev
 
+    def mark_sleep_done(self, sleep_ev: dict) -> bool:
+        """Закрашивает «СОН» в DONE_COLOR — маркер «сегодня уже встали»."""
+        try:
+            return self._google.set_event_color(sleep_ev["id"], DONE_COLOR)
+        except Exception as e:  # нет токена/сети — маркер не критичен
+            return swallowed("wake.mark_sleep_done", e, False)
+
     def replan_day(self, sleep_ev: dict) -> tuple[int, int]:
         """После пробуждения перестраивает день вокруг реальной точки подъёма.
 
@@ -145,6 +154,18 @@ def count_wake_task(now: datetime) -> bool:
 def _main(argv: Optional[list[str]] = None) -> int:
     handler = WakeEventHandler()
     try:
+        started = handler.find_started_sleep_event()
+    except Exception as e:  # нет токена/сети — сообщаем и падаем
+        print(f"[wake] ошибка календаря: {e}")
+        return 1
+    # «СОН» уже закрашен DONE_COLOR после первого wakefix → сегодня мы
+    # вставали. Повторный wakefix (бытовое прошедшее, ложно тянутый Лайей
+    # к пробуждению) — ложное срабатывание: не трогаем ни событие, ни день.
+    if started is not None and started.get("colorId") == DONE_COLOR:
+        print("[wake] «СОН» уже закрыт сегодня (мы встали) — wakefix "
+              "игнорируем как ложное срабатывание")
+        return 0
+    try:
         ev = handler.fix_wake_end()
     except Exception as e:  # нет токена/сети — сообщаем и падаем
         print(f"[wake] ошибка календаря: {e}")
@@ -153,6 +174,7 @@ def _main(argv: Optional[list[str]] = None) -> int:
     if ev is None:
         print("[wake] начавшееся событие «СОН» не найдено")
         return 0 if counted else 1
+    handler.mark_sleep_done(ev)   # маркер: больше сегодня wakefix не трогаем
     print(f"[wake] конец «{ev['summary']}» перенесён на "
           f"{handler.now:%d.%m.%Y %H:%M}")
     try:

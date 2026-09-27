@@ -61,6 +61,16 @@
             "command": "task-add",
             "hits": 0,
             "confirmed": false
+        },
+        "я почистил зубы": {
+            "command": "wakefix",
+            "hits": 0,
+            "confirmed": false
+        },
+        "я позавтракал": {
+            "command": "wakefix",
+            "hits": 0,
+            "confirmed": false
         }
     }
 }

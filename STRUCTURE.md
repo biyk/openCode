@@ -49,14 +49,17 @@ voice
 │   ├── core/  # Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── __init__.py  # Инициализация пакета core — Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── errors.py  # Учёт проглоченных ошибок: swallowed() логирует глухой except и возвращает default; для OAuth-сбоев добавляет подсказку про reauth.py.
+│   │   ├── laya_batch.py  # Транспорт и батчинг choice-вопроса Лайи: run_query (один POST /v1/systemone, ошибки не глотает), plan_batches (разбор критериев на примерно равные батчи ≤ max_opts) и query_batches (двухступенчатый выбор: победитель батча → финальный вопрос среди победителей) — обход лимита 422
 │   │   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
 │   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
 │   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
+│   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
 │   │   ├── orchestrator_memory.py  # Миксин оркестратора: голосовое обучение алиасам запомни/забудь, кандидаты, контекст LLM.
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
-│   │   └── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
+│   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
+│   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
 │   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
@@ -192,16 +195,20 @@ voice
 │   ├── core/  # Автотесты ядра: Orchestrator, decision-цепочка, Лайя, лог и вывод.
 │   │   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json
 │   │   ├── test_errors.py  # Тесты swallowed(): возврат default, уровень лога, подсказка reauth для RefreshError/401.
+│   │   ├── test_laya_batch.py  # Юнит-тесты батчинга Лайи: plan_batches (≈равные батчи ≤ max_opts), query_batches (один вопрос vs разбиение, выбор max confidence, сумма elapsed) и run_query на моке urlopen
 │   │   ├── test_laya_decision.py  # Юнит-тесты decision-слоя Лайи: HTTP-клиент (успех, none, порог, ошибки, недоступный сервер) и путь оркестратора — команда распознана/не распознана/заблокирована/неизвестна, legacy без decision
 │   │   ├── test_laya_paths.py  # Регресс: корень проекта для auto_launch Laya (_projects_root) — каталог с lib/, а не сам lib (иначе «exe/модель не найдены»)
+│   │   ├── test_laya_two_stage.py  # Тесты двухступенчатого выбора Лайи: победители батчей → финальный вопрос между ними (решает финал, none ветоит, один победитель — без финала) и сквозной detect с FINAL_INSTRUCTIONS
 │   │   ├── test_logger.py  # Это файл тестов, проверяющий работу класса Logger и вспомогательных функций логирования.
 │   │   ├── test_orchestrator.py  # Тесты Orchestrator: инициализация, эхо-затишье, дословные команды.
 │   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
+│   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
 │   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent и алиасы.
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: голосовое обучение запомни/забудь.
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
-│   │   └── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
+│   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
+│   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
 │   │   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.

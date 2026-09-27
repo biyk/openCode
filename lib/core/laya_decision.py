@@ -6,7 +6,6 @@
 Автозапуск сервера (секция `auto_launch`) — по требованию, если /health на порту не отвечает.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -15,14 +14,22 @@ import urllib.error
 import urllib.request
 from typing import Callable, Optional
 
+from lib.core.laya_batch import query_batches, run_query
 from lib.core.output import TranscriptionOutput
+from lib.core.tuning import DECISION_THRESHOLD
 
 DEFAULT_INSTRUCTIONS = (
     "Что пользователь просит сделать голосовому помощнику? "
     "Это распознанная речь с ошибками и лишними словами. "
     "Выбери из существующих команд."
 )
-DEFAULT_THRESHOLD = 0.5
+# Финальный вопрос после батчей: среди победителей групп выбирается лучший
+# (уверенности разных батчей некалиброваны — query_batches, laya_batch).
+FINAL_INSTRUCTIONS = (
+    "Это распознанная речь с ошибками. В списке — команды-кандидаты, "
+    "каждая подошла лучше других в своей группе. Какая из них лучше "
+    "всего описывает просьбу? Если ни одна не подходит — none."
+)
 DEFAULT_NONE_DESCRIPTION = "просто речь, нет команды"
 HEALTH_TIMEOUT_S = 240
 
@@ -43,7 +50,7 @@ class LayaDecision:
         if not cfg_url:
             raise ValueError("decision.url не задан в commands.json")
         self._url = cfg_url.rstrip("/")
-        self._threshold = float(self._config.get("threshold", DEFAULT_THRESHOLD))
+        self._threshold = float(self._config.get("threshold", DECISION_THRESHOLD))
         self._timeout = float(self._config.get("timeout", 15))
         self._instructions = self._config.get("instructions", DEFAULT_INSTRUCTIONS)
         self._criteria = dict(self._config.get("criteria", {}))
@@ -124,10 +131,12 @@ class LayaDecision:
                ) -> Optional[tuple[str, float, float]]:
         """Вопрос-выбор к Laya: (выбор, уверенность, время запроса в сек.).
 
-        Без аргументов — критерии команды из decision; с criteria/
-        instructions/threshold — свой вопрос (поиск дубликата среди
-        названий задач). None — мимо/ниже порога/нет сервера; on_verdict
-        зовётся вердиктом (choice, c) до отбрасывания — виден и none.
+        Без аргументов — критерии команды из decision; с criteria/instructions/
+        threshold — свой вопрос. Набор больше max_opts режет на батчи
+        (laya_batch): победитель каждого батча сравнивается с остальными
+        финальным вопросом FINAL_INSTRUCTIONS, и решает именно он. None —
+        мимо/ниже порога/нет сервера; on_verdict зовётся вердиктом (choice, c)
+        до отбрасывания — виден и none.
         """
         crit = dict(self._criteria if criteria is None else criteria)
         crit.setdefault("none", DEFAULT_NONE_DESCRIPTION)
@@ -137,36 +146,20 @@ class LayaDecision:
                 self._print("error", f"[Decision] Laya недоступна: {self._url}")
                 self._error_reported = True
             return None
-        payload = {"state": {"body": text}, "questions": {"command": {
-            "type": "choice",
-            "instructions": instructions or self._instructions,
-            "criteria": crit,
-        }}}
-        t0 = time.perf_counter()
         try:
-            req = urllib.request.Request(
-                self._url + "/v1/systemone",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                body = json.loads(r.read().decode("utf-8"))
+            def ask(sub, ins):
+                return run_query(self._url, self._timeout, self._instructions,
+                                 text, sub, ins, limit, on_verdict)
+
+            return query_batches(
+                crit,
+                lambda sub: ask(sub, instructions),
+                final=lambda sub: ask(sub, FINAL_INSTRUCTIONS))
         except Exception as e:
             if not self._error_reported:
                 self._print("error", f"[Decision] Ошибка запроса Laya: {e}")
                 self._error_reported = True
             return None
-        answers = (body or {}).get("answers", {})
-        answer = answers.get("command", {}) or {}
-        choice = answer.get("choice")
-        confidence = float(answer.get("confidence", 0.0))
-        if on_verdict is not None and choice is not None:
-            on_verdict(str(choice), confidence)
-        if choice is None or choice == "none" or choice not in crit:
-            return None
-        if confidence < limit:
-            return None
-        return choice, confidence, time.perf_counter() - t0
 
     def close(self) -> None:
         """Останавливает запущенный сервер (если запускали сами)."""

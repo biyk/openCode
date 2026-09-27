@@ -19,8 +19,11 @@ import re
 from difflib import SequenceMatcher
 from typing import Optional
 
-# Порог нечёткого совпадения по умолчанию: ниже — разные товары.
-DEFAULT_THRESHOLD = 0.9
+from lib.core.tuning import SHOPPING_DEDUP_THRESHOLD
+
+# Порог нечёткого совпадения по умолчанию: ниже — разные товары
+# (значение — в lib.core.tuning; переопределяется shopping.dedup.threshold).
+DEFAULT_THRESHOLD = SHOPPING_DEDUP_THRESHOLD
 
 _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACE_RE = re.compile(r"\s+")
