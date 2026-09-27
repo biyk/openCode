@@ -9,49 +9,45 @@
             "kind": "command",
             "hits": 10,
             "command": "playpause"
-        }
-    },
-    "laya": {
-        "добавь в список покупок осушитель воздуха": {
-            "kind": "command",
-            "hits": 0,
-            "command": "shop-add"
-        },
-        "же поставь задачу сделать хлеб": {
-            "kind": "command",
-            "hits": 0,
-            "command": "task-add"
-        },
-        "паузу": {
-            "kind": "command",
-            "hits": 0,
-            "command": "playpause"
-        },
-        "открой базу данных": {
-            "kind": "command",
-            "hits": 0,
-            "command": "openyoutube"
         },
         "в добавь задачу убраться на балконе": {
             "kind": "command",
             "hits": 0,
-            "command": "task-add"
+            "command": "task-add",
+            "event": "убраться на балконе"
         },
-        "вот словам потом коробки действия был там действия пока ты не займешь место": {
+        "добавь в список покупок осушитель воздуха": {
             "kind": "command",
             "hits": 0,
-            "command": "task-add"
+            "command": "shop-add",
+            "event": "осушитель воздуха"
+        },
+        "же поставь задачу сделать хлеб": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add",
+            "event": "сделать хлеб"
         },
         "новые задача позавтракать": {
             "kind": "command",
             "hits": 0,
             "command": "task-add",
-            "event": "нужно завтракать"
+            "event": "позавтракать"
+        },
+        "открой базу данных": {
+            "kind": "command",
+            "hits": 0,
+            "command": "knowledge_review"
         },
         "отладка": {
             "kind": "command",
             "hits": 0,
             "command": "diagnose"
+        },
+        "паузу": {
+            "kind": "command",
+            "hits": 0,
+            "command": "playpause"
         },
         "плэй": {
             "kind": "command",
@@ -62,7 +58,7 @@
             "kind": "command",
             "hits": 0,
             "command": "task-add",
-            "event": "по стать задачу пощадить резинку но балконе"
+            "event": "пощадить резинку но балконе"
         },
         "поставь дальше приготовить гречку": {
             "kind": "command",
@@ -74,29 +70,22 @@
             "kind": "command",
             "hits": 0,
             "command": "task-add",
-            "event": "поставить задачу"
+            "event": "провести химические опыты"
         },
         "скажи что у меня сейчас по расписание": {
             "kind": "command",
             "hits": 0,
-            "command": "calendar-reminder"
+            "command": "calendar-plans"
         },
         "что у меня сейчас по расписанию": {
             "kind": "command",
             "hits": 0,
-            "command": "calendar-reminder"
+            "command": "calendar-plans"
         },
-        "я застелить кровать": {
+        "что мне сейчас по расписание": {
             "kind": "command",
             "hits": 0,
-            "command": "taskdone",
-            "event": "застелить кровать"
-        }
-    },
-    "undefined": {
-        "сколько сейчас время": {
-            "kind": "command",
-            "hits": 0
+            "command": "calendar-plans"
         },
         "я застелила кровать": {
             "kind": "finish",
@@ -115,11 +104,20 @@
             "hits": 0,
             "command": "taskdone",
             "event": "Почистить зубы утро"
-        },
-        "что мне сейчас по расписание": {
+        }
+    },
+    "laya": {
+        "я застелить кровать": {
             "kind": "command",
             "hits": 0,
-            "command": "calendar-plans"
+            "command": "taskdone",
+            "event": "застелить кровать"
+        }
+    },
+    "undefined": {
+        "сколько сейчас время": {
+            "kind": "command",
+            "hits": 0
         },
         "режим разработке": {
             "kind": "command",
