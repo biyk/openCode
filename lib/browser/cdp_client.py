@@ -85,11 +85,7 @@ def _activate(tab: dict, port: int = DEFAULT_PORT) -> bool:
 
 
 def open_new_tab(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
-    """Создаёт НОВУЮ вкладку через /json/new (без переиспользования).
-
-    В отличие от browser_control.open_url не проверяет существующие
-    вкладки и не переключается на них — всегда открывает свежую.
-    """
+    """Создаёт НОВУЮ вкладку через PUT /json/new (без переиспользования)."""
     try:
         q = urllib.parse.quote(url, safe="")
         req = urllib.request.Request(
@@ -103,11 +99,16 @@ def open_new_tab(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
 
 
 def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Закрывает вкладку через /json/close/{id}.
+    """Закрывает вкладку через /json/close/{id} (ответ — текст, не JSON).
 
-    CDP отвечает текстом («Target is closing»), а не JSON, поэтому
-    используем сырой urlopen без разбора тела.
+    Закрывая ПОСЛЕДНЮЮ вкладку, Chromium завершил бы и браузер, поэтому
+    перед закрытием подставляем спасительную about:blank: у пользователя
+    закрывается вкладка, а окно браузера остаётся живым.
     """
+    pages = [t for t in _list_tabs(port)
+             if t.get("type", "page") in ("page", "")]
+    if len(pages) == 1:
+        open_new_tab("about:blank", port)
     try:
         with urllib.request.urlopen(
                 f"http://{CDP_HOST}:{port}/json/close/{tab.get('id')}",

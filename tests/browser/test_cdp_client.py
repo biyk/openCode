@@ -81,17 +81,34 @@ class TestNewTabAndClose:
 
     def test_close_tab_ok(self, mocker):
         """close_tab дергает /json/close/{id} и возвращает True."""
+        mocker.patch("lib.browser.cdp_client._list_tabs",
+                     return_value=[{"id": "1"}, {"id": "9"}])
         mock_urlopen = mocker.patch("lib.browser.cdp_client.urllib.request.urlopen")
         mock_urlopen.return_value.__enter__.return_value = MagicMock()
         assert cdc.close_tab({"id": "9"}) is True
         url = mock_urlopen.call_args[0][0]
         assert "json/close/9" in url
 
-    def test_close_tab_error_returns_false(self, mocker):
-        """close_tab возвращает False при ошибке."""
+    def test_close_last_tab_keeps_browser_alive(self, mocker):
+        """Регресс: закрытие ПОСЛЕДНЕЙ вкладки не должно закрывать браузер
+        — сначала открывается спасительная about:blank."""
+        mocker.patch("lib.browser.cdp_client._list_tabs",
+                     return_value=[{"id": "9", "type": "page"}])
+        mock_open = mocker.patch("lib.browser.cdp_client.open_new_tab")
+        mock_urlopen = mocker.patch("lib.browser.cdp_client.urllib.request.urlopen")
+        mock_urlopen.return_value.__enter__.return_value = MagicMock()
+        assert cdc.close_tab({"id": "9"}) is True
+        mock_open.assert_called_once_with("about:blank", cdc.DEFAULT_PORT)
+        assert "json/close/9" in mock_urlopen.call_args[0][0]
+
+    def test_close_tab_dead_browser_no_blank(self, mocker):
+        """Вкладок нет (браузер лежит) — спасительную вкладку не открываем."""
+        mocker.patch("lib.browser.cdp_client._list_tabs", return_value=[])
+        mock_open = mocker.patch("lib.browser.cdp_client.open_new_tab")
         mocker.patch("lib.browser.cdp_client.urllib.request.urlopen",
                      side_effect=Exception("boom"))
         assert cdc.close_tab({"id": "9"}) is False
+        mock_open.assert_not_called()
 
 
 class TestIsRunning:
