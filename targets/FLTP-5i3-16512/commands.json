@@ -78,12 +78,6 @@
             "default": "python -m lib.plans",
             "description": "показать текущее или ближайшее событие календаря"
         },
-        "task-complete": {
-            "linux": "python -m lib.tasks complete \"{{text}}\"",
-            "windows": "python -m lib.tasks complete \"{{text}}\"",
-            "default": "python -m lib.tasks complete \"{{text}}\"",
-            "description": "отметить задачу выполненной"
-        },
         "diagnose": {
             "linux": "python -m lib.diagnose launch \"{{text}}\"",
             "windows": "python -m lib.diagnose launch \"{{text}}\"",
@@ -127,7 +121,6 @@
         "task-add": "задача в Google Tasks (@default)",
         "diagnose": "анализ последнего лога и чата, автофикс; супервизор WORKING.MD, watchdog 600 секунд, откат git, до 5 попыток; detached, голосовой цикл не блокируется",
         "calendar-plans": "текущее событие из календаря",
-        "task-complete": "отметить задачу выполненной",
         "browser-automation": "универсальный браузер (инструмент)",
         "speak-answer": "озвучка результата (сервисный)",
         "knowledge_review": "доска «проверка знаний»: поднимает review-сервер на 127.0.0.1:8765 и открывает в браузере (вкладки: Подтверждено / Лайя / Не распознано / Сервер)"

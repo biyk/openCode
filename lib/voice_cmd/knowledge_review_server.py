@@ -5,6 +5,7 @@ API (JSON, всё на 127.0.0.1):
   GET  /              — HTML-страница с четырьмя вкладками
   GET  /api/ping      — {"ok": true} (проверка «сервер уже жив»)
   GET  /api/board     — корзины + список команд + настройки
+  GET  /api/tasks     — названия задач real_life_tasks (подсказка task-complete)
   POST /api/act       — confirm/demote/forget/update записи базы знаний
   POST /api/recognize — «попробовать распознать» (Laya → LLM)
   POST /api/recognize_all — массовый прогон undefined-корзины (Laya → LLM)
@@ -25,7 +26,7 @@ from typing import Optional
 
 from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.knowledge_review_board import (
-    apply_act, board_snapshot, laya_status,
+    apply_act, board_snapshot, laya_status, sheet_task_titles,
 )
 from lib.voice_cmd.knowledge_review_bulk import start as bulk_start
 from lib.voice_cmd.knowledge_review_bulk import status as bulk_status
@@ -72,6 +73,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
             snap = board_snapshot(self.store, self.commands_file, self.review)
             snap["laya"] = laya_status(self.commands_file)
             self._json(200, snap)
+        elif self.path == "/api/tasks":
+            # Отдельно от /api/board: чтение Sheets дорогое и может
+            # потребовать ре-авторизации — оно нужно только для task-complete.
+            self._json(200, {"tasks": sheet_task_titles()})
         elif self.path == "/api/scan":
             self._json(200, scan_status())
         elif self.path == "/api/recognize_all":

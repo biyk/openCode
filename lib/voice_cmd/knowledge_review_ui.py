@@ -2,9 +2,13 @@
 """HTML-страница доски «проверка знаний»: одна страница, 4 вкладки.
 
 Подтверждено (галочка активна; снял → undefined), Лайя (правка
-команды/параметров + подтвердить), Не распознано (кнопка
-«распознать»: Laya → LLM, затем подтвердить), Сервер (статус Laya +
-адрес/модель LLM). Все данные — через JSON-API knowledge_review_server.
+команды/параметров + подтвердить; ✕ снимает догадку ИИ в undefined,
+а не удаляет), Не распознано (кнопка «распознать»: Laya → LLM, затем
+подтвердить; только здесь ✕ удаляет из базы), Сервер (статус Laya +
+адрес/модель LLM). Колонка «что делает» убрана — всё есть команда: «какая»
+выбирается в «команда», само-отчёт = taskstart/taskdone. Для этих команд
+под полем параметра — список задач real_life_tasks (клик подставляет).
+Все данные — через JSON-API knowledge_review_server.
 """
 
 PAGE = """<!doctype html>
@@ -21,6 +25,13 @@ PAGE = """<!doctype html>
  td,th{border:1px solid #444;padding:.3rem .5rem;font-size:.9rem}
  input,select{background:#2a2a36;color:#eee;border:1px solid #555;
   padding:.2rem}
+ select.cmd{max-width:11rem}
+ .cdd{font-size:.75rem;color:#999;margin-top:.15rem}
+ .ti{font-size:.78rem;color:#cde;cursor:pointer;padding:.05rem .1rem}
+ .ti:hover{background:#3a3a56}
+ .tasks{color:#999;font-size:.8rem;margin-top:.2rem;
+  border-top:1px dashed #444}
+ .tlist{max-height:11rem;overflow:auto}
  button{background:#3a3a46;color:#eee;border:1px solid #666;cursor:pointer}
  .ok{color:#7d7}.bad{color:#e77}.hit{color:#999}.note{color:#999}
 </style></head><body>
@@ -37,19 +48,42 @@ PAGE = """<!doctype html>
 <section id="t-undefined"></section><section id="t-settings"></section>
 </div>
 <script>
-let S=null;
-const KINDS=[["command","команда"],["start","начало"],["finish","конец"]];
+let S=null,T=null;  // T — задачи real_life_tasks (null = не запрашивались)
 async function api(p,b){const o=b?{method:"POST",headers:{
  "Content-Type":"application/json"},body:JSON.stringify(b)}:{};
  return (await fetch(p,o)).json()}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,
  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-function kindSel(v){return '<select class=kind>'+KINDS.map(k=>
- `<option value="${k[0]}"${k[0]==v?" selected":""}>${k[1]}</option>`)
- .join("")+"</select>"}
+function trunc(s,n){s=String(s==null?"":s);return s.length>n?s.slice(0,n)+"…":s}
 function cmdSel(v){return '<select class=cmd><option value=""></option>'+
- S.commands.slice().sort().map(c=>`<option value="${esc(c)}"${c==v?" selected":""}>${
-  esc(c)} — ${esc(S.descriptions[c]||"")}</option>`).join("")+"</select>"}
+ S.commands.slice().sort().map(c=>`<option value="${esc(c)}"${c==v?" selected":""}\
+ title="${esc(c)} — ${esc(S.descriptions[c]||"")}">${
+  esc(trunc(c,18))}</option>`).join("")+"</select>"}
+function cmdNote(v){return `<div class=cdd>${v?esc(v)+" — \
+"+esc(S.descriptions[v]||""):"&nbsp;"}</div>`}
+function taskList(){return (T&&T.length)?T.map(t=>
+ `<div class=ti title="подставить в параметр">${esc(trunc(t,60))}</div>`
+ ).join(""):'<span class=note>задачи из таблицы не найдены</span>'}
+function tasksBox(){return `<div class=tasks><input class=tf size=14
+ placeholder="фильтр задач">\
+<div class=tlist>${T?taskList():'<span class=note>загрузка задач…</span>'}
+</div></div>`}
+function filterTasks(inp){const q=inp.value.trim().toLowerCase();
+ inp.nextElementSibling.querySelectorAll(".ti").forEach(x=>
+  x.style.display=x.textContent.toLowerCase().includes(q)?"":"none")}
+async function ensureTasks(){if(T)return;try{T=(await api("/api/tasks")).tasks||
+ []}catch(e){T=[]}
+ document.querySelectorAll(".tasks").forEach(x=>x.querySelector(".tlist")
+ .innerHTML=taskList())}
+function syncRow(tr){const box=tr.querySelector(".tasks"),
+ cmd=tr.querySelector(".cmd").value, note=tr.querySelector(".cdd"),
+ task=cmd=="taskstart"||cmd=="taskdone";
+ if(note)note.innerHTML=cmd?esc(cmd)+" — "+esc(S.descriptions[cmd]||"")
+  :"&nbsp;";
+ if(task){if(!box&&tr.querySelector(".app")){tr
+  .querySelectorAll("td")[3].insertAdjacentHTML("beforeend",tasksBox());
+  ensureTasks()}}
+ else if(box)box.remove()}
 function row(text,e,bucket){
  const cell=e.locked
   ?'<label><input type=checkbox checked disabled> '+esc(e.source)+"</label>"
@@ -57,10 +91,15 @@ function row(text,e,bucket){
    ?'<label><input type=checkbox class=okc checked> подтверждено</label>'
    :"<button class=conf>✓ подтвердить</button>");
  const btns=e.locked?"":' <button class=app>сохранить</button>';
- const del=e.locked?"":'<button class=del>✕</button>';
- return `<tr data-text="${esc(text)}"><td>${del}</td><td>${esc(text)}</td>\
-<td>${kindSel(e.kind||"command")}</td><td>${cmdSel(e.command)}</td>\
-<td><input class=ev size=22 value="${esc(e.event)}"></td>\
+ // ✕ удаляет только в «Не распознано»; на «Лайе» снимает догадку ИИ,
+ // в «Подтверждено» удаление не нужно (галочка → undefined).
+ const del=(e.locked||bucket=="confirmed")?"":'<button class=del>✕</button>';
+ const task=e.command=="taskstart"||e.command=="taskdone";
+ const extra=!e.locked&&task?tasksBox():"";
+ return `<tr data-text="${esc(text)}" data-bucket="${bucket}" data-kind=\
+"${e.kind||"command"}"><td>${del}</td><td>${esc(text)}</td>\
+<td>${cmdSel(e.command)}${cmdNote(e.command)}</td>\
+<td><input class=ev size=22 value="${esc(e.event)}">${extra}</td>\
 <td class=hit>${e.hits||0}</td><td>${cell}${btns}</td></tr>`}
 function table(bucket,title,note){
  const b=S.boards[bucket]||{};const keys=Object.keys(b).sort();
@@ -68,8 +107,8 @@ function table(bucket,title,note){
  const top=bucket=="undefined"?'<button id=recall>🔎 распознать все</button>'+\
 ' <span id=recst class=note></span>':"";
  return `<h3>${title} ${top}</h3><p class=note>${note}</p><table><tr><th></th>\
-<th>фраза</th><th>вид</th><th>команда</th><th>мероприятие/параметр</th><th>hit\
-</th><th></th></tr>${rows||'<tr><td colspan=7>пусто</td></tr>'}</table>`}
+<th>фраза</th><th>команда</th><th>мероприятие/параметр</th><th>hit</th><th></th>\
+</tr>${rows||'<tr><td colspan=6>пусто</td></tr>'}</table>`}
 function settings(){
  const l=S.laya,s=S.settings;
  return `<h3>Серверы</h3><p>Laya (decision): ${l.enabled?"включена":\
@@ -93,10 +132,10 @@ function render(){
  document.getElementById("t-undefined").innerHTML=table("undefined",\
 "Не распознано","Кнопка «распознать все» прогонит весь список по очереди: "
 +"Лайя, затем LLM; распознанные фразы переедут во вкладку «Лайя».");
- document.getElementById("t-settings").innerHTML=settings()}
-function pick(tr){return {text:tr.dataset.text,kind:tr.querySelector(".kind")\
-.value,command:tr.querySelector(".cmd").value,\
-event:tr.querySelector(".ev").value}}
+ document.getElementById("t-settings").innerHTML=settings()
+ if(document.querySelector(".tasks")&&!T)ensureTasks()}
+function pick(tr){return {text:tr.dataset.text,kind:tr.dataset.kind||"command",\
+command:tr.querySelector(".cmd").value,event:tr.querySelector(".ev").value}}
 async function apply(tr){const p=pick(tr);
  await api("/api/act",{action:"update",...p});await load()}
 async function pollScan(){const s=await api("/api/scan"),r=document\
@@ -127,14 +166,22 @@ return}
 await api("/api/recognize_all",{});pollRec();return}
  const tr=b.closest?b.closest("tr"):null;if(!tr)return;
  const text=tr.dataset.text;
+ if(b.classList.contains("ti")){tr.querySelector(".ev").value=
+  b.textContent.trim();return}
  if(b.classList.contains("app")){await apply(tr);return}
- if(b.classList.contains("conf")){const p=pick(tr);await api("/api/act",\
-{action:"update",...p});await api("/api/act",{action:"confirm",text});\
-load();return}
- if(b.classList.contains("del")){await api("/api/act",{action:"forget",\
-text});load();return}});
+ if(b.classList.contains("conf")){const p=pick(tr);await api("/api/act",
+  {action:"update",...p});await api("/api/act",{action:"confirm",text});
+  load();return}
+ if(b.classList.contains("del")){await api("/api/act",
+  {action:tr.dataset.bucket=="laya"?"reset":"forget",text});load();return}});
+document.addEventListener("input",ev=>{
+ const c=ev.target;
+ if(c.classList&&c.classList.contains("tf"))filterTasks(c)});
 document.addEventListener("change",async ev=>{
- const c=ev.target;if(!c.classList||!c.classList.contains("okc"))return;
+ const c=ev.target;
+ if(c.classList&&c.classList.contains("cmd")&&c.closest("tr"))
+  syncRow(c.closest("tr"));
+ if(!c.classList||!c.classList.contains("okc"))return;
  await api("/api/act",{action:c.checked?"confirm":"demote",\
 text:c.closest("tr").dataset.text});load()});
 load();

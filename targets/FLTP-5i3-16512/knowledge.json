@@ -1,0 +1,119 @@
+{
+    "confirmed": {},
+    "laya": {
+        "добавь в список покупок осушитель воздуха": {
+            "kind": "command",
+            "hits": 0,
+            "command": "shop-add"
+        },
+        "же поставь задачу сделать хлеб": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add"
+        },
+        "паузу": {
+            "kind": "command",
+            "hits": 0,
+            "command": "playpause"
+        },
+        "открой базу данных": {
+            "kind": "command",
+            "hits": 0,
+            "command": "openyoutube"
+        },
+        "в добавь задачу убраться на балконе": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add"
+        },
+        "вот словам потом коробки действия был там действия пока ты не займешь место": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add"
+        },
+        "новые задача позавтракать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add",
+            "event": "нужно завтракать"
+        },
+        "отладка": {
+            "kind": "command",
+            "hits": 0,
+            "command": "diagnose"
+        },
+        "плэй": {
+            "kind": "command",
+            "hits": 0,
+            "command": "playpause"
+        },
+        "по стать задачу пощадить резинку но балконе": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add",
+            "event": "по стать задачу пощадить резинку но балконе"
+        },
+        "поставь дальше приготовить гречку": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add",
+            "event": "приготовить гречку"
+        },
+        "поставь со дальше провести химические опыты": {
+            "kind": "command",
+            "hits": 0,
+            "command": "task-add",
+            "event": "поставить задачу"
+        },
+        "скажи что у меня сейчас по расписание": {
+            "kind": "command",
+            "hits": 0,
+            "command": "calendar-reminder"
+        },
+        "что у меня сейчас по расписанию": {
+            "kind": "command",
+            "hits": 0,
+            "command": "calendar-reminder"
+        },
+        "я застелить кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "застелить кровать"
+        }
+    },
+    "undefined": {
+        "сколько сейчас время": {
+            "kind": "command",
+            "hits": 0
+        },
+        "я застелила кровать": {
+            "kind": "finish",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Застелить кровать"
+        },
+        "я позавтракал": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Завтрак. Принять витамины"
+        },
+        "я почистил зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Почистить зубы утро"
+        },
+        "что мне сейчас по расписание": {
+            "kind": "command",
+            "hits": 0,
+            "command": "calendar-plans"
+        },
+        "режим разработке": {
+            "kind": "command",
+            "hits": 0,
+            "command": "diagnose"
+        }
+    }
+}

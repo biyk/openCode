@@ -16,7 +16,6 @@ SKILL_BY_COMMAND = {
     "calendar-reminder": "calendar-reminder",
     "task-add": "task-add",
     "calendar-plans": "calendar-plans",
-    "task-complete": "task-complete",
 }
 
 

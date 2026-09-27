@@ -38,6 +38,25 @@ class TestPageSyntax:
                        "S.commands.slice().sort()"):
             assert needle in PAGE
 
+    def test_task_commands_show_sheet_tasks(self):
+        # Под списком задач real_life_tasks (тянем их отдельно, по клику);
+        # подсказка привязана к командам taskstart/taskdone (само-отчёт).
+        for needle in ('T.map(', 'class=ti', 'class=tf', 'filterTasks(',
+                       'cmd=="taskdone"', 'api("/api/tasks")',
+                       'ensureTasks()'):
+            assert needle in PAGE
+
+    def test_no_kind_column(self):
+        # Колонка «что делает» убрана: всё выражается колонкой «команда».
+        assert "что делает" not in PAGE
+        assert "kindSel" not in PAGE
+        assert "KINDS" not in PAGE
+
+    def test_laya_cross_resets_instead_of_deleting(self):
+        # ✕ на «Лайе» — reset (в undefined), удаление только в undefined.
+        assert 'tr.dataset.bucket=="laya"?"reset":"forget"' in PAGE
+        assert 'bucket=="confirmed")?"":\'<button class=del>' in PAGE
+
     @pytest.mark.parametrize("wrapper", ["async function _main(){%s}",
                                          "%s"])
     def test_node_accepts_script(self, wrapper, tmp_path):

@@ -1,4 +1,9 @@
-"""Тесты доски «проверка знаний»: конфиг, операции, распознавание, HTTP-API."""
+"""Тесты доски «проверка знаний»: конфиг, операции доски, HTTP-API.
+
+Распознавание фразы — в test_knowledge_review_recognize.py,
+подсказка task-complete (задачи real_life_tasks) — в
+test_knowledge_review_tasks.py.
+"""
 
 import json
 import threading
@@ -6,11 +11,8 @@ import urllib.request
 
 import pytest
 
-from lib.voice_cmd import knowledge_review_recognize as kr
 from lib.voice_cmd.knowledge import CONFIRMED, LAYA, UNDEFINED, KnowledgeStore
-from lib.voice_cmd.knowledge_review_recognize import (
-    load_review, save_review, try_recognize,
-)
+from lib.voice_cmd.knowledge_review_recognize import load_review, save_review
 from lib.voice_cmd.knowledge_review_board import (
     apply_act, board_snapshot, laya_status,
 )
@@ -98,54 +100,26 @@ class TestBoardAndActs:
         assert entry["kind"] == "finish" and entry["event"] == "Завтрак"
         assert "command" not in entry
 
+    def test_reset_on_laya_returns_to_undefined(self, tmp_path):
+        # ✕ на вкладке «Лайя»: снимает догадку ИИ, но не удаляет из базы.
+        store = _store(tmp_path, {"тише": "volumedown"})
+        assert apply_act(store, {"action": "reset", "text": "тише"})
+        assert "тише" not in store.entries(LAYA)
+        assert "тише" in store.entries(UNDEFINED)
+
+    def test_reset_ignores_non_laya(self, tmp_path):
+        store = _store(tmp_path)
+        store.record(UNDEFINED, "ы ы ы")
+        store.record(CONFIRMED, "стоп музыка", command="stop")
+        assert apply_act(store, {"action": "reset", "text": "ы ы ы"}) is False
+        assert apply_act(store, {"action": "reset",
+                                 "text": "стоп музыка"}) is False
+        assert "ы ы ы" in store.entries(UNDEFINED)
+        assert "стоп музыка" in store.entries(CONFIRMED)
+
     def test_laya_status_disabled(self, cfile):
         assert laya_status(cfile) == {"enabled": False, "url": "",
                                       "up": False}
-
-
-class TestRecognize:
-    def test_parse_llm_plain_json(self):
-        got = kr._parse_llm('{"kind":"finish","event":"Завтрак"}', ["stop"])
-        assert got == {"kind": "finish", "command": "", "event": "Завтрак"}
-
-    def test_parse_llm_json_in_prose(self):
-        got = kr._parse_llm('Думаю... {"kind":"command","command":"stop"}',
-                            ["stop"])
-        assert got["kind"] == "command" and got["command"] == "stop"
-
-    def test_parse_llm_rejects_unknown_command(self):
-        assert kr._parse_llm('{"kind":"command","command":"нет"}',
-                             ["stop"]) is None
-
-    def test_parse_llm_rejects_eventless_finish(self):
-        assert kr._parse_llm('{"kind":"finish"}', ["stop"]) is None
-
-    def test_laya_answer_wins(self, monkeypatch):
-        monkeypatch.setattr(kr, "laya_guess", lambda t, c: "volumedown")
-        assert try_recognize("тише", "x", {}) == {
-            "via": "laya", "kind": "command", "command": "volumedown",
-            "event": ""}
-
-    def test_llm_fallback(self, monkeypatch, cfile):
-        monkeypatch.setattr(kr, "laya_guess", lambda t, c: None)
-
-        class _Resp:
-            def raise_for_status(self):
-                pass
-
-            def json(self):
-                return {"choices": [{"message": {
-                    "content": '{"kind":"command","command":"stop"}'}}]}
-
-        monkeypatch.setattr(kr.requests, "post", lambda *a, **k: _Resp())
-        got = try_recognize("стоп музыка", cfile,
-                            {"llm_url": "http://l/v1"})
-        assert got["via"] == "llm" and got["command"] == "stop"
-
-    def test_none_when_all_fail(self, monkeypatch, cfile):
-        monkeypatch.setattr(kr, "laya_guess", lambda t, c: None)
-        monkeypatch.setattr(kr, "llm_guess", lambda *a: None)
-        assert try_recognize("ы ы ы", cfile, {})["via"] == "none"
 
 
 class TestHttpApi:

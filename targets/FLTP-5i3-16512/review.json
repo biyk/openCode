@@ -1,0 +1,5 @@
+{
+    "port": 8765,
+    "llm_url": "http://localhost:20128/v1",
+    "llm_model": "auto/fast"
+}

@@ -71,6 +71,11 @@
             "command": "wakefix",
             "hits": 0,
             "confirmed": false
+        },
+        "открой базу данных": {
+            "command": "openyoutube",
+            "hits": 0,
+            "confirmed": false
         }
     }
 }
