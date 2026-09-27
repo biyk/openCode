@@ -183,6 +183,7 @@
   "lib/diagnostics/diagnose_supervisor.py": "Супервизор диагностики: вотчдог WORKING.MD и повторы.",
   "lib/diagnostics/diagnose_cli.py": "CLI диагностики: launch detached-супервизора и run.",
   "lib/stt/transcription_worker.py": "Голосовой цикл: Vosk STT, оркестратор, микрофон.",
+  "lib/stt/text_inputs.py": "Ручной текстовый ввод команд в консоль: читает stdin и подаёт строки как речь (без кодового слова).",
   "lib/stt/vosk_model.py": "Загрузка моделей Vosk при необходимости.",
   "tests/runtime/test_status_checks.py": "Тесты статусов: выполнение проверок.",
   "tests/runtime/test_status_poll.py": "Тесты статусов: фоновый опрос.",
@@ -322,5 +323,6 @@
   "tests/runtime/test_status_ensure_ttl.py": "Юнит-тесты негативного TTL ensure(): свежий статус не перепроверяется, протухший — перепроверяется, recheck_ttl=0 возвращает старое поведение",
   "tests/stt": "Автотесты STT-слоя: сквозная интеграция распознавания речи в команду.",
   "tests/stt/__init__.py": "Пакет автотестов STT-слоя.",
-  "tests/stt/test_stt_command_integration.py": "Интеграция STT→команда: реальный worker.run() c настоящим Orchestrator и CommandMatcher (мокнуты лишь Vosk, микрофон и shell) — базовый матч, настройка {сильно}, ключ после команды, правило «ждём следующую строку», {{text}}, sequence по шагам, ложный вызов."
+  "tests/stt/test_stt_command_integration.py": "Интеграция STT→команда: реальный worker.run() c настоящим Orchestrator и CommandMatcher (мокнуты лишь Vosk, микрофон и shell) — базовый матч, настройка {сильно}, ключ после команды, правило «ждём следующую строку», {{text}}, sequence по шагам, ложный вызов.",
+  "tests/stt/test_text_inputs.py": "Тесты ручного ввода: TextInputs.run (строки в on_text, пустые/выход/EOF/не-TTY) и submit_manual_text (дописывает триггер к печатной команде без ключа)."
 }

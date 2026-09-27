@@ -19,6 +19,7 @@ if sys.platform == "win32":
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
 from lib.core.output import TranscriptionOutput  # noqa: E402
+from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
 from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
 
 # ---------- Главная функция ----------
@@ -54,8 +55,8 @@ def main():
     )
     cron.start()
 
-    output.print_info("\n🎙️  Запись... Нажмите Enter для остановки.\n")
-    input()
+    output.print_info("\n🎙️  Запись... Команды можно говорить или печатать.\n")
+    TextInputs(lambda t: submit_manual_text(worker, t), output=output).run()
 
     worker.stop()
     thread.join(timeout=2)
