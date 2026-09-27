@@ -2,10 +2,8 @@
 """Операции доски знаний: снимок, движения корзин, статусы серверов.
 
 Снимок confirmed сливает источники: шаблоны "match" из commands.json
-(работают в рантайме, на доске — только для чтения, locked=true) +
-подтверждённые записи knowledge.json (source=«знания», редактируемые).
-laya/undefined — только knowledge.json, их наполняет живой пайплайн
-(перезапущенный воркер).
+(работают в рантайме, на доске — locked=true, read-only) + подтверждённые
+записи knowledge.json (редактируемые). laya/undefined — только knowledge.json.
 """
 
 from __future__ import annotations
@@ -35,6 +33,23 @@ def commands_lists(commands_file: str) -> tuple[list[str], dict]:
     return ids, dict(data.get("descriptions") or {})
 
 
+def free_text_commands(commands_file: str) -> list[str]:
+    """Id команд со свободным текстом ({{text}}) — им на доске дают селект ключа."""
+    try:
+        with open(commands_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        swallowed("review.free_text_commands", e)
+        return []
+    out: list[str] = []
+    for cid, cmd in (data.get("commands") or {}).items():
+        blob = cmd if isinstance(cmd, str) else " ".join(
+            str(v) for v in cmd.values())
+        if "{{text}}" in blob:
+            out.append(cid)
+    return sorted(out)
+
+
 def locked_confirmed(commands_file: str) -> dict:
     """Уже работающие фразы вне knowledge.json: match-шаблоны (read-only)."""
     try:
@@ -62,6 +77,7 @@ def board_snapshot(store: KnowledgeStore, commands_file: str,
     commands, descriptions = commands_lists(commands_file)
     return {"boards": boards, "commands": commands,
             "descriptions": descriptions,
+            "freeText": free_text_commands(commands_file),
             "settings": {"llm_url": review.get("llm_url"),
                          "llm_model": review.get("llm_model")},
             "port": review.get("port")}
@@ -87,16 +103,14 @@ def laya_status(commands_file: str) -> dict:
     return {"enabled": bool(cfg.get("enabled")), "url": url, "up": up}
 
 
-_TASKS_TTL = 300.0  # c — перечитать таблицу задач не чаще этого интервала
+_TASKS_TTL = 300.0  # c — перечитать таблицу задач не чаще интервала
 _tasks_cache: tuple[float, list[str]] = (0.0, [])
 
 
 def sheet_task_titles() -> list[str]:
-    """Названия задач real_life_tasks — подсказка для task-complete на доске.
+    """Названия задач real_life_tasks — подсказка для taskstart/taskdone.
 
-    Чтение Sheets дорогое (снимок доски опрашивается часто), поэтому ответ
-    кэшируется на _TASKS_TTL секунд; пустой список не кэшируется (попробуем
-    ещё раз — возможно, таблица/ OAuth были временно недоступны).
+    Чтение Sheets дорогое, ответ кэшируется на _TASKS_TTL; пустой не кэшируется.
     """
     global _tasks_cache
     now = time.time()
@@ -129,7 +143,6 @@ def delete_confirmed_phrase(store: KnowledgeStore, commands_file: str,
 
     knowledge.json — forget по всем корзинам; commands.json — убираем шаблон
     из match[cid] (сверка по normalize_core), при опустошении снимаем cid.
-    Прочие секции конфига (commands/sequences/descriptions/criteria) не трогаем.
     """
     core = normalize_core(text)
     removed = store.forget(core)

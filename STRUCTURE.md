@@ -321,10 +321,12 @@ voice
 │   │   ├── test_knowledge.py  # Юнит-тесты KnowledgeStore: path, resolve/resolve_event (решают только confirmed), record с приоритетом корзин (confirmed не понижается), confirm/demote/forget/bump/entries, запись на диск и hot-reload
 │   │   ├── test_knowledge_review.py  # Тесты доски «проверка знаний»: снимок confirmed из match/знаний, review.json-конфиг, apply_act (confirm/demote/forget/update и reset Лайи в undefined), живой HTTP-API board/act/settings
 │   │   ├── test_knowledge_review_bulk.py  # Тесты массового распознавания: переезд догадок (Лайя и LLM) в корзину laya, устойчивость к сбою на фразе, защита от двойного запуска, прогон в потоке и HTTP-API /api/recognize_all
+│   │   ├── test_knowledge_review_keys.py  # Тесты free_text_commands доски: отдаёт id команд с {{text}} (строка-команда и словарь платформ), снимок доски несёт их в поле freeText для селекта «ключ» (накопительные префиксы фразы)
 │   │   ├── test_knowledge_review_page.py  # Тесты HTML-страницы доски: валидность JS (node --check, битые переносы и склейки строк), наличие ключевых контролов (в т.ч. отсутствия колонки «что делает» и ✕-reset на «Лайе»), живой GET / и /api/ping
 │   │   ├── test_knowledge_review_recognize.py  # Тесты распознавания фразы для доски: разбор JSON в прозе LLM, отказ неизвестной команде и finish без события, приоритет Лайи перед LLM, via=none при провале всех
 │   │   ├── test_knowledge_review_scan.py  # Тесты сканера логов: извлечение фраз с триггерами, игнор распознанных, архив в zip по дате, пропуск активного лога, поток start/status и HTTP-API /api/scan
 │   │   ├── test_knowledge_review_tasks.py  # Тесты подсказки taskstart/taskdone: sheet_task_titles (кэш, дедуп названий, пустой список без доступа к таблице) и HTTP-API /api/tasks
+│   │   ├── test_recognize_pipeline.py  # Заготовка: прогоняет реальный пайплайн (реальный commands.json устройства) с подменённым execute_by_id — фиксирует, какую команду и текст распознала сборка, не запуская shell
 │   │   └── test_shopping_match.py  # Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping
 │   ├── __init__.py  # Пакет tests – автотесты проекта
 │   ├── conftest.py  # Общие фикстуры тестов: live_announce — разовая TTS-озвучка «Внимание, идёт тестирование» перед живыми тестами; в конце сессии озвучивает «Тестирование завершено».

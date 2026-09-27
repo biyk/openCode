@@ -61,6 +61,19 @@ class TestPageSyntax:
         # в «Подтверждено» ✕ ставим и на locked-строках (т.к. чистим конфиг).
         assert "(e.locked||bucket==\"confirmed\")?\"\"" not in PAGE
 
+    def test_free_text_key_select(self):
+        # Для free-text-команд под «командой» — селект «ключ»: накопительные
+        # префиксы фразы; выбор = команда, остаток подставляется в параметр.
+        for needle in ("function keySel(", "function cmdCell(",
+                       "function afterKey(", "function isFree(",
+                       "S.freeText", "w.slice(0,-1)", "<select class=key>",
+                       "t.slice(0,-e.length)",
+                       "class=cc", 'contains("key")',
+                       'c!="taskstart"&&c!="taskdone"',
+                       "tr.querySelector(\".ev\").value=afterKey"):
+            assert needle in PAGE, needle
+        assert "S.keys" not in PAGE      # старый источник-шаблон match убран
+
     @pytest.mark.parametrize("wrapper", ["async function _main(){%s}",
                                          "%s"])
     def test_node_accepts_script(self, wrapper, tmp_path):

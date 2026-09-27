@@ -1,16 +1,8 @@
 # lib/voice_cmd/knowledge_review_ui.py
-"""HTML-страница доски «проверка знаний»: одна страница, 4 вкладки.
-
-Подтверждено (галочка активна; снял → undefined; ✕ чистит устаревшую
-фразу из commands.json и базы знаний), Лайя (правка
-команды/параметров + подтвердить; ✕ снимает догадку ИИ в undefined,
-а не удаляет), Не распознано (кнопка «распознать»: Laya → LLM, затем
-подтвердить; ✕ удаляет из базы), Сервер (статус Laya +
-адрес/модель LLM). Колонка «что делает» убрана — всё есть команда: «какая»
-выбирается в «команда», само-отчёт = taskstart/taskdone. Для этих команд
-под полем параметра — список задач real_life_tasks (клик подставляет).
-Все данные — через JSON-API knowledge_review_server.
-"""
+"""HTML-страница доски «проверка знаний»: 4 вкладки, данные через JSON-API.
+✕ в «Подтверждено» чистит фразу из commands.json и базы; на «Лайе» снимает
+догадку ИИ. Колонка «команда» — select; у free-text-команд (кроме
+taskstart/taskdone) — select «ключ»: накопительные префиксы фразы."""
 
 PAGE = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -18,21 +10,16 @@ PAGE = """<!doctype html>
 <style>
  body{font-family:system-ui;margin:1rem;background:#1e1e28;color:#eee}
  .tabs{display:flex;gap:.5rem;margin-bottom:.8rem}
- .tabs button{padding:.4rem .8rem;cursor:pointer;background:#333;color:#ddd;
-  border:1px solid #555}
+ .tabs button{padding:.4rem .8rem;cursor:pointer;background:#333;color:#ddd;border:1px solid #555}
  .tabs button.on{background:#4a4adf;color:#fff}
  section{display:none}section.on{display:block}
  table{border-collapse:collapse;width:100%}
  td,th{border:1px solid #444;padding:.3rem .5rem;font-size:.9rem}
- input,select{background:#2a2a36;color:#eee;border:1px solid #555;
-  padding:.2rem}
- select.cmd{max-width:11rem}
- .cdd{font-size:.75rem;color:#999;margin-top:.15rem}
+ input,select{background:#2a2a36;color:#eee;border:1px solid #555;padding:.2rem}
+ select.cmd{max-width:11rem} .cdd{font-size:.75rem;color:#999;margin-top:.15rem}
  .ti{font-size:.78rem;color:#cde;cursor:pointer;padding:.05rem .1rem}
- .ti:hover{background:#3a3a56}
- .tasks{color:#999;font-size:.8rem;margin-top:.2rem;
-  border-top:1px dashed #444}
- .tlist{max-height:11rem;overflow:auto}
+ .ti:hover{background:#3a3a56} .tlist{max-height:11rem;overflow:auto}
+ .tasks{color:#999;font-size:.8rem;margin-top:.2rem;border-top:1px dashed #444}
  button{background:#3a3a46;color:#eee;border:1px solid #666;cursor:pointer}
  .ok{color:#7d7}.bad{color:#e77}.hit{color:#999}.note{color:#999}
 </style></head><body>
@@ -62,6 +49,19 @@ function cmdSel(v){return '<select class=cmd><option value=""></option>'+
   esc(trunc(c,18))}</option>`).join("")+"</select>"}
 function cmdNote(v){return `<div class=cdd>${v?esc(v)+" — \
 "+esc(S.descriptions[v]||""):"&nbsp;"}</div>`}
+function nk(s){return String(s==null?"":s).toLowerCase().replace(/ё/g,"е")
+ .replace(/\\s+/g," ").trim()}
+function afterKey(ph,key){ph=nk(ph);key=nk(key);
+ return !key||ph.indexOf(key)!=0?ph:nk(ph.slice(key.length))}
+function isFree(c){return (S.freeText||[]).indexOf(c)>=0
+ &&c!="taskstart"&&c!="taskdone"}  // у них параметр — задача из списка
+function keySel(t,chosen){const w=nk(t).split(" ");if(w.length<2)return "";
+ const ps=w.slice(0,-1).map((_,i)=>w.slice(0,i+1).join(" "));
+ return '<br><select class=key><option value="">ключ…</option>'+ps.map(p=>
+  `<option${p==chosen?" selected":""}>${esc(p)}</option>`).join("")+"</select>"}
+function cmdCell(cmd,text,ev){const t=nk(text),e=nk(ev||""),
+ k=e&&t.length>e.length&&t.endsWith(e)?t.slice(0,-e.length).trim():"";
+ return cmdSel(cmd)+(isFree(cmd)?keySel(text,k):"")+cmdNote(cmd)}
 function taskList(){return (T&&T.length)?T.map(t=>
  `<div class=ti title="подставить в параметр">${esc(trunc(t,60))}</div>`
  ).join(""):'<span class=note>задачи из таблицы не найдены</span>'}
@@ -77,10 +77,9 @@ async function ensureTasks(){if(T)return;try{T=(await api("/api/tasks")).tasks||
  document.querySelectorAll(".tasks").forEach(x=>x.querySelector(".tlist")
  .innerHTML=taskList())}
 function syncRow(tr){const box=tr.querySelector(".tasks"),
- cmd=tr.querySelector(".cmd").value, note=tr.querySelector(".cdd"),
+ cmd=tr.querySelector(".cmd").value,
  task=cmd=="taskstart"||cmd=="taskdone";
- if(note)note.innerHTML=cmd?esc(cmd)+" — "+esc(S.descriptions[cmd]||"")
-  :"&nbsp;";
+ tr.querySelector(".cc").innerHTML=cmdCell(cmd,tr.dataset.text,tr.querySelector(".ev").value);
  if(task){if(!box&&tr.querySelector(".app")){tr
   .querySelectorAll("td")[3].insertAdjacentHTML("beforeend",tasksBox());
   ensureTasks()}}
@@ -101,7 +100,7 @@ function row(text,e,bucket){
  const extra=!e.locked&&task?tasksBox():"";
  return `<tr data-text="${esc(text)}" data-bucket="${bucket}" data-kind=\
 "${e.kind||"command"}"><td>${del}</td><td>${esc(text)}</td>\
-<td>${cmdSel(e.command)}${cmdNote(e.command)}</td>\
+<td class=cc>${cmdCell(e.command,text,e.event)}</td>\
 <td><input class=ev size=22 value="${esc(e.event)}">${extra}</td>\
 <td class=hit>${e.hits||0}</td><td>${cell}${btns}</td></tr>`}
 function table(bucket,title,note){
@@ -191,6 +190,8 @@ document.addEventListener("change",async ev=>{
  const c=ev.target;
  if(c.classList&&c.classList.contains("cmd")&&c.closest("tr"))
   syncRow(c.closest("tr"));
+ if(c.classList&&c.classList.contains("key")){const tr=c.closest("tr");
+  tr.querySelector(".ev").value=afterKey(tr.dataset.text,c.value);return}
  if(!c.classList||!c.classList.contains("okc"))return;
  await api("/api/act",{action:c.checked?"confirm":"demote",\
 text:c.closest("tr").dataset.text});load()});
