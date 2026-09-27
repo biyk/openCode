@@ -25,7 +25,7 @@ DEFAULT_REVIEW = {
     "port": 8765,
     "llm_url": "http://localhost:1234/v1",
     "llm_model": "liquid/lfm2.5-1.2b",
-    "llm_timeout": 30,
+    "llm_timeout": 300,
 }
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 KINDS = ("command", "start", "finish", "none")
@@ -133,7 +133,7 @@ def llm_guess(text: str, commands_file: str, review: dict
     }
     try:
         r = requests.post(f"{url}/chat/completions", json=payload,
-                          timeout=float(review.get("llm_timeout", 30)))
+                          timeout=float(review.get("llm_timeout", 300)))
         r.raise_for_status()
         answer = (r.json().get("choices") or [{}])[0].get(
             "message", {}).get("content") or ""

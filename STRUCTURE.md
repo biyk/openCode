@@ -139,10 +139,11 @@ voice
 │   │   ├── knowledge.py  # База знаний (targets/<host>/knowledge.json): единая база «фраза → решение» с корзинами confirmed/laya/undefined и kind=command/start/finish; в рантайме решают только confirmed (resolve/resolve_event), laya/undefined наполняются из пайплайна для доски «проверка знаний»
 │   │   ├── knowledge_review.py  # Точка входа доски «проверка знаний»: launch — идемпотентно поднимает detached review-сервер и открывает страницу в дебаг-браузере; serve/status — для ручной проверки
 │   │   ├── knowledge_review_board.py  # Операции доски знаний: снимок confirmed из трёх источников (match-шаблоны commands.json + алиасы aliases.json как locked read-only + knowledge.confirmed), confirm/demote/forget/update, статус Laya
+│   │   ├── knowledge_review_bulk.py  # Массовое распознавание корзины undefined: все фразы по очереди через Лайю и LLM (try_recognize), распознанные уезжают в корзину laya на досмотр; прогресс start/status в daemon-потоке
 │   │   ├── knowledge_review_recognize.py  # Распознавание фразы для доски: сначала Лайя (decision), затем LLM (LM Studio) с перечнем команд; настройки доски в targets/<host>/review.json
 │   │   ├── knowledge_review_scan.py  # Сканер логов для доски знаний: [TEXT]-строки с триггерами из logs/*.log → детектор (commands.json, Лайя), нераспознанные фразы в корзину undefined, просканированные логи в logs/zip/YYYYMMDD.zip
-│   │   ├── knowledge_review_server.py  # HTTP-сервер доски знаний (stdlib http.server, 127.0.0.1): раздача HTML-страницы и JSON-API board/act/recognize/settings; операции доски — в knowledge_review_board
-│   │   └── knowledge_review_ui.py  # HTML-страница доски знаний: одна страница, вкладки Подтверждено / Лайя / Не распознано / Сервер (правка, подтверждение, распознавание, сканирование логов, настройки LLM)
+│   │   ├── knowledge_review_server.py  # HTTP-сервер доски знаний (stdlib http.server, 127.0.0.1): раздача HTML-страницы и JSON-API board/act/recognize/recognize_all/scan/settings; операции доски — в knowledge_review_board
+│   │   └── knowledge_review_ui.py  # HTML-страница доски знаний: одна страница, вкладки Подтверждено / Лайя / Не распознано / Сервер (правка, подтверждение, распознавание построчно и массовое «распознать все», сканирование логов, настройки LLM)
 │   ├── __init__.py  # Это файл инициализации пакета lib, который задаёт атрибут __version__ для указания текущей версии проекта.
 │   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
 │   ├── diagnose.py  # Диагностика: промпт, git/lock/rollback, прогон тестов.
@@ -320,6 +321,8 @@ voice
 │   │   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
 │   │   ├── test_knowledge.py  # Юнит-тесты KnowledgeStore: path, resolve/resolve_event (решают только confirmed), record с приоритетом корзин (confirmed не понижается), confirm/demote/forget/bump/entries, запись на диск и hot-reload
 │   │   ├── test_knowledge_review.py  # Тесты доски «проверка знаний»: слияние confirmed из match/алиасов/знаний, review.json-конфиг, apply_act, разбор ответов LLM, Laya→LLM-распознавание и живой HTTP-API
+│   │   ├── test_knowledge_review_bulk.py  # Тесты массового распознавания: переезд догадок (Лайя и LLM) в корзину laya, устойчивость к сбою на фразе, защита от двойного запуска, прогон в потоке и HTTP-API /api/recognize_all
+│   │   ├── test_knowledge_review_page.py  # Тесты HTML-страницы доски: валидность JS (node --check, битые переносы и склейки строк), наличие ключевых контролов, живой GET / и /api/ping
 │   │   ├── test_knowledge_review_scan.py  # Тесты сканера логов: извлечение фраз с триггерами, игнор распознанных, архив в zip по дате, пропуск активного лога, поток start/status и HTTP-API /api/scan
 │   │   └── test_shopping_match.py  # Тесты команд shop-add/shop-bought на живом commands.json: «купил» и «купить» не перетягивают друг друга, {{text}} собирает товар, секция shopping
 │   ├── __init__.py  # Пакет tests – автотесты проекта

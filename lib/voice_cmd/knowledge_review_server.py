@@ -7,6 +7,8 @@ API (JSON, всё на 127.0.0.1):
   GET  /api/board     — корзины + список команд + настройки
   POST /api/act       — confirm/demote/forget/update записи базы знаний
   POST /api/recognize — «попробовать распознать» (Laya → LLM)
+  POST /api/recognize_all — массовый прогон undefined-корзины (Laya → LLM)
+  GET  /api/recognize_all — прогресс {running, done, total, recognized}
   POST /api/scan      — запустить сканирование логов в базу знаний
   GET  /api/scan      — прогресс сканирования {running, done, total, added}
   POST /api/settings  — сохранить port/llm_url/llm_model в review.json
@@ -25,6 +27,8 @@ from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.knowledge_review_board import (
     apply_act, board_snapshot, laya_status,
 )
+from lib.voice_cmd.knowledge_review_bulk import start as bulk_start
+from lib.voice_cmd.knowledge_review_bulk import status as bulk_status
 from lib.voice_cmd.knowledge_review_recognize import (
     load_review, save_review, try_recognize,
 )
@@ -70,6 +74,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._json(200, snap)
         elif self.path == "/api/scan":
             self._json(200, scan_status())
+        elif self.path == "/api/recognize_all":
+            self._json(200, bulk_status())
         else:
             self._json(404, {"error": "not found"})
 
@@ -87,6 +93,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             res = try_recognize(str(body.get("text") or ""),
                                 self.commands_file, self.review)
             self._json(200, res)
+        elif self.path == "/api/recognize_all":
+            self._json(200, {"started": bulk_start(
+                self.store, self.commands_file, self.review)})
         elif self.path == "/api/scan":
             self._json(200, {"started": scan_start(
                 self.store, self.commands_file)})
