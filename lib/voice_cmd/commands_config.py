@@ -54,6 +54,16 @@ class CommandConfigMixin:
         """
         return self._data.get("task_monitor", {})
 
+    def get_record_gate_config(self) -> dict:
+        """Возвращает секцию `record_gate` (шлюз захвата микрофона).
+
+        Ключи: enabled, allowed_device (подстрока имени «тихого» устройства,
+        в наушниках медиа не течёт в микрофон), poll_s (как часто опрашивать
+        Core Audio), ignored_processes (чей звук не считать медиа);
+        значения по умолчанию — в lib.core.tuning.
+        """
+        return self._data.get("record_gate", {})
+
     def get_fun_holes_config(self) -> dict:
         """Возвращает секцию `fun_holes` (развлечения в дырах календаря).
 

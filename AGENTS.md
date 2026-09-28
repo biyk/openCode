@@ -51,7 +51,7 @@ python main.py
 ### 4.1 Раскладка `lib/` по доменам
 `tests/` зеркалит те же имена папок (`tests/core/`, `tests/google/`, …).
 - `lib/core/` — `orchestrator*`, `laya_decision`, `logger`, `output`.
-- `lib/stt/` — `transcription_worker`, `vosk_model`.
+- `lib/stt/` — `transcription_worker`, `vosk_model`, `encoding` (починка cp866).
 - `lib/synth/` — `tts_engines`, `tts_playback`.
 - `lib/opencode/` — `opencode_cli`, `opencode_output`.
 - `lib/voice_cmd/` — `commands*`, `knowledge`, `intent`, `config_loader` (шаг 1, §10).
@@ -59,7 +59,7 @@ python main.py
 - `lib/taskflow/` — `tasks_*`, `task_start_sheet`, `fun_holes`/`fun_fill` (дыры календаря).
 - `lib/google/` — `google_calendar_events|mutate`, `google_tasks`.
 - `lib/browser/` — `cdp_client` (HTTP/WS-примитивы, `wait_until`), `cdp_events` (ожидания по событиям, §4.5), `youtube_browser`, `youtube_live`.
-- `lib/runtime/` — `status*`, `media`.
+- `lib/runtime/` — `status*`, `media`, `record_gate` + `audio_devices`/`win_com` (Core Audio, §4.6).
 - `lib/skills/` — `skills`, `skill_actions`.
 - `lib/diagnostics/` — `diagnose_cli`, `diagnose_supervisor`.
 - `lib/versioning/` — `version`, `version_gate`, `version_checker`.
@@ -95,6 +95,16 @@ python main.py
 - Проигрывание проверяется по состоянию страницы (`!document.querySelector('video').paused`), а не по тому, что вернул внедрённый скрипт. `wait_for_selector` из `cdp_client` удалён — его заменил `cdp_events.wait_element`.
 - Тесты: `tests/browser/test_cdp_events.py` (FakeWs, обе ловушки из п. выше), `test_youtube_open_first.py` (порядок шагов «открой юту»), `test_youtube_browser.py`, `test_youtube_live_unit.py`; живой — `tests/browser/test_youtube_live.py` (нужен браузер на `:9222`).
 
+### 4.6 Шлюз захвата микрофона (`record_gate`)
+- Правило: **звук идёт НЕ через разрешённое устройство (наушники) и на нём играет медиа → микрофон не пишется**. С колонок медиа попадает в микрофон, и ассистент распознаёт чужую речь вместо команд; в наушниках утечки нет, там запись всегда открыта.
+- `lib/runtime/record_gate.py::RecordGate` — daemon-поток (тот же порядок, что `task_monitor`), раз в `poll_s` читает Core Audio: `default_device_name()` + `active_session_processes(min_peak)` (`lib/runtime/audio_devices.py`, ctypes-COM через `lib/runtime/win_com.py`). Колбэк sounddevice только читает готовый `blocked` — COM в аудио-поток реального времени не пускаем.
+- «Играет» решает **пик-метр сессии** (`IAudioMeterInformation::GetPeakValue`), а не `AudioState` — ловушка, найденная живой замером: спящий VLC висит `Active` с пиком 0.0 (по одному состоянию шлюз глушил микрофон непрерывно), а SoundPlayer играет при `state=1` с пиком 0.6. Порог — `RECORD_GATE_MIN_PEAK` (`record_gate.min_peak`); из состояний отсекаем только `Muted` (в микрофон такой не утекает). Метр не ответил — не считаем медиа (fail-open).
+- Глушим **полностью** (решение пользователя): вместе с командами не слышны и стоп-слова. Выход из заглушения — пауза медиа или возврат на наушники; на каждом переключении worker сбрасывает распознаватель (`take_change()`), иначе склеился бы обрывок команды с музыкой.
+- Своя озвучка в медиа **не** считается: TTS играет из дочерних `powershell`/`mpg123`/`ffplay` (`lib/synth/tts_playback.py`), и учти мы их — шлюз закрывался бы сразу после каждой фразы ассистента. Список — `ignored_processes`.
+- Любой сбой проверки (COM, не Windows, неизвестное устройство) — **открытый** шлюз (fail-open): оглохнуть из-за сломанного условия хуже, чем из-за музыки.
+- Секция `record_gate` в `targets/<host>/commands.json` (enabled/allowed_device/poll_s/min_peak/ignored_processes), дефолты — `lib/core/tuning.py` (`RECORD_GATE_*`; allowed_device — подстрока имени, регистр не важен). Шлюз собирает `build_record_gate(matcher, output)` в `__init__` worker'а, запускает `run()`, снимает `stop()`.
+- Тесты: `tests/runtime/test_audio_devices.py` (что считается звуком: тишина при Active, пик при state=1, мьют, мёртвый метр), `tests/runtime/test_record_gate.py` (таблица случаев правила, fail-open, скидка на свой TTS, фабрика), `tests/stt/test_worker_record_gate.py` (колбэк и цикл захвата); живые проверки — `python temp/gate_peak.py` (пики всех сессий + вердикт из реального конфига) и `python temp/gate_peak2.py` (поднимает `temp/play_loop.ps1` и показывает, что шлюз закрывается ровно в моменты звука).
+
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.
 - `lib/reminders.py` — парсинг детерминированный; если время не указано → **+60 минут**.
@@ -107,6 +117,8 @@ python main.py
 - Аборт: `abort_event` поддерживается в TTS и плеере.
 - `_fix_encoding` не должен перекодировать уже валидный UTF-8 из Vosk.
 - Частые причины «ассистент не остановился» — стоп-слова и кодировка (см. `_fix_encoding` в `lib/stt/transcription_worker.py`).
+- `_fix_encoding` вынесен в `lib/stt/encoding.py` (worker ≤ лимита строк §9); имя `transcription_worker._fix_encoding` сохранено как алиас — тесты мокют его именно там.
+- Ещё одна причина «ассистент молчит в ответ» — шлюз записи §4.6: с колонок играет медиа, и микрофон заглушён намеренно.
 
 ## 7. LLM-провайдеры
 - Активный провайдер: `race` (OmniRouter + LM Studio, первый непустой ответ). Конфиг в `providers.json`, клиенты в `lib/providers/`.

@@ -337,6 +337,11 @@
         "min_gap_min": 1,
         "lookback_days": 7
     },
+    "record_gate": {
+        "enabled": true,
+        "allowed_device": "soundcore H30i",
+        "poll_s": 1.0
+    },
     "intent": {
         "enabled": true,
         "include_media": true

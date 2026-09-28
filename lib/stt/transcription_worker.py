@@ -2,7 +2,6 @@
 import json
 import os
 import queue
-import sys
 import threading
 from typing import Optional
 
@@ -16,9 +15,11 @@ from lib.opencode.opencode_cli import OpenCodeCliRunner
 from lib.core.orchestrator import Orchestrator
 from lib.core.output import TranscriptionOutput
 from lib.providers.manager import ProviderManager
+from lib.runtime.record_gate import build_record_gate
 from lib.runtime.status import StatusStore
 from lib.tts import TextToSpeech
 from lib.stt import vosk_model as _vm
+from lib.stt.encoding import fix_encoding as _fix_encoding
 
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer, SetLogLevel
@@ -34,24 +35,11 @@ AUDIO_SUPPRESS_AFTER_TTS = 0.5
 STOP_WORDS = frozenset(("стоп", "останови", "stop", "хватит", "прекрати"))
 
 
-def _fix_encoding(text: str) -> str:
-    """Чинит битый текст Vosk на Windows (cp866 -> utf-8).
-
-    Корректную кириллицу возвращает как есть.
-    """
-    if not text or sys.platform != "win32":
-        return text
-    if any("\u0410" <= ch <= "\u044F" or ch in "\u0401\u0451" for ch in text):
-        return text
-    try:
-        encoded = text.encode("cp866", errors="ignore")
-        return encoded.decode("utf-8", errors="ignore")
-    except Exception:
-        return text
-
-
 class TranscriptionWorker:
     """Захватывает аудио и распознаёт речь."""
+
+    # шлюз записи (record_gate): None — микрофон не глушим никогда
+    _gate = None
 
     def __init__(self, lang_code: str = "ru", device_name: str = "default",
                  output: Optional[TranscriptionOutput] = None):
@@ -108,12 +96,19 @@ class TranscriptionWorker:
             )
             self._orchestrator._opencode = self._opencode
 
+        # Шлюз захвата: с колонок играет медиа → глушим микрофон целиком (§4.6).
+        self._gate = build_record_gate(self._matcher, self._output)
+
     def audio_callback(self, indata, frames, time_info, status):
-        """Пишет аудио в очередь (и во время озвучки — для стоп-слов)."""
+        """Пишет аудио в очередь (шлюз записи может глушить захват)."""
+        if self._gate is not None and self._gate.blocked:
+            return
         self._queue.put(bytes(indata))
 
     def run(self):
         """Основной цикл - работает до вызова stop()."""
+        if self._gate:
+            self._gate.start()          # шлюз живёт вместе с циклом захвата
         try:
             SetLogLevel(0)
             model_path = _vm.ensure_vosk_model(self.lang_code)
@@ -135,6 +130,10 @@ class TranscriptionWorker:
                         data = self._queue.get(timeout=0.2)
                     except queue.Empty:
                         continue
+
+                    # переключение шлюза: обрывок команды вместе с музыкой — не команда
+                    if self._gate is not None and self._gate.take_change():
+                        recognizer.Reset()
 
                     # Распознанный текст
                     if recognizer.AcceptWaveform(data):
@@ -190,6 +189,8 @@ class TranscriptionWorker:
 
     def stop(self):
         self._running.clear()
+        if self._gate is not None:
+            self._gate.stop()
         if getattr(self, "_status", None) is not None:
             self._status.stop()
         if getattr(self, "_decision", None) is not None:
