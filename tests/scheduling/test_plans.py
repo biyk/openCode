@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from lib.plans import PlansHandler, TRIGGER_PHRASES
+from lib.plans import PlansHandler, TRIGGER_PHRASES, main
 
 
 NOW = datetime(2026, 9, 15, 13, 0)
@@ -128,3 +128,56 @@ class TestAuthReady:
         fake.is_ready = lambda: False
         h._google = fake
         assert h.auth_ready() is False
+
+
+class _FakeHandler:
+    """Заглушка PlansHandler для main(): готовность + актуальное событие."""
+
+    def __init__(self, ready, ev, now):
+        self._ready, self._ev, self.now = ready, ev, now
+
+    def auth_ready(self):
+        return self._ready
+
+    def current_task(self):
+        return self._ev
+
+
+class TestMain:
+    """CLI `python -m lib.plans` (команда calendar-plans) озвучивает событие."""
+
+    def _run(self, monkeypatch, ready, ev, now=NOW):
+        spoken = []
+
+        class FakeTTS:
+            def speak_and_play(self, text, **kw):
+                spoken.append(text)
+
+        monkeypatch.setattr("lib.tts.TextToSpeech", FakeTTS)
+        monkeypatch.setattr("lib.plans.PlansHandler",
+                            lambda: _FakeHandler(ready, ev, now))
+        return main(), spoken
+
+    @staticmethod
+    def _ev(summary, start, end):
+        return {"id": "x", "summary": summary, "start": start, "end": end}
+
+    def test_voices_running_event(self, monkeypatch):
+        ev = self._ev("созвон", NOW - timedelta(minutes=5),
+                      NOW + timedelta(minutes=25))
+        rc, spoken = self._run(monkeypatch, True, ev)
+        assert rc == 0 and spoken == ["Сейчас: созвон"]
+
+    def test_voices_nearest_future_with_time(self, monkeypatch):
+        ev = self._ev("ужин", NOW + timedelta(hours=2),
+                      NOW + timedelta(hours=3))
+        rc, spoken = self._run(monkeypatch, True, ev)
+        assert rc == 0 and spoken == ["Ближайшее: ужин в 15:00"]
+
+    def test_no_events_announces_empty(self, monkeypatch):
+        rc, spoken = self._run(monkeypatch, True, None)
+        assert rc == 0 and spoken == ["Сейчас запланированных событий нет"]
+
+    def test_not_auth_returns_3(self, monkeypatch):
+        rc, spoken = self._run(monkeypatch, False, None)
+        assert rc == 3 and spoken == ["Календарь сейчас недоступен"]

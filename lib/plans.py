@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core.errors import swallowed
 from lib.google_calendar import GoogleCalendar
 
 TRIGGER_PHRASES = (
@@ -83,3 +84,46 @@ class PlansHandler:
         if future:
             return future[0]
         return None
+
+
+def _voice(text: str) -> None:
+    """Озвучить фразу; TTS лениво (как в shopping), сбой — в лог."""
+    from lib.tts import TextToSpeech
+    try:
+        TextToSpeech().speak_and_play(text)
+    except Exception as e:                       # нет динамика/синтеза
+        swallowed("plans.tts", e)
+
+
+def main(argv=None) -> int:
+    """CLI: `python -m lib.plans` — озвучить текущее/ближайшее событие.
+
+    Используется командой calendar-plans («что у меня сейчас/по планам»).
+    Аргументы не нужны: запрос планов всегда «про сейчас». Идёт сейчас →
+    «Сейчас: …»; иначе ближайшее будущее → «Ближайшее: … в ЧЧ:ММ»; пусто/
+    нет доступа — соответствующая фраза. Коды: 0 — озвучено, 3 — нет Calendar.
+    """
+    del argv  # запрос планов не параметризуется
+    handler = PlansHandler()
+    if not handler.auth_ready():
+        print("[Plans] Calendar не авторизован")
+        _voice("Календарь сейчас недоступен")
+        return 3
+    ev = handler.current_task()
+    if ev is None:
+        print("[Plans] Актуальных событий нет")
+        _voice("Сейчас запланированных событий нет")
+        return 0
+    summary = str(ev.get("summary") or "").strip()
+    now, start, end = handler.now, ev["start"], ev["end"]
+    if start <= now <= end:
+        phrase = f"Сейчас: {summary}"
+    else:
+        phrase = f"Ближайшее: {summary} в {start.strftime('%H:%M')}"
+    print(f"[Plans] {phrase}")
+    _voice(phrase)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
