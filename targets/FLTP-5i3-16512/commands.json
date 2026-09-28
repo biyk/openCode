@@ -332,6 +332,11 @@
         "interval_min": 10,
         "answer_timeout_s": 90
     },
+    "fun_holes": {
+        "enabled": true,
+        "min_gap_min": 1,
+        "lookback_days": 7
+    },
     "intent": {
         "enabled": true,
         "include_media": true

@@ -41,11 +41,11 @@ voice
 │   │   └── wake_video_and_volume.ps1  # Утреннее задание cron: открывает тестовый ролик YouTube новой вкладкой (open-new), проверяет по шагам, что он играет (CDP eval, попытка play() при паузе), и выставляет громкость 30%; провал шага — ошибка задания
 │   └── crontab.json  # Расписание заданий (аналог crontab): классические 5-полевые cron-выражения, задания типов script (cron/jobs/) и shell, флаги enabled/announce/timeout. Утренний сценарий: включить тестовый ролик YouTube (wake_video_and_volume) и поднять громкость (volume_up).
 ├── lib/
-│   ├── browser/  # Браузер через CDP: клиент, сценарии YouTube, live-проверки.
-│   │   ├── __init__.py  # Инициализация пакета browser — Браузер через CDP: клиент, сценарии YouTube, live-проверки.
-│   │   ├── cdp_client.py  # Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click/wait_for_selector.
-│   │   ├── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика.
-│   │   └── youtube_live.py  # Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, определяет состояние плеера (играет/пауза) и закрывает вкладку.
+│   ├── browser/  # Браузер через CDP: клиент, событийные ожидания вкладки, сценарии YouTube, live-проверки.
+│   │   ├── __init__.py  # Инициализация пакета browser — Браузер через CDP: клиент, событийные ожидания вкладки, сценарии YouTube, live-проверки.
+│   │   ├── cdp_client.py  # Низкоуровневый CDP-клиент: HTTP, вкладки, WebSocket, eval_js/click и wait_until (опрос состояний, на которые нельзя подписаться).
+│   │   ├── youtube_browser.py  # Сценарии YouTube поверх CDP: поиск, первое видео, запуск текущего ролика — идут по событиям страницы (cdp_events), а не по паузам.
+│   │   └── youtube_live.py  # Live-проверки YouTube для тестов: открывает тестовый ролик в НОВОЙ вкладке, дожидается события загрузки/появления <video> и готовности плеера, закрывает вкладку.
 │   ├── core/  # Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── __init__.py  # Инициализация пакета core — Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── errors.py  # Учёт проглоченных ошибок: swallowed() логирует глухой except и возвращает default; для OAuth-сбоев добавляет подсказку про reauth.py.
@@ -62,8 +62,8 @@ voice
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
 │   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
-│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start)
-│   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*, TASK_MONITOR_*, TASK_DONE_TEXT); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
+│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start); каждый цикл ещё и закрытие дыр календаря (fun_holes)
+│   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*, TASK_MONITOR_*, TASK_DONE_TEXT, FUN_*); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
 │   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
@@ -71,7 +71,7 @@ voice
 │   ├── google/  # Google API: события и мутации календаря, задачи, лист списка покупок.
 │   │   ├── __init__.py  # Инициализация пакета google — Google API: события и мутации календаря, задачи, лист списка покупок.
 │   │   ├── google_calendar_events.py  # Миксин календаря: создание и чтение событий.
-│   │   ├── google_calendar_mutate.py  # Миксин мутаций календаря: перенос только даты начала/завершения события, удаление события по id, событие-«галочка» выполнения colorId=7
+│   │   ├── google_calendar_mutate.py  # Миксин мутаций календаря: перенос только даты начала/завершения события, удаление по id, событие-«галочка» выполнения colorId=7, точечные патчи colorId/summary через _patch
 │   │   ├── google_tasks.py  # Это файл‑модуль, реализующий обёртку над Google Tasks API с OAuth‑авторизацией и предоставляющий методы для создания, получения и завершения задач.
 │   │   ├── shopping_dedup.py  # Совпадение названия товара с позициями списка: дубликат перед добавлением (выключен флагом) и поиск строки на удаление (exact → подстрока → fuzzy)
 │   │   └── shopping_sheet.py  # Клиент Google Таблицы «Список покупок»: чтение строк A:B, шапка, append товара, удаление строки через deleteDimension (индексы 0-based)
@@ -118,7 +118,10 @@ voice
 │   │   ├── cells.py  # Разбор значений ячеек real_life_* в числа: NBSP, пробелы разрядов и запятая вместо десятичной точки
 │   │   ├── done_calc.py  # Формулы засчёта выполнения (done.md): repeat_index, дата следующего выполнения по repeat_mode, дисциплина за 30 дней, награда по плану
 │   │   ├── done_task.py  # Эквивалент клика ✅ «засчитать выполненной по плану»: галочка в календаре, строка real_life_tasks, журнал и награда; CLI python -m lib.taskflow.done_task
+│   │   ├── fun_fill.py  # Заполнение дыр календаря: событие «Отдых» цвета донора, списание hero_money по минутам и строка журнала с именем награды; каждое действие пишется в logs/fun_holes.log (JSONL-аудит); хук task_monitor и CLI python -m lib.taskflow.fun_fill [--dry]
+│   │   ├── fun_holes.py  # Дыры календаря для развлечений: промежутки между соседними colorId=7 (прочие цвета не мешают) в окне от пробуждения до последней синей задачи; colorId донора «тест для цвета» и маркер уже закрытой дыры
 │   │   ├── real_life_sheet.py  # Транспорт листов приложения: строка задачи A:T по task_uuid, событие-галочка, журнал task_executions и hero_money на общих OAuth-creds
+│   │   ├── rewards_sheet.py  # Листы наград: поиск награды в real_life_rewards по заголовку и строка списания в rewards_history (uuid, мс, gold_spent, заголовок, reward_id, серий даты) плюс hero_money
 │   │   ├── stop_task.py  # Эквивалент клика ⏹ «остановить и засчитать» запущенной задачи: длительность по факту, усреднение плана с фактом в колонке B, O=0; CLI python -m lib.taskflow.stop_task
 │   │   ├── task_check.py  # Оценка строк real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle
 │   │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
@@ -148,7 +151,7 @@ voice
 │   │   ├── knowledge_review_server.py  # HTTP-сервер доски знаний (stdlib http.server, 127.0.0.1): раздача HTML-страницы и JSON-API board/tasks/act/recognize/recognize_all/scan/settings; операции доски — в knowledge_review_board
 │   │   └── knowledge_review_ui.py  # HTML-страница доски знаний: одна страница, вкладки Подтверждено / Лайя / Не распознано / Сервер (правка, подтверждение, распознавание построчно и массовое «распознать все», сканирование логов, настройки LLM); короткий select команд, колонка «что делает» убрана (всё = команда), список задач таблицы для taskstart/taskdone, ✕ удаляет только в «Не распознано»
 │   ├── __init__.py  # Это файл инициализации пакета lib, который задаёт атрибут __version__ для указания текущей версии проекта.
-│   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser, open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
+│   ├── browser_control.py  # CLI и запуск браузера поверх cdp_client/youtube_browser: ensure_browser (ждёт debug-порт опросом до BROWSER_START_S), open_url (open-url переиспользует вкладку сайта, open-new всегда создаёт новую), команды status/tabs/eval/click/youtube.
 │   ├── diagnose.py  # Диагностика: промпт, git/lock/rollback, прогон тестов.
 │   ├── google_calendar.py  # Календарь: OAuth, авторизация, CLI list.
 │   ├── plans.py  # Это модуль lib/plans.py, реализующий обработчик голосового запроса о текущих планах, который получает актуальное событие из Google Calendar и возвращает его для озвучки.
@@ -200,12 +203,12 @@ voice
 │   │   └── commands.json  # JSON‑файл, определяющий команды управления звуком и воспроизведением, их соответствия голосовым фразам и параметры LLM для тестового устройства.
 │   └── commands.json  # Конфиги голосовых команд Google Calendar и Google Tasks, триггеры, команды, настройки приложений, маппинг, настройки LLM
 ├── tests/
-│   ├── browser/  # Автотесты браузера: CDP-клиент, YouTube-сценарии, live-проверки.
+│   ├── browser/  # Автотесты браузера: CDP-клиент, событийные ожидания, YouTube-сценарии, live-проверки.
 │   │   ├── test_browser_control.py  # Тесты запуска браузера, open_url и CLI browser_control.
-│   │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_for_selector.
-│   │   ├── test_youtube_browser.py  # Тесты сценариев YouTube: поиск, первое видео, запуск текущего ролика.
+│   │   ├── test_cdp_client.py  # Тесты CDP-примитивов: HTTP, вкладки, eval_js/click/wait_until.
+│   │   ├── test_youtube_browser.py  # Тесты сценариев YouTube: поиск и первый результат по событиям
 │   │   ├── test_youtube_live.py  # Живой комбинированный тест YouTube: тестовый ролик играет в новой вкладке, команда playpause ставит на паузу, вкладка закрывается, боевой ролик не тронут.
-│   │   └── test_youtube_live_unit.py  # Юнит-тесты lib/youtube_live: определение состояния плеера (playing/paused/no-video) и открытие тестового ролика.
+│   │   └── test_youtube_live_unit.py  # Юнит-тесты live-хелперов YouTube: состояние плеера, открытие вкладки
 │   ├── core/  # Автотесты ядра: Orchestrator, decision-цепочка, Лайя, лог и вывод.
 │   │   ├── test_decision_chain.py  # Сквозные тесты цепочки: дефектное распознавание «открой я туб/я ту/я тут» — commands.json пасует, decision-слой (мок Лайи) возвращает правильную команду; нормальная «открой ютуб» ловится уровнем commands.json
 │   │   ├── test_errors.py  # Тесты swallowed(): возврат default, уровень лога, подсказка reauth для RefreshError/401.
@@ -227,7 +230,7 @@ voice
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
-│   │   ├── test_task_monitor.py  # Тесты фонового контроля: idle → вопрос и запуск угаданной задачи, неизвестный ответ, busy без вопросов, deferred/skip, сборка по секции task_monitor
+│   │   ├── test_task_monitor.py  # Тесты фонового контроля: idle → вопрос и запуск угаданной задачи, неизвестный ответ, busy без вопросов, deferred/skip, сборка по секции task_monitor, хук дыр календаря каждый цикл
 │   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9, озвучка завершения разработки (текст + вызов из post-commit)
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
@@ -236,7 +239,7 @@ voice
 │   ├── google/  # Автотесты Google API: календарь, задачи и список покупок, в том числе живые.
 │   │   ├── test_calendar_live.py  # Живые тесты Google Calendar (VOICE_LIVE_GOOGLE=1): create -> get(id) -> verify -> delete для плана и для реальной команды calendar-reminder.
 │   │   ├── test_google_calendar.py  # Тесты календаря: OAuth-авторизация.
-│   │   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar get_event/delete_event: чтение по id, all-day, отсутствие/отмена, удаление.
+│   │   ├── test_google_calendar_crud.py  # Юнит-тесты Google Calendar CRUD по id: чтение по id, all-day, отсутствие/отмена, удаление, патч только colorId и только summary (переименование развлечений).
 │   │   ├── test_google_calendar_done_event.py  # Юнит-тесты события-галочки colorId=7: insert с длительностью по плану, update по event_id, минута минимум, сбой API
 │   │   ├── test_google_calendar_events.py  # Тесты календаря: события-напоминания.
 │   │   ├── test_google_tasks.py  # Тесты Tasks: OAuth-авторизация.
@@ -303,7 +306,10 @@ voice
 │   │   ├── test_done_calc.py  # Юнит-тесты формул засчёта: repeat_real, next_task_date по всем repeat_mode, награда по плану, коэффициент дисциплины (без сети)
 │   │   ├── test_done_task.py  # Юнит-тесты ✅: колонка B не меняется, журнал и награда по плану, mode 5 без журнала, повторный засчёт в тот же день, запущенная задача
 │   │   ├── test_done_task_cli.py  # Тесты CLI засчёта: коды выхода 0/1, текст подсказки, награды и ошибки (без сети)
+│   │   ├── test_fun_fill.py  # Тесты заполнения дыр: событие «Отдых» цвета донора с маркером, в журнале имя награды, списание по округлённым минутам, dry-run без записей, нет награды — нет событий, сбой события — нет списания, аудит дыр в JSONL (деньги, id события и строки журнала), хук монитора глотает ошибки
+│   │   ├── test_fun_holes.py  # Тесты дыр календаря: промежуток между синими сквозь чужие цвета, ничего после последней синей, перекрывающиеся галочки, min_gap, маркер закрытой дыры, окно от пробуждения, цвет донора и фолбэк
 │   │   ├── test_real_life_sheet.py  # Юнит-тесты транспорта real_life_*: диапазоны и RAW/UNFORMATTED_VALUE, поиск строки по uuid, галочка, журнал и hero_money (без сети)
+│   │   ├── test_rewards_sheet.py  # Тесты листов наград: поиск награды без регистра/пробелов, колонки строки rewards_history в порядке JS-клиента и серий даты, списание hero_money
 │   │   ├── test_stop_task.py  # Юнит-тесты ⏹: длительность по факту, усреднение колонки B, журнал и награда по факту, O=0, не-запущенная → RuntimeError, mode 5 без журнала (без сети)
 │   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid
 │   │   ├── test_task_complete.py  # Юнит-тесты команды «завершил задачу»: выбор ветви ⏹/✅ по start_date, пустое название → запущенная, поиск по названию через TaskStart, ошибки (без сети)

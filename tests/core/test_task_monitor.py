@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+from lib.core import task_monitor as task_monitor_module
 from lib.core.task_monitor import (ANSWER_UNKNOWN, QUESTION_IDLE, TaskMonitor,
                                    start_task_monitor)
 
@@ -131,6 +132,7 @@ class TestStartFromConfig:
     def _worker(self, mocker, config):
         worker = mocker.MagicMock()
         worker._matcher.get_task_monitor_config.return_value = config
+        worker._matcher.get_fun_holes_config.return_value = {}
         worker._matcher.core_phrase.side_effect = lambda text: text
         return worker
 
@@ -150,3 +152,47 @@ class TestStartFromConfig:
         assert started == [True]
         assert monitor._interval == 180.0
         assert monitor._answer_timeout_s == 15.0
+
+    def test_fun_holes_disabled_leaves_hook_off(self, mocker):
+        """Без секции fun_holes монитор работает как раньше (только таблица)."""
+        worker = self._worker(mocker, {"enabled": True})
+        monitor = start_task_monitor(worker, mocker.MagicMock())
+        assert monitor is not None and monitor._fun is None
+
+    def test_fun_holes_section_builds_hook(self, mocker):
+        """Секция fun_holes подключает к циклу заполнение дыр календаря."""
+        worker = self._worker(mocker, {"enabled": True})
+        worker._matcher.get_fun_holes_config.return_value = {
+            "enabled": True, "min_gap_min": 5, "lookback_days": 3}
+        built = []
+        mocker.patch.object(task_monitor_module, "make_fun_fill",
+                            side_effect=lambda *a, **k: built.append(k) or
+                            (lambda: None))
+        monitor = start_task_monitor(worker, mocker.MagicMock())
+        assert monitor is not None and monitor._fun is not None
+        assert built[0]["min_gap"] == 5.0 and built[0]["lookback"] == 3
+
+
+class TestFunHolesHook:
+    """Дыры календаря закрываются каждый цикл, независимо от вопроса."""
+
+    def _monitor(self, mocker, rows=None, sheet=None, fun=None):
+        return TaskMonitor(ask=mocker.MagicMock(), say=mocker.MagicMock(),
+                           output=mocker.MagicMock(),
+                           sheet=sheet or _sheet(rows or []),
+                           handler=mocker.MagicMock(), fun=fun)
+
+    def test_hook_runs_even_when_task_is_busy(self, mocker):
+        calls = []
+        monitor = self._monitor(mocker, [_row(start=1_700_000_000_000)],
+                                fun=lambda: calls.append(1))
+        assert monitor.tick() == "busy"
+        assert calls == [1]
+
+    def test_hook_runs_when_sheet_is_unreadable(self, mocker):
+        """Таблица не читается — заполнение дыр от этого не зависит."""
+        calls, sheet = [], mocker.MagicMock()
+        sheet.read_all_tasks.side_effect = OSError("нет токена")
+        monitor = self._monitor(mocker, sheet=sheet,
+                                fun=lambda: calls.append(1))
+        assert monitor.tick() == "skip" and calls == [1]

@@ -45,86 +45,72 @@ class GoogleCalendarMutateMixin:
             return swallowed("gcal.put_done_event", e, "")
         return str(ev.get("id", ""))
 
-    def update_event_start(self, event_id: str, new_start: datetime) -> bool:
-        """Меняет ТОЛЬКО дату начала события; конец остаётся как был.
+    def _update_bound(self, event_id: str, field: str, value: datetime,
+                      strict: bool) -> bool:
+        """Меняет одну границу события (start|end), вторую не трогает.
 
-        False — если событие «весь день» (нет времени), new_start не
-        раньше конца или запрос не прошёл.
+        False — если событие «весь день» (менять нечего), новая граница
+        зашла за старую или запрос не прошёл.
         """
         self._ensure_ready()
         try:
             ev = self._calendar_service.events().get(
                 calendarId=self._calendar_id, eventId=event_id).execute()
         except Exception as e:
-            return swallowed("gcal.update_event_start.get", e, False)
-        start_raw = (ev.get("start") or {}).get("dateTime")
-        end_raw = (ev.get("end") or {}).get("dateTime")
-        if not start_raw or not end_raw:
-            return False
+            return swallowed("gcal.update_bound.get", e, False)
+        span = ev.get(field) or {}
+        other_raw = (ev.get("end" if field == "start" else "start") or {}) \
+            .get("dateTime")
+        if not span.get("dateTime") or not other_raw:
+            return False                       # «весь день» — времени нет
         try:
-            end = datetime.fromisoformat(end_raw)
+            other = datetime.fromisoformat(other_raw)
         except ValueError:
             return False
-        if new_start.tzinfo is None:
-            new_start = new_start.astimezone()
-        if new_start >= end.astimezone(new_start.tzinfo):
-            return False  # начало позже конца — Google не примет
-        body = {"start": {"dateTime": new_start.isoformat()}}
-        try:
-            self._calendar_service.events().patch(
-                calendarId=self._calendar_id, eventId=event_id,
-                body=body).execute()
-        except Exception as e:
-            return swallowed("gcal.update_event_start.patch", e, False)
-        return True
+        if value.tzinfo is None:
+            value = value.astimezone()
+        if (value >= other.astimezone(value.tzinfo)) if strict \
+                else (value <= other.astimezone(value.tzinfo)):
+            return False  # границы переставились — Google не примет
+        return self._patch(event_id, {field: {"dateTime": value.isoformat()}},
+                           f"gcal.update_event_{field}")
+
+    def update_event_start(self, event_id: str, new_start: datetime) -> bool:
+        """Меняет ТОЛЬКО дату начала события; конец остаётся как был."""
+        return self._update_bound(event_id, "start", new_start, True)
 
     def update_event_end(self, event_id: str, new_end: datetime) -> bool:
-        """Меняет ТОЛЬКО дату завершения события; начало остаётся как был.
+        """Меняет ТОЛЬКО дату завершения события; начало остаётся как был."""
+        return self._update_bound(event_id, "end", new_end, False)
 
-        False — если событие «весь день» (нет времени), new_end не
-        позже начала или запрос не прошёл.
-        """
+    def _patch(self, event_id: str, body: dict, ctx: str) -> bool:
+        """events().patch одним полем; False и лог при сбое запроса."""
         self._ensure_ready()
-        try:
-            ev = self._calendar_service.events().get(
-                calendarId=self._calendar_id, eventId=event_id).execute()
-        except Exception as e:
-            return swallowed("gcal.update_event_end.get", e, False)
-        start_raw = (ev.get("start") or {}).get("dateTime")
-        end_raw = (ev.get("end") or {}).get("dateTime")
-        if not start_raw or not end_raw:
-            return False
-        try:
-            start = datetime.fromisoformat(start_raw)
-        except ValueError:
-            return False
-        if new_end.tzinfo is None:
-            new_end = new_end.astimezone()
-        if new_end <= start.astimezone(new_end.tzinfo):
-            return False  # конец раньше начала — Google не примет
-        body = {"end": {"dateTime": new_end.isoformat()}}
         try:
             self._calendar_service.events().patch(
                 calendarId=self._calendar_id, eventId=event_id,
                 body=body).execute()
         except Exception as e:
-            return swallowed("gcal.update_event_end.patch", e, False)
+            return swallowed(ctx, e, False)
         return True
 
     def set_event_color(self, event_id: str, color_id: str) -> bool:
-        """Ставит colorId события (patch), не трогая время/текст.
+        """Ставит colorId события, не трогая время/текст.
 
         Маркер «сделано» без пересоздания: напр. «СОН» закрашивается
         DONE_COLOR после первого подъёма. False — запрос не прошёл.
         """
-        self._ensure_ready()
-        try:
-            self._calendar_service.events().patch(
-                calendarId=self._calendar_id, eventId=event_id,
-                body={"colorId": str(color_id)}).execute()
-        except Exception as e:
-            return swallowed("gcal.set_event_color", e, False)
-        return True
+        return self._patch(event_id, {"colorId": str(color_id)},
+                           "gcal.set_event_color")
+
+    def set_event_summary(self, event_id: str, summary: str) -> bool:
+        """Меняет заголовок события, не трогая время и цвет.
+
+        Нужна, чтобы переименовать уже вставленные развлечения: маркер в
+        description при этом остаётся, поэтому дыра повторно не закрывается.
+        """
+        return self._patch(event_id, {"summary": summary},
+                           "gcal.set_event_summary")
 
     def delete_event(self, event_id: str) -> bool:
         """Удаляет событие по id. True — если запрос прошёл."""
@@ -163,11 +149,13 @@ class GoogleCalendarMutateMixin:
         return True
 
     def create_task_event(self, summary: str, description: str,
-                          start: datetime, end: datetime) -> str:
+                          start: datetime, end: datetime,
+                          color_id: Optional[str] = None) -> str:
         """Вставляет запланированное событие задачи (автоплан, БЕЗ colorId).
 
         colorId не ставится намеренно (calendar.md §8): иначе UI сочтёт
-        событие выполненным. Пустая строка — запрос не прошёл.
+        событие выполненным. Развлечениям цвет нужен — он приходит в
+        color_id. Пустая строка — запрос не прошёл.
         """
         self._ensure_ready()
         if start.tzinfo is None:
@@ -180,6 +168,8 @@ class GoogleCalendarMutateMixin:
             "start": {"dateTime": start.isoformat()},
             "end": {"dateTime": end.isoformat()},
         }
+        if color_id:
+            body["colorId"] = str(color_id)
         try:
             ev = self._calendar_service.events().insert(
                 calendarId=self._calendar_id, body=body).execute()

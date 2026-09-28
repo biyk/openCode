@@ -56,9 +56,9 @@ python main.py
 - `lib/opencode/` — `opencode_cli`, `opencode_output`.
 - `lib/voice_cmd/` — `commands*`, `knowledge`, `intent`, `config_loader` (шаг 1, §10).
 - `lib/scheduling/` — `cron*`, `time_parser*`, `sleep_event`/`wake_event` тесты здесь.
-- `lib/taskflow/` — `tasks_*`, `task_start_sheet`.
+- `lib/taskflow/` — `tasks_*`, `task_start_sheet`, `fun_holes`/`fun_fill` (дыры календаря).
 - `lib/google/` — `google_calendar_events|mutate`, `google_tasks`.
-- `lib/browser/` — `cdp_client`, `youtube_browser`, `youtube_live`.
+- `lib/browser/` — `cdp_client` (HTTP/WS-примитивы, `wait_until`), `cdp_events` (ожидания по событиям, §4.5), `youtube_browser`, `youtube_live`.
 - `lib/runtime/` — `status*`, `media`.
 - `lib/skills/` — `skills`, `skill_actions`.
 - `lib/diagnostics/` — `diagnose_cli`, `diagnose_supervisor`.
@@ -77,6 +77,23 @@ python main.py
 - Ни одной запущенной задачи (`start_date = 0` у всех строк) → вслух «чем ты сейчас занимаешься?», следующая строка STT — ответ: название ищется среди задач таблицы (`TaskStartHandler.find_task_event`) и найденное запускается (`start_task`, то же, что `taskstart`).
 - Вопроса «всё ли нормально?» при просрочке нет (убран по решению пользователя): реакция одна — пустая таблица (п.1 выше).
 - Вопрос/ответ — `lib/core/orchestrator_ask.py`: строка после вопроса перехватывается ДО уровней §10 и живёт `answer_timeout_s` секунд; просроченный вопрос снимается и переспрашивается в следующий цикл (иначе один неотвеченный заблокировал бы все), «стоп» снимает вопрос. Секция `task_monitor` в `targets/<host>/commands.json` (enabled/interval_min/answer_timeout_s, дефолты — `lib/core/tuning.py`). Тесты: `tests/core/test_task_monitor.py`, `tests/core/test_orchestrator_ask.py`, `tests/taskflow/test_task_check.py`.
+
+### 4.4 Развлечения в дырах календаря (`fun_holes`)
+- Тот же поток `task_monitor`, отдельный шаг каждый цикл (независимо от idle/busy и от того, читалась ли таблица): `lib/taskflow/fun_fill.py`.
+- **Дыра** — промежуток между двумя соседними событиями `colorId=7` (цвет «сделано» задач приложения), даже если между ними стоят события других цветов. Окно: от конца сегодняшнего «СОН» (пробуждение) до начала последней синей задачи — то есть только прошедшее время, куда автоплан уже не пишет. Промежуток короче `min_gap_min` не заполняется; пересекающиеся галочки сворачиваются бегущим максимумом конца (дыра не может быть отрицательной).
+- В дыру вставляется событие `FUN_EVENT_TITLE` («Отдых») на весь промежуток, `colorId` — у сегодняшнего мероприятия «тест для цвета» (пользователь задаёт цвет им; ищется за `lookback_days`, иначе `FUN_FALLBACK_COLOR`). Имя награды `FUN_REWARD_TITLE` («1час развлечений» из `real_life_rewards`) остаётся только в журнале списаний — в календаре оно было бы шумом.
+- **Деньги**: `hero_money -= минуты события` (1 минута = 1 hero_money, минус разрешён), и в `rewards_history` идёт строка теми же колонками, что JS-клиент: `uuid | claim_ms | gold_spent | reward_title | reward_id | серий_даты` (`lib/taskflow/rewards_sheet.py`).
+- Идемпотентность: развлечение НЕ синее, поэтому соседи по цвету после вставки те же — без маркера одна и та же дыра тратилась бы каждый цикл. Маркер `fun_hole` в `description` события; дыра, внутри которой есть такое событие, пропускается. Озвучки нет (решение пользователя) — виден факт в календаре и в таблице, а **каждое действие пишется в `logs/fun_holes.log`** (JSONL: `action=fill` — дыра, `gold_spent`, `event_id`, `claim_item_id`; `action=run` — итог прохода). Ручная проверка: `python -m lib.taskflow.fun_fill [--dry]`. Тесты: `tests/taskflow/test_fun_holes.py`, `test_fun_fill.py`, `test_rewards_sheet.py`.
+
+### 4.5 Браузер: ждать события страницы, а не время
+- Причина: «открой юту» матчится, браузер поднимается, а в ответ — `[Browser] Не удалось запустить текущее видео`. Виноваты паузы: код жал play() по ещё не загрузившейся вкладке и считал это успехом.
+- Порядок шагов один для всех сценариев: **порт браузера → событие загрузки → элемент в DOM → факт воспроизведения**. `browser_control.ensure_browser` ждёт ответ `/json/version` (опрос `CDP_POLL_S`, потолок `BROWSER_START_S` — события тут нет), дальше `lib/browser/cdp_events.py`.
+- `cdp_events.wait_page_loaded` / `navigate` — подписка `Page.enable` и `Page.loadEventFired` (у навигации ещё ответ `Page.navigate`; `errorText`/`error` = переход не удался). Документ мог загрузиться до подписки — признаком служит `readyState`.
+- `cdp_events.wait_condition` / `wait_element` — JS-Promise внутри страницы: `MutationObserver` + редкий `setInterval` (состояние плеера `video.paused` в DOM не отражено). Возврат `false` по истечении `timeout` — это «не дождались», а не ошибка.
+- Две ловушки, пойманные только живым браузером: (а) выражение должно быть ОДНИМ `new Promise(...) {...}` без завершающих `()` — иначе `TypeError: (intermediate value) is not a function`; (б) ответ вида `{"error":{ "code":-32000, "Cannot find default execution context"}}` — это не провал условия, а перезапуск документа: запрос повторяем до дедлайна.
+- Таймауты в `lib/core/tuning.py` — только страховки от зависшей вкладки (`CDP_PAGE_LOAD_S`, `CDP_ELEMENT_S`, `BROWSER_START_S`); `CDP_FIRST_TRY_S` — короткая первая проба: сразу после клика/перехода страница ещё документ-заглушка, поэтому `_wait_player_ready` пробует сначала быстро, потом по-настоящему.
+- Проигрывание проверяется по состоянию страницы (`!document.querySelector('video').paused`), а не по тому, что вернул внедрённый скрипт. `wait_for_selector` из `cdp_client` удалён — его заменил `cdp_events.wait_element`.
+- Тесты: `tests/browser/test_cdp_events.py` (FakeWs, обе ловушки из п. выше), `test_youtube_open_first.py` (порядок шагов «открой юту»), `test_youtube_browser.py`, `test_youtube_live_unit.py`; живой — `tests/browser/test_youtube_live.py` (нужен браузер на `:9222`).
 
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.

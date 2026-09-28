@@ -36,7 +36,7 @@
         },
         "открой базу данных": {
             "kind": "command",
-            "hits": 0,
+            "hits": 2,
             "command": "knowledge_review"
         },
         "отладка": {
@@ -156,27 +156,42 @@
             "kind": "command",
             "hits": 2,
             "command": "calendar-plans"
-        }
-    },
-    "laya": {
+        },
+        "что у меня сейчас": {
+            "kind": "command",
+            "hits": 0,
+            "command": "calendar-plans"
+        },
+        "закончил уход за ногтями": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Уход за ногтями"
+        },
+        "начал завтракать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Завтрак. Принять витамины"
+        },
         "в пауза": {
             "kind": "command",
             "hits": 0,
             "command": "playpause"
+        },
+        "я пообедал": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskdone",
+            "event": "Обед"
+        },
+        "закончен глобальных задач": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Глобальные задачи"
         }
     },
-    "undefined": {
-        "сколько сейчас время": {
-            "kind": "command",
-            "hits": 0
-        },
-        "что у меня сейчас": {
-            "kind": "command",
-            "hits": 0
-        },
-        "начал завтракать": {
-            "kind": "command",
-            "hits": 0
-        }
-    }
+    "laya": {},
+    "undefined": {}
 }

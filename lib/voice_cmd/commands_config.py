@@ -54,6 +54,15 @@ class CommandConfigMixin:
         """
         return self._data.get("task_monitor", {})
 
+    def get_fun_holes_config(self) -> dict:
+        """Возвращает секцию `fun_holes` (развлечения в дырах календаря).
+
+        Ключи: enabled, min_gap_min (короче какой дыры не заполняем),
+        lookback_days (за сколько дней искать мероприятие-донор цвета);
+        значения по умолчанию — в lib.core.tuning.
+        """
+        return self._data.get("fun_holes", {})
+
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""
         return self._data.get("requires", {})

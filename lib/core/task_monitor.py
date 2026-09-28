@@ -16,8 +16,10 @@ import threading
 from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
-from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
+from lib.core.tuning import (FUN_LOOKBACK_DAYS, FUN_MIN_GAP_MIN,
+                             TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S)
 from lib.task_start import TaskStartHandler
+from lib.taskflow.fun_fill import make_fun_fill
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.task_check import SheetCheck, evaluate
 
@@ -34,7 +36,8 @@ class TaskMonitor:
                  output: Any, core: Optional[Callable[[str], str]] = None,
                  sheet: Any = None, handler: Any = None,
                  interval_s: float = TASK_MONITOR_INTERVAL_S,
-                 answer_timeout_s: float = TASK_ANSWER_TIMEOUT_S) -> None:
+                 answer_timeout_s: float = TASK_ANSWER_TIMEOUT_S,
+                 fun: Optional[Callable[[], None]] = None) -> None:
         self._ask = ask
         self._say = say
         self._output = output
@@ -43,6 +46,7 @@ class TaskMonitor:
         self._handler = handler
         self._interval = interval_s
         self._answer_timeout_s = answer_timeout_s
+        self._fun = fun
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -75,6 +79,8 @@ class TaskMonitor:
 
     def tick(self) -> str:
         """Читает таблицу; если запущено ничего нет — спрашивает вслух."""
+        if self._fun is not None:
+            self._fun()             # дыры календаря молча закрываются каждый цикл
         check = self._check()
         if check is None:
             return "skip"
@@ -149,20 +155,30 @@ def start_task_monitor(worker: Any, output: Any) -> Optional[TaskMonitor]:
     """Собирает и запускает монитор по секции `task_monitor` commands.json.
 
     Ключи секции: enabled, interval_min, answer_timeout_s; чего нет — берём
-    из lib.core.tuning. None — секция выключена.
+    из lib.core.tuning. None — секция выключена. Секция `fun_holes`
+    (enabled, min_gap_min, lookback_days) добавляет к каждому циклу
+    заполнение дыр календаря развлечениями.
     """
     config = worker._matcher.get_task_monitor_config()
     if not config.get("enabled"):
         return None
     interval_s = float(config.get("interval_min",
                                   TASK_MONITOR_INTERVAL_S / 60.0)) * 60.0
+    fun = None
+    fun_config = worker._matcher.get_fun_holes_config()
+    if fun_config.get("enabled"):
+        fun = make_fun_fill(
+            output,
+            min_gap=float(fun_config.get("min_gap_min", FUN_MIN_GAP_MIN)),
+            lookback=int(fun_config.get("lookback_days", FUN_LOOKBACK_DAYS)))
     output.print_info(
         f"[TaskMonitor] Таблица задач: проверка каждые "
-        f"{interval_s / 60.0:.0f} мин")
+        f"{interval_s / 60.0:.0f} мин"
+        + ("; дыры календаря → развлечения" if fun else ""))
     monitor = TaskMonitor(
         ask=worker._orchestrator.ask, say=worker._orchestrator.say,
         output=output, core=worker._matcher.core_phrase,
-        interval_s=interval_s,
+        interval_s=interval_s, fun=fun,
         answer_timeout_s=float(config.get("answer_timeout_s",
                                           TASK_ANSWER_TIMEOUT_S)))
     monitor.start()
