@@ -3,7 +3,8 @@
 Название пустое — завершается запущенная сейчас задача (start_date != 0,
 эквивалент ⏹/stop.md, длительность по факту). Название названо — по нему
 находится сегодняшнее мероприятие (как в lib.task_start), uuid берётся из
-описания; далее по состоянию строки: запущена → ⏹ (факт), не запущена →
+описания; далее по состоянию строки: запущена/на паузе (start≠0 или
+накопленный task_finish_date≠0) → ⏹ (факт), не начиналась →
 ✅ (done.md, по плану). Название чистится от слов-паразитов и ищется
 нечётко (порог в TaskStartHandler).
 
@@ -65,12 +66,16 @@ class TaskCompleteHandler:
             return {"ok": False,
                     "error": f"строка {task_uuid} не найдена в таблице"}
         row = found[1]
-        running = as_int(row[COLS["start_date"]]) != 0
-        if running:
+        # «В работе» = запущена (G≠0) ИЛИ на паузе (накоплен O≠0). Пауза —
+        # не завершение: закрываем по факту (⏹), а не ✅ по плану (иначе
+        # «уже засчитана сегодня» блокирует закрытие незавершённой задачи).
+        in_progress = (as_int(row[COLS["start_date"]]) != 0
+                       or as_int(row[COLS["task_finish_date"]]) != 0)
+        if in_progress:
             result = stop_task(task_uuid, api=self.api, now=self.now)
         else:
             result = mark_task_done(task_uuid, api=self.api, now=self.now)
-        result["branch"] = "⏹" if running else "✅"
+        result["branch"] = "⏹" if in_progress else "✅"
         result.setdefault("title", info)
         return result
 

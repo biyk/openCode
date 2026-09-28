@@ -10,9 +10,7 @@ import pytest
 
 from lib.core.orchestrator import Orchestrator
 from lib.core.orchestrator_event_match import (
-    OrchestratorEventMatchMixin,
-    is_undone,
-)
+    OrchestratorEventMatchMixin, is_event_candidate, is_undone)
 
 
 class _FakeOrchestrator(OrchestratorEventMatchMixin):
@@ -24,8 +22,8 @@ class _FakeOrchestrator(OrchestratorEventMatchMixin):
         self._decision = None
         self._event_matcher = None
 
-    def _execute_decision(self, cmd_id, text):
-        self._executed = (cmd_id, text)
+    def _execute_decision(self, cmd_id, text, forced_text=None):
+        self._executed = (cmd_id, text, forced_text)
         return True
 
 
@@ -62,12 +60,12 @@ class TestTryEventMatch:
         self.orch._matcher.core_phrase.return_value = ""
         assert self.orch._try_event_match("алиса") is False
 
-    def test_undone_filter_passed_to_finder(self):
+    def test_candidate_filter_passed_to_finder(self):
         finder = _finder(None)
         self.orch._event_matcher = finder
         assert self.orch._try_event_match("алиса почистил зубы") is False
         finder.find_task_event.assert_called_once_with(
-            "я почистил зубы", filter_fn=is_undone, report=ANY)
+            "я почистил зубы", filter_fn=is_event_candidate, report=ANY)
 
     def test_event_without_uuid(self):
         event = {"summary": "Почистить зубы", "description": "",
@@ -83,6 +81,8 @@ class TestTryEventMatch:
         self.orch._event_matcher = _finder(event)
         assert self.orch._try_event_match("алиса я почистил зубы") is True
         assert self.orch._executed[0] == "taskdone"
+        # исполняем по чистому заголовку, а не по коверканной фразе
+        assert self.orch._executed[2] == "Почистить зубы"
 
     def test_match_start_by_heuristic(self):
         event = {"summary": "Тренировка", "colorId": ""}
@@ -109,14 +109,14 @@ class TestTryEventMatch:
 class TestDetectActionHeuristic:
     @pytest.mark.parametrize("text,expected", [
         ("я почистил зубы", "complete"),
-        ("приготовил ужин", "complete"),
         ("сделал уборку", "complete"),
-        ("убирал комнату", "complete"),
         ("помыла посуду", "complete"),
         ("закончил проект", "complete"),
+        ("нет грязной посуды", "complete"),   # совпало без глагола = закончил
+        ("зубы", "complete"),                 # голое слово: было start, теперь complete
         ("начинаю тренировку", "start"),
         ("иду мыть посуду", "start"),
-        ("зубы", "start"),
+        ("сейчас буду уборку", "start"),
     ])
     def test_heuristic(self, text, expected):
         assert OrchestratorEventMatchMixin._detect_action_heuristic(

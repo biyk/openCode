@@ -142,6 +142,22 @@ def test_unrelated_phrase_does_not_match_event():
     assert h.find_task_event("позвонить маме") is None
 
 
+def test_cascades_to_sheet_when_absent_in_calendar(monkeypatch):
+    h, _, _ = handler([])                        # календарь пуст
+    monkeypatch.setattr(h, "_sheet_events", lambda: [
+        {"summary": "Полить цветы", "description": UUID, "colorId": ""}])
+    ev = h.find_task_event("полить цветы")       # матч по таблице
+    assert ev is not None and h.event_uuid(ev) == UUID
+
+
+def test_calendar_hit_skips_sheet_lookup(monkeypatch):
+    hit = []
+    h, _, _ = handler([event("Полить цветы")])
+    monkeypatch.setattr(h, "_sheet_events", lambda: hit.append(1) or [])
+    assert h.find_task_event("полить цветы") is not None
+    assert hit == []                             # таблицу не читали
+
+
 def test_report_lists_top_candidates_by_score():
     """report(summary, score) — лучшие кандидаты по убыванию похожести."""
     h, _, _ = handler([event("Почистить зубы утро"), event("Вынести мусор"),

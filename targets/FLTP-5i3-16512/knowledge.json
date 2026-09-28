@@ -104,6 +104,11 @@
             "hits": 0,
             "command": "taskdone",
             "event": "Почистить зубы утро"
+        },
+        "режим разработке": {
+            "kind": "command",
+            "hits": 0,
+            "command": "diagnose"
         }
     },
     "laya": {
@@ -119,10 +124,21 @@
             "kind": "command",
             "hits": 0
         },
-        "режим разработке": {
+        "струна фури оку": {
             "kind": "command",
-            "hits": 0,
-            "command": "diagnose"
+            "hits": 0
+        },
+        "что счета голову иди суши": {
+            "kind": "command",
+            "hits": 0
+        },
+        "страна фри оку": {
+            "kind": "command",
+            "hits": 0
+        },
+        "нет грязной посуды": {
+            "kind": "command",
+            "hits": 0
         }
     }
 }

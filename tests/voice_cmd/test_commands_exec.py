@@ -62,6 +62,9 @@ class TestCommandExec:
         data["match"]["volumeup"].append("повысить")
         with open(temp_commands_file, "w", encoding="utf-8") as f:
             json.dump(data, f)
+        # reload() сверяет mtime; на Windows fs может отдать то же значение
+        # в пределах тика → изменение не замечено (flake). Гарантируем прирост.
+        os.utime(temp_commands_file, (matcher._mtime + 5, matcher._mtime + 5))
 
         mocker.patch("lib.voice_cmd.commands.platform.system", return_value="Linux")
         matcher.reload()

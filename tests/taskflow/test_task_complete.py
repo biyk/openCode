@@ -1,7 +1,8 @@
 """Юнит-тесты голосовой команды «завершил задачу …» (lib.task_complete).
 
-Ветвь ⏹/✅ выбирается по start_date строки; поиск по названию идёт через
-переиспользуемый TaskStartHandler (сегодняшние события календаря).
+Ветвь ⏹/✅ выбирается по состоянию строки (start_date и/или накопленный
+task_finish_date); поиск по названию — через переиспользуемый
+TaskStartHandler (календарь сегодня, затем задачи таблицы).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -14,12 +15,13 @@ NOW_MS = int(NOW.timestamp() * 1000)
 UUID = "6a1c2d3e-4f50-5152-a3a4-b5c6d7e8f901"
 
 
-def row_for(start_date):
-    """Минимальная строка A:T: index 3 = uuid, index 6 = start_date."""
+def row_for(start_date, finish=0):
+    """Минимальная строка A:T: index 3 = uuid, 6 = start_date, 14 = finish."""
     row = [""] * 20
     row[0] = "Задача"
     row[3] = UUID
     row[6] = str(start_date)
+    row[14] = str(finish)        # task_finish_date (O) — накоплено на паузе
     return row
 
 
@@ -34,24 +36,25 @@ class FakeCalendar:
 class FakeApi:
     """Заглушка RealLifeSheet для разбора названия (engine замокан отдельно)."""
 
-    def __init__(self, start_date, running=None):
+    def __init__(self, start_date, running=None, finish=0):
         self.start_date = start_date
         self.running = running
+        self.finish = finish
 
     def find_running_task(self):
         return self.running
 
     def find_task_row(self, task_uuid):
-        return 3, row_for(self.start_date)
+        return 3, row_for(self.start_date, self.finish)
 
 
 def event(title, description=f"https://x/#/t uuid {UUID}"):
     return {"id": "e1", "summary": title, "description": description}
 
 
-def handler(events, start_date, running=None):
+def handler(events, start_date, running=None, finish=0):
     cal = FakeCalendar(events)
-    api = FakeApi(start_date, running=running)
+    api = FakeApi(start_date, running=running, finish=finish)
     return TaskCompleteHandler(gcal=cal, api=api, now=NOW)
 
 
@@ -85,6 +88,22 @@ def test_named_not_running_task_goes_done(monkeypatch):
     result = h.complete_task("отчет")
     assert result["branch"] == "✅" and result["ok"] is True
     assert calls["done"] == UUID
+
+
+def test_named_paused_task_goes_stop_not_done(monkeypatch):
+    """Пауза (start=0, накоплен task_finish_date≠0) — закрываем ⏹, не ✅.
+
+    Регресс: раньше уходила в ✅ и получала «уже засчитана сегодня»,
+    хотя мероприятие не завершено, а стоит на паузе.
+    """
+    calls = {}
+    monkeypatch.setattr(
+        "lib.task_complete.stop_task",
+        lambda u, api=None, now=None: calls.update(stop=u) or ok_stop(u))
+    monkeypatch.setattr("lib.task_complete.mark_task_done", ok_done)
+    h = handler([event("Нет грязной посуды")], start_date=0, finish=60_000)
+    result = h.complete_task("нет грязной посуды")
+    assert result["branch"] == "⏹" and calls.get("stop") == UUID
 
 
 def test_empty_name_completes_running_task(monkeypatch):

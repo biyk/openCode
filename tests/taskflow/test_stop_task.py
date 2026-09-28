@@ -139,6 +139,15 @@ def test_not_running_task_raises():
     assert api.rows_written == []
 
 
+def test_paused_task_finalizes_from_accumulated_duration():
+    """Пауза (start=0, накоплен task_finish_date): elapsed = накопленное."""
+    api = FakeApi(row=task_row(start_date="0",
+                               task_finish_date=str(25 * 60_000)))
+    result = stopped(api)
+    assert result["ok"] is True and result["elapsed_minutes"] == 25
+    assert column(api, "task_finish_date") == 0   # закрыто, накопленное обнулено
+
+
 def test_missing_row_is_error():
     api = FakeApi()
     api.row = None

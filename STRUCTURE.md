@@ -56,6 +56,7 @@ voice
 │   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
 │   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
+│   │   ├── orchestrator_llm.py  # Миксин оркестратора: LLM-детект команды после промаха Лайи (по примеру «распознать все») — self._llm выбирает id по смыслу, для команд с параметром вторым запросом вычленяет значение {{text}}, догадка ложится в laya-корзину
 │   │   ├── orchestrator_memory.py  # Миксин оркестратора: laya/undefined-кандидаты базы знаний из пайплайна, контекст LLM для intent-фолбэка.
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
@@ -217,6 +218,7 @@ voice
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
 │   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent.
 │   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, curated-event с доски идёт в {{text}} без перерезки, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
+│   │   ├── test_orchestrator_llm.py  # Тесты LLM-детекта команды: id + параметр из второго запроса идут в execute_by_id, команда без параметра исполняется одним вызовом, блокировка по requires не исполняет, ответ NONE не обрабатывается, фолбэк включён в шаг промаха Лайи
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.

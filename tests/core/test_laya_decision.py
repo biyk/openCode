@@ -143,16 +143,16 @@ class TestOrchestratorDecisionPath:
             "[Decision] Лайя: команда распознана «stop» (c=0.90 t=0.123)")
         orch._opencode_queue.empty()
 
-    def test_decision_none_stubs_omni_and_stops(self, mocker):
-        """Laya неуверенна → заглушка OmniRouter, opencode не вызывается."""
+    def test_decision_none_without_llm_goes_undefined(self, mocker):
+        """Laya неуверенна и LLM-клиента нет → фраза в undefined, opencode молчит."""
         decision = mocker.MagicMock()
         decision.detect.return_value = None
         orch, matcher = self._make(mocker, decision)
         orch.process_text("да блин какая же ты тупая")
         matcher.execute_by_id.assert_not_called()
         orch._output.print_info.assert_any_call(
-            "[Decision] Лайя: команда не распознана — запрос ушёл бы "
-            "в OmniRouter (auto/fast), пока пропускаем")
+            "[Decision] Лайя и LLM: команда не распознана — "
+            "фраза в undefined, запрос в opencode не идёт")
         # legacy-путь не используется: intent пуст, opencode не звался
         assert orch._intent is None
         orch._opencode_queue.empty()

@@ -15,8 +15,8 @@ class _FakeOrchestrator(OrchestratorEventMatchMixin):
         self._decision = None
         self._event_matcher = None
 
-    def _execute_decision(self, cmd_id, text):
-        self._executed = (cmd_id, text)
+    def _execute_decision(self, cmd_id, text, forced_text=None):
+        self._executed = (cmd_id, text, forced_text)
         return True
 
 

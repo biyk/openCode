@@ -94,6 +94,7 @@ class TranscriptionWorker:
             intent=intent,
             knowledge=self._knowledge,
             decision=self._decision,
+            llm=self._llm,
             on_exit=self._dev_mode_exit,
         )
 

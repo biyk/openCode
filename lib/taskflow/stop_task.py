@@ -57,10 +57,11 @@ def _execution_row(task_uuid: str, row: list[Any], now: datetime,
 
 def stop_task(task_uuid: str, api: Optional[Any] = None,
               now: Optional[datetime] = None) -> dict:
-    """⏹ по task_uuid: требует запущенной задачи, считает elapsed (§3–§9).
+    """⏹ по task_uuid: требует запущенной/на паузе задачи, считает elapsed.
 
-    api/now инжектят тесты. RuntimeError — задача НЕ запущена: тогда
-    нужен ✅ по плану (done.md §3), а не ⏹ с фактической длительностью.
+    api/now инжектят тесты. Пауза (G=0, накоплен O≠0) тоже закрывается:
+    длительность тогда = накопленный O. RuntimeError — не начиналась
+    (G=0, O=0): тогда нужен ✅ по плану, а не ⏹ с фактической длительностью.
     """
     api = api or RealLifeSheet()
     now = now or datetime.now().astimezone()
@@ -71,12 +72,15 @@ def stop_task(task_uuid: str, api: Optional[Any] = None,
     row_idx, row = found
     title = str(row[COLS["task_title"]] or "").strip()
     start_ms = as_int(row[COLS["start_date"]])
-    if start_ms == 0:
+    finish_ms = as_int(row[COLS["task_finish_date"]])
+    if start_ms == 0 and finish_ms == 0:
         raise RuntimeError("задача не запущена — ожидается ✅, а не ⏹")
     now_ms = int(now.timestamp() * 1000)
 
-    # ⏹: длительность по факту, план усредняется с фактом (§4.1)
-    elapsed = elapsed_minutes(start_ms, now_ms)
+    # ⏹: длительность по факту, план усредняется с фактом (§4.1). Запущена
+    # (G≠0) — от start_date; на паузе (G=0, накоплен O=task_finish_date) —
+    # по накопленной длительности: старт эквивалентен now − O.
+    elapsed = elapsed_minutes(start_ms or (now_ms - finish_ms), now_ms)
     new_time = average_task_time(as_int(row[COLS["task_time"]]), elapsed)
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(

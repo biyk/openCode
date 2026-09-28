@@ -1,10 +1,10 @@
 """Голосовая команда «я начал / я приступил {задача}» (эквивалент ▶️).
 
-Находит в мероприятиях НА СЕГОДНЯ задачу по названию, берёт из её
-описания task_uuid, ищет строку в Google Таблице real_life_tasks и
-старует задачу: пишет start_date (колонка G) = now_ms − накопленная
-длительность паузы (колонка O). Меняется ровно одна ячейка; журнал,
-герой и календарь не трогаются (см. doit.md §0, §3, §10).
+Находит задачу по названию: сначала среди мероприятий НА СЕГОДНЯ, затем
+(если не нашли) среди всех задач таблицы; берёт task_uuid, ищет строку
+в Google Таблице real_life_tasks и пишет start_date (колонка G) = now_ms
+− накопленная длительность паузы (колонка O). Меняется ровно одна
+ячейка; журнал, герой, календарь не трогаются (см. doit.md §0, §3, §10).
 
 Запуск:
     python -m lib.task_start "название задачи"
@@ -16,11 +16,13 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Callable, Optional
 
+from lib.core.errors import swallowed
 from lib.core.event_text import (STOP_TOKENS, clean_title, strip_noise,
                                  title_segments)
 from lib.core.tuning import (
     EVENT_MATCH_DEBUG_TOP, TITLE_THRESHOLD, TOKEN_RATIO, TOKEN_ROOT_PREFIX)
 from lib.google_calendar import GoogleCalendar
+from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.task_start_sheet import TaskStartSheet
 
 # UUID в описании события-задачи (колонка D листа = стабилизатор Sheet↔Calendar)
@@ -87,25 +89,42 @@ class TaskStartHandler:
         return self.gcal.list_events_between(
             day_start, day_start + timedelta(days=1))
 
+    def _sheet_events(self) -> list[dict]:
+        """Задачи real_life_tasks как псевдо-события (2-я ступень: «сделаем
+        то, что не запланировано сегодня»); ошибка чтения → [] — не роняем.
+        """
+        try:
+            tasks = RealLifeSheet(self.gcal).read_all_tasks()
+        except Exception as e:                       # нет токена/сети
+            swallowed("task_start.sheet", e)
+            return []
+        return [{"summary": str(t["task_title"] or "").strip(),
+                 "description": str(t["task_uuid"] or "").strip(),
+                 "colorId": ""}
+                for t in tasks
+                if t["task_title"] and t["task_uuid"]]
+
     def find_task_event(self, name: str,
                         filter_fn: Optional[Callable[[dict], bool]] = None,
                         report: Optional[Callable[[str, float], None]] = None,
-                        ) -> Optional[dict]:
-        """Мероприятие сегодня с наиболее близким названием (или None).
+                        use_sheet: bool = True) -> Optional[dict]:
+        """Мероприятие с близким названием: сначала календарь, затем (если не
+        нашли) задачи таблицы — или None. Составной заголовок — по точкам."""
+        event = self._search(name, self._today_events(), filter_fn, report)
+        if event is not None or not use_sheet:
+            return event
+        return self._search(name, self._sheet_events(), filter_fn, report)
 
-        Составной заголовок («Завтрак. Принять витамины») матчится по
-        каждой точке отдельно — обе указывают на одно мероприятие; скобки
-        и эмодзи вырезаются перед сравнением. Название-подстрока фразы
-        считается полным совпадением; при нескольких таких — самое длинное.
-        filter_fn — предикат-фильтр событий (напр. выполненные colorId=7
-        пропускаются). report(summary, score) — прогон лучших кандидатов.
-        """
+    def _search(self, name: str, events: list[dict],
+                filter_fn: Optional[Callable[[dict], bool]],
+                report: Optional[Callable[[str, float], None]]) -> Optional[dict]:
+        """Матчинг названия по одному списку событий (порог TITLE_THRESHOLD)."""
         target = _norm(strip_noise(name))
         if not target:
             return None
         best: Optional[tuple[tuple[float, int], dict]] = None
         scored: list[tuple[float, str]] = []
-        for ev in self._today_events():
+        for ev in events:
             if filter_fn is not None and not filter_fn(ev):
                 continue
             summary = ev.get("summary") or ""

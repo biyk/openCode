@@ -5,8 +5,9 @@
 2. decision-слой Laya (дисижн-модель; commands.json не совпало),
 3. (legacy, когда decision не настроен) mini-LLM intent → opencode-cli.
 
-Фолбэк после Laya — заглушка-комментарий про OmniRouter (auto/fast):
-сам запрос пока не выполняется.
+Фолбэк после промаха Лайи — LLM-детект команды (OmniRouter/LM Studio,
+миксин orchestrator_llm): по смыслу выбирает id, для команд с параметром
+вторым запросом вычленяет значение {{text}}.
 """
 
 import queue
@@ -19,6 +20,7 @@ from lib.voice_cmd.commands import CommandMatcher
 from lib.opencode.opencode_cli import OpenCodeCliRunner
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
 from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
+from lib.core.orchestrator_llm import OrchestratorLlmMixin
 from lib.core.orchestrator_memory import OrchestratorMemoryMixin
 from lib.core.orchestrator_opencode import OrchestratorOpencodeMixin
 from lib.core.orchestrator_speech import OrchestratorSpeechMixin
@@ -32,6 +34,7 @@ COMMAND_WINDOW_SIZE = 4
 class Orchestrator(
     OrchestratorDecisionMixin,
     OrchestratorEventMatchMixin,
+    OrchestratorLlmMixin,
     OrchestratorMemoryMixin,
     OrchestratorOpencodeMixin,
     OrchestratorSpeechMixin,
@@ -52,6 +55,7 @@ class Orchestrator(
         knowledge: Any = None,
         opencode: Optional[OpenCodeCliRunner] = None,
         decision: Any = None,
+        llm: Any = None,
         on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         self._matcher = matcher
@@ -64,6 +68,7 @@ class Orchestrator(
         self._knowledge = knowledge or None
         self._opencode = opencode or None
         self._decision = decision or None
+        self._llm = llm or None
         self._event_matcher = None
         self._on_exit = on_exit or None
         self._dev_mode = False
