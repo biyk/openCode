@@ -117,6 +117,7 @@ class OrchestratorSpeechMixin:
         self._clear_speech_buffer()
 
     def stop(self) -> None:
-        """Прерывает активное воспроизведение TTS и очищает очередь opencode."""
+        """Прерывает TTS, снимает ожидаемый вопрос и очищает очередь opencode."""
         self._abort_playback.set()
+        self.cancel_ask()
         self._drain_opencode_queue()

@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional
 
 from lib.voice_cmd.commands import CommandMatcher
 from lib.opencode.opencode_cli import OpenCodeCliRunner
+from lib.core.orchestrator_ask import OrchestratorAskMixin
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
 from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
 from lib.core.orchestrator_llm import OrchestratorLlmMixin
@@ -32,6 +33,7 @@ COMMAND_WINDOW_SIZE = 4
 
 
 class Orchestrator(
+    OrchestratorAskMixin,
     OrchestratorDecisionMixin,
     OrchestratorEventMatchMixin,
     OrchestratorLlmMixin,
@@ -78,6 +80,7 @@ class Orchestrator(
         self._opencode_queue: queue.Queue[tuple[str, bool]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
+        self._pending_ask = None
         self._window: deque[str] = deque(
             maxlen=COMMAND_WINDOW_SIZE)
 
@@ -122,6 +125,10 @@ class Orchestrator(
             return
         # Сначала выводим распознанный текст в консоль и лог
         self._output.print_text(text)
+        # Ответ на заданный фоном вопрос — не команда: перехватываем строку
+        # раньше уровней commands.json (см. orchestrator_ask).
+        if self._take_ask_answer(text):
+            return
         # 1..3. commands.json → база знаний → Laya/legacy → opencode-cli.
         self._process_commands_level(text)
 

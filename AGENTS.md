@@ -7,6 +7,7 @@
 - **Коммитить, пушить, делать PR запрещено без явной команды пользователя.** Сначала показать результат и ждать подтверждения.
 - Исключение: авто-коммиты от хуков (`.git/hooks/post-commit` bump-версии) — их создаёт сам хук, агент не инициирует.
 - Без команды не вызывать `git commit` / `git push` / `git add`, даже если задача выглядит завершённой.
+- **Окончание разработки озвучивается вслух** («Разработка завершена»): текст — `lib/core/tuning.py::TASK_DONE_TEXT`, произносит его `.git/hooks/post-commit` через `python scripts/announce_done.py` (коммит и есть момент завершения; озвучка на bump-коммите не дублируется — хук выходит до неё). Поэтому «закончил разработку» без слова пользователя — это всё равно не коммит: сначала показать результат и ждать команду, а голос подтвердит факт коммита. Проверено тестами `tests/core/test_tuning.py::TestDevelopmentDoneIsAnnounced` (ловят тихую потерю озвучки).
 
 ## 2. Version gate
 - `main.py` при старте и в потоке `lib/versioning/version_checker.py` (интервал 120 c) сверяет **app version** (`lib/__init__.py::__version__`) с **project version** (`VERSION`). При несовпадении — жёсткий выход (`os._exit(1)`).
@@ -71,6 +72,12 @@ python main.py
 - `LayaDecision.detect(text)` → `(choice, confidence)` либо `None` (порог из конфига, критерии — id команд). Фабрика `build_decision(matcher, output)` сама читает конфиг; `build_intent` — аналог в `lib/voice_cmd/intent.py`.
 - Воркер создаёт их в `lib/stt/transcription_worker.py`. Путь обработки с дефектной речью проверен тестами `tests/core/test_decision_chain.py` («открой я туб» → openyoutube).
 
+### 4.3 Фоновый контроль таблицы задач (`task_monitor`)
+- `main.py` рядом с CronScheduler поднимает `lib/core/task_monitor.py` (daemon-поток, как version_checker): раз в `interval_min` читает `real_life_tasks` через `lib/taskflow/task_check.py`.
+- Ни одной запущенной задачи (`start_date = 0` у всех строк) → вслух «чем ты сейчас занимаешься?», следующая строка STT — ответ: название ищется среди задач таблицы (`TaskStartHandler.find_task_event`) и найденное запускается (`start_task`, то же, что `taskstart`).
+- Вопроса «всё ли нормально?» при просрочке нет (убран по решению пользователя): реакция одна — пустая таблица (п.1 выше).
+- Вопрос/ответ — `lib/core/orchestrator_ask.py`: строка после вопроса перехватывается ДО уровней §10 и живёт `answer_timeout_s` секунд; просроченный вопрос снимается и переспрашивается в следующий цикл (иначе один неотвеченный заблокировал бы все), «стоп» снимает вопрос. Секция `task_monitor` в `targets/<host>/commands.json` (enabled/interval_min/answer_timeout_s, дефолты — `lib/core/tuning.py`). Тесты: `tests/core/test_task_monitor.py`, `tests/core/test_orchestrator_ask.py`, `tests/taskflow/test_task_check.py`.
+
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.
 - `lib/reminders.py` — парсинг детерминированный; если время не указано → **+60 минут**.
@@ -103,7 +110,7 @@ python main.py
   6. `python scripts/check_tooltips.py --git` — **каждый новый файл обязан иметь описание в `.structure.json`**;
   7. `python scripts/generate_structure.py --check` — STRUCTURE.md должен быть регенерирован.
 - Если хук упал: для (4) — заменить глухой `except` на `swallowed(...)` (или `# blind-ok`); для (5) — урезать/разбить файл; для (6)+(7) — добавить строку в `.structure.json` и выполнить `python scripts/generate_structure.py --write`, затем пере-`git add`.
-- `.git/hooks/post-commit` сам делает bump (patch) и коммит «Bump version to …» через `--no-verify` (чтобы не было цикла); bump-коммиты агент вручную не создаёт.
+- `.git/hooks/post-commit` сам делает bump (patch) и коммит «Bump version to …» через `--no-verify` (чтобы не было цикла); bump-коммиты агент вручную не создаёт. После bump хук озвучивает завершение разработки (`scripts/announce_done.py`, §1) — ошибку озвучки глотает, на коммит не влияет.
 
 ## 10. Концепция голосовых команд (commands.json) — ЕДИНСТВЕННО ВЕРНАЯ
 

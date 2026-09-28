@@ -327,6 +327,11 @@
             "threshold": 0.9
         }
     },
+    "task_monitor": {
+        "enabled": true,
+        "interval_min": 10,
+        "answer_timeout_s": 90
+    },
     "intent": {
         "enabled": true,
         "include_media": true

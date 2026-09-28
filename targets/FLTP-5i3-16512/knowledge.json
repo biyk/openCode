@@ -46,7 +46,7 @@
         },
         "паузу": {
             "kind": "command",
-            "hits": 0,
+            "hits": 1,
             "command": "playpause"
         },
         "плэй": {
@@ -154,17 +154,27 @@
         },
         "что меня сейчас": {
             "kind": "command",
-            "hits": 1,
+            "hits": 2,
             "command": "calendar-plans"
         }
     },
-    "laya": {},
+    "laya": {
+        "в пауза": {
+            "kind": "command",
+            "hits": 0,
+            "command": "playpause"
+        }
+    },
     "undefined": {
         "сколько сейчас время": {
             "kind": "command",
             "hits": 0
         },
         "что у меня сейчас": {
+            "kind": "command",
+            "hits": 0
+        },
+        "начал завтракать": {
             "kind": "command",
             "hits": 0
         }

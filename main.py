@@ -19,6 +19,7 @@ if sys.platform == "win32":
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
 from lib.core.output import TranscriptionOutput  # noqa: E402
+from lib.core.task_monitor import start_task_monitor  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
 from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
 
@@ -55,9 +56,15 @@ def main():
     )
     cron.start()
 
+    # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
+    # вопросы вслух и старт задачи по ответу.
+    task_monitor = start_task_monitor(worker, output)
+
     output.print_info("\n🎙️  Запись... Команды можно говорить или печатать.\n")
     TextInputs(lambda t: submit_manual_text(worker, t), output=output).run()
 
+    if task_monitor is not None:
+        task_monitor.stop()
     worker.stop()
     thread.join(timeout=2)
     cron.stop()

@@ -73,3 +73,25 @@ class TestDeviceConfigRaised:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         assert data["decision"]["threshold"] >= 0.9
+
+
+class TestDevelopmentDoneIsAnnounced:
+    """Окончание разработки обязательно озвучивается (явное требование).
+
+    Хук post-commit — то место, где работа считается завершённой; тест ловит
+    тихую потерю озвучки (скрипт/константа/вызов из хука).
+    """
+
+    def test_done_text_is_not_empty(self):
+        assert tuning.TASK_DONE_TEXT.strip()
+
+    def test_announce_script_uses_the_same_text(self):
+        from scripts.announce_done import done_text
+        assert done_text() == tuning.TASK_DONE_TEXT
+
+    def test_post_commit_hook_calls_announce(self):
+        hook = os.path.join(REPO, ".git", "hooks", "post-commit")
+        if not os.path.isfile(hook):
+            return
+        with open(hook, encoding="utf-8", errors="replace") as fh:
+            assert "announce_done.py" in fh.read()

@@ -54,6 +54,7 @@ voice
 │   │   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
 │   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
 │   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
+│   │   ├── orchestrator_ask.py  # Миксин оркестратора: озвучить вопрос и перехватить следующую строку как ответ (PendingAsk с таймаутом), не пуская её в пайплайн команд; стоп-слово снимает вопрос
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
 │   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
 │   │   ├── orchestrator_llm.py  # Миксин оркестратора: LLM-детект команды после промаха Лайи (по примеру «распознать все») — self._llm выбирает id по смыслу, для команд с параметром вторым запросом вычленяет значение {{text}}, догадка ложится в laya-корзину
@@ -61,7 +62,8 @@ voice
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
 │   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
-│   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
+│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start)
+│   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*, TASK_MONITOR_*, TASK_DONE_TEXT); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
 │   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── diagnose_cli.py  # CLI диагностики: launch detached-супервизора и run.
@@ -118,6 +120,7 @@ voice
 │   │   ├── done_task.py  # Эквивалент клика ✅ «засчитать выполненной по плану»: галочка в календаре, строка real_life_tasks, журнал и награда; CLI python -m lib.taskflow.done_task
 │   │   ├── real_life_sheet.py  # Транспорт листов приложения: строка задачи A:T по task_uuid, событие-галочка, журнал task_executions и hero_money на общих OAuth-creds
 │   │   ├── stop_task.py  # Эквивалент клика ⏹ «остановить и засчитать» запущенной задачи: длительность по факту, усреднение плана с фактом в колонке B, O=0; CLI python -m lib.taskflow.stop_task
+│   │   ├── task_check.py  # Оценка строк real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle
 │   │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
 │   │   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
 │   │   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
@@ -161,6 +164,7 @@ voice
 │   └── chat_template.txt  # Это файл шаблона подсказки для чат‑бота, определяющий стиль и правила ответов.
 ├── scripts/
 │   ├── __init__.py  # Это инициализирующий файл пакета скриптов репозитория, который позволяет импортировать и использовать скрипты для генерации документации и повышения версий.
+│   ├── announce_done.py  # Озвучивает вслух завершение разработки (текст из lib/core/tuning.py::TASK_DONE_TEXT), вызывается из hook post-commit
 │   ├── bump_version.py  # Это скрипт, который повышает номер версии проекта (в файле VERSION и переменной __version__ в lib/__init__.py) согласно указанному типу (patch, minor, major) и выводит результат.
 │   ├── check_blind_except.py  # Проверка pre-commit: новые except Exception обязаны логировать (print/лог/raise/swallowed/# blind-ok), сверка staged с HEAD.
 │   ├── check_lengths.py  # Проверяет, что файлы исходников (py, ps1, bat, cmd, sh) не превышают лимит строк в 200
@@ -213,6 +217,7 @@ voice
 │   │   ├── test_laya_two_stage.py  # Тесты двухступенчатого выбора Лайи: победители батчей → финальный вопрос между ними (решает финал, none ветоит, один победитель — без финала) и сквозной detect с FINAL_INSTRUCTIONS
 │   │   ├── test_logger.py  # Это файл тестов, проверяющий работу класса Logger и вспомогательных функций логирования.
 │   │   ├── test_orchestrator.py  # Тесты Orchestrator: инициализация, эхо-затишье, дословные команды.
+│   │   ├── test_orchestrator_ask.py  # Тесты вопроса-ответа: озвучка и ожидание, отказ накладывать вопросы, перехват строки до пайплайна, просрочка вопроса, отмена стоп-словом, сбой колбэка
 │   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
@@ -222,7 +227,8 @@ voice
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
-│   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9
+│   │   ├── test_task_monitor.py  # Тесты фонового контроля: idle → вопрос и запуск угаданной задачи, неизвестный ответ, busy без вопросов, deferred/skip, сборка по секции task_monitor
+│   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9, озвучка завершения разработки (текст + вызов из post-commit)
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
 │   │   ├── test_diagnose_cli.py  # Тесты диагностики: CLI launch/run.
@@ -299,6 +305,7 @@ voice
 │   │   ├── test_done_task_cli.py  # Тесты CLI засчёта: коды выхода 0/1, текст подсказки, награды и ошибки (без сети)
 │   │   ├── test_real_life_sheet.py  # Юнит-тесты транспорта real_life_*: диапазоны и RAW/UNFORMATTED_VALUE, поиск строки по uuid, галочка, журнал и hero_money (без сети)
 │   │   ├── test_stop_task.py  # Юнит-тесты ⏹: длительность по факту, усреднение колонки B, журнал и награда по факту, O=0, не-запущенная → RuntimeError, mode 5 без журнала (без сети)
+│   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid
 │   │   ├── test_task_complete.py  # Юнит-тесты команды «завершил задачу»: выбор ветви ⏹/✅ по start_date, пустое название → запущенная, поиск по названию через TaskStart, ошибки (без сети)
 │   │   ├── test_task_complete_cli.py  # Тесты CLI завершения: печать ⏹ по факту и ✅ по плану, skipped не ошибка, коды выхода и текст ошибки (без сети)
 │   │   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.

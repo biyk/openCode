@@ -45,6 +45,15 @@ class CommandConfigMixin:
         """
         return self._data.get("shopping", {})
 
+    def get_task_monitor_config(self) -> dict:
+        """Возвращает секцию `task_monitor` (фоновый контроль таблицы задач).
+
+        Ключи: enabled, interval_min (как часто читать real_life_tasks),
+        answer_timeout_s (сколько секунд реплика считается ответом на
+        вопрос); значения по умолчанию — в lib.core.tuning.
+        """
+        return self._data.get("task_monitor", {})
+
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""
         return self._data.get("requires", {})
