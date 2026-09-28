@@ -1,16 +1,23 @@
-"""Сценарии YouTube поверх CDP-браузера."""
+"""Сценарии YouTube поверх CDP-браузера.
 
-import json
-import time
+Все ожидания — событийные (`cdp_events`): дождаться загрузки страницы,
+дождаться нужного элемента в DOM, проверить, что плеер заиграл. Фиксированных
+`sleep` здесь нет: они либо мешают, либо не успевают за загрузкой.
+"""
+
 import urllib.parse
 from typing import Optional
 
 from lib.browser import cdp_client as cdc
+from lib.browser import cdp_events as cde
 from lib.browser.cdp_client import DEFAULT_PORT
+from lib.core.tuning import CDP_ELEMENT_S, CDP_FIRST_TRY_S
 
 _YOUTUBE_SELECTORS = {
     "player": "button.ytp-play-button",
     "result": "ytd-video-renderer a#video-title, ytd-video-renderer #video-title",
+    "video": "video",
+    "feed": 'ytd-rich-item-renderer a[href*="/watch?v="]',
 }
 
 _YOUTUBE_FIRST_VIDEO_SCRIPT = (
@@ -35,8 +42,7 @@ _YOUTUBE_RESUME_SCRIPT = (
     "})()"
 )
 
-_YOUTUBE_FIRST_VIDEO_TIMEOUT = 30.0
-_YOUTUBE_EXTENSIONS_SETTLE = 3.0
+_YOUTUBE_PLAYING_JS = "!document.querySelector('video').paused"
 
 
 def _bc():
@@ -59,15 +65,40 @@ def _youtube_is_watch(url: str) -> bool:
     return "/watch" in path or path.startswith("/shorts")
 
 
+def _wait_player_ready(tab: dict) -> bool:
+    """Ждёт плеер по событиям: загрузка страницы, затем <video> в DOM.
+
+    Две пробы: первая могла прийти на документ-заглушку навигации, где
+    readyState уже complete, а ролика ещё нет.
+    """
+    for timeout in (CDP_FIRST_TRY_S, CDP_ELEMENT_S):
+        cde.wait_page_loaded(tab)
+        if cde.wait_element(tab, _YOUTUBE_SELECTORS["video"], timeout=timeout):
+            return True
+    print("[Browser] Плеер на странице не появился")
+    return False
+
+
+def _try_play(tab: dict) -> bool:
+    """Запускает воспроизведение и ждёт подтверждения от страницы.
+
+    Play() без жеста пользователя браузер может блокировать — тогда пробуем
+    клик по кнопке плеера; и то и другое проверяем состоянием `paused`, а не
+    верим ответу скрипта.
+    """
+    cdc.eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
+    if cde.wait_condition(tab, _YOUTUBE_PLAYING_JS, CDP_FIRST_TRY_S):
+        return True
+    cdc.click(tab, _YOUTUBE_SELECTORS["player"])
+    return cde.wait_condition(tab, _YOUTUBE_PLAYING_JS, CDP_FIRST_TRY_S)
+
+
 def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Переключается на вкладку и запускает уже открытое видео."""
     cdc._activate(tab, port)
-    ok, value = cdc.eval_js(tab, _YOUTUBE_RESUME_SCRIPT)
-    if ok and value == "playing":
-        print("[Browser] Запущено текущее видео")
-        return True
-    clicked, _ = cdc.click(tab, _YOUTUBE_SELECTORS["player"])
-    if clicked:
+    if not _wait_player_ready(tab):
+        return False
+    if _try_play(tab):
         print("[Browser] Запущено текущее видео")
         return True
     print("[Browser] Не удалось запустить текущее видео")
@@ -77,23 +108,20 @@ def _youtube_resume_current(tab: dict, port: int = DEFAULT_PORT) -> bool:
 def _youtube_wait_and_open_first(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Ждёт ленту на вкладке и открывает первое не-рекламное видео."""
     cdc._activate(tab, port)
-    deadline = time.time() + _YOUTUBE_FIRST_VIDEO_TIMEOUT
-    link = ""
-    while time.time() < deadline:
-        link = _youtube_first_video_link(tab)
-        if link:
-            break
-        time.sleep(1)
-    if not link:
-        print("[Browser] Список видео не загрузился за "
-              f"{_YOUTUBE_FIRST_VIDEO_TIMEOUT:.0f} секунд")
+    cde.wait_page_loaded(tab)
+    if not cde.wait_element(tab, _YOUTUBE_SELECTORS["feed"]):
+        print("[Browser] Лента видео не загрузилась")
         return False
-    time.sleep(_YOUTUBE_EXTENSIONS_SETTLE)
-    ok, _ = cdc.eval_js(tab, f"window.location.href = {json.dumps(link)}")
-    if not ok:
+    link = _youtube_first_video_link(tab)
+    if not link:
+        print("[Browser] Не удалось найти ссылку на первое видео")
+        return False
+    if not cde.navigate(tab, link):
         print("[Browser] Не удалось открыть первое видео")
         return False
     print(f"[Browser] Открыто первое видео: {link}")
+    if _wait_player_ready(tab) and _try_play(tab):
+        print("[Browser] Запущено текущее видео")
     return True
 
 
@@ -116,21 +144,22 @@ def youtube_search(query: str, port: int = DEFAULT_PORT) -> Optional[dict]:
         port=port,
     )
     if tab:
-        time.sleep(3)
+        cde.wait_page_loaded(tab)
+        cde.wait_element(tab, _YOUTUBE_SELECTORS["result"])
     return tab
 
 
 def youtube_play_first_result(tab: dict, port: int = DEFAULT_PORT) -> bool:
     """Кликает первый результат поиска и жмёт плей."""
     cdc._activate(tab, port)
-    cdc.wait_for_selector(tab, _YOUTUBE_SELECTORS["result"])
+    if not cde.wait_element(tab, _YOUTUBE_SELECTORS["result"]):
+        print("[Browser] Результаты поиска не загрузились")
+        return False
     ok, value = cdc.click(tab, _YOUTUBE_SELECTORS["result"])
     if not ok:
         print(f"[Browser] Не удалось выбрать ролик: {value}")
         return False
-    time.sleep(5)
-    cdc.click(tab, _YOUTUBE_SELECTORS["player"])
-    return True
+    return _wait_player_ready(tab) and _try_play(tab)
 
 
 def youtube_play(query: str, port: int = DEFAULT_PORT) -> bool:

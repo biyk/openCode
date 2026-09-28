@@ -5,7 +5,9 @@ import time
 import urllib.parse
 import urllib.request
 import websocket
-from typing import Optional
+from typing import Callable, Optional
+
+from lib.core.tuning import CDP_POLL_S
 
 DEFAULT_PORT = 9222
 # Только IPv4: localhost сначала пробуется как ::1 — отказ ~2 с (tests/speed).
@@ -139,17 +141,28 @@ def wait_for_tab(url_part: str, port: int = DEFAULT_PORT, timeout: float = 15.0)
     return None
 
 
+def wait_until(ready: Callable[[], bool], timeout: float,
+               step: float = CDP_POLL_S) -> bool:
+    """Опрос `ready` с маленьким шагом до `timeout` — только для состояний,
+    на которые нельзя подписаться (сокет порта, появление вкладки).
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if ready():
+            return True
+        time.sleep(step)
+    return False
+
+
 def eval_js(tab: dict, script: str) -> tuple[bool, str]:
     """Выполняет JavaScript на вкладке через Runtime.evaluate."""
     try:
         ws = _ws_for(tab)
         if not ws:
             return False, "нет webSocketDebuggerUrl"
-        payload = {
-            "id": 1,
-            "method": "Runtime.evaluate",
-            "params": {"expression": script, "returnByValue": True},
-        }
+        payload = {"id": 1, "method": "Runtime.evaluate",
+                   "params": {"expression": script,
+                              "returnByValue": True}}
         ws.send(json.dumps(payload))
         for _ in range(20):
             data = json.loads(ws.recv())
@@ -185,14 +198,3 @@ def click(tab: dict, selector: str) -> tuple[bool, str]:
     if value == "__NOT_FOUND__":
         return False, f"элемент '{selector}' не найден"
     return True, value
-
-
-def wait_for_selector(tab: dict, selector: str, timeout: float = 15.0) -> bool:
-    """Ждёт появления элемента по селектору."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ok, value = eval_js(tab, f"!!document.querySelector('{selector}')")
-        if ok and value is True:
-            return True
-        time.sleep(0.5)
-    return False

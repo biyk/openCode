@@ -167,15 +167,15 @@ class TestClick:
         assert ok is False
 
 
-class TestWaitSelector:
-    """Тесты для wait_for_selector."""
+class TestWaitUntil:
+    """Тесты опроса состояний, у которых нет события (wait_until)."""
 
-    def test_wait_for_selector_found(self, mocker):
-        """wait_for_selector возвращает True, если элемент найден."""
-        mocker.patch("lib.browser.cdp_client.eval_js", return_value=(True, True))
-        assert cdc.wait_for_selector({}, "button") is True
+    def test_returns_without_sleeping(self, mocker):
+        """Готовность с первой проверки — ни секунды лишнего ожидания."""
+        sleep = mocker.patch("lib.browser.cdp_client.time.sleep")
+        assert cdc.wait_until(lambda: True, 5.0) is True
+        sleep.assert_not_called()
 
-    def test_wait_for_selector_timeout(self, mocker):
-        """wait_for_selector возвращает False по таймауту."""
-        mocker.patch("lib.browser.cdp_client.eval_js", return_value=(True, False))
-        assert cdc.wait_for_selector({}, "button", timeout=0.1) is False
+    def test_gives_up_at_deadline(self):
+        """Не дождались — False по истечении потолка."""
+        assert cdc.wait_until(lambda: False, 0.05, step=0.02) is False

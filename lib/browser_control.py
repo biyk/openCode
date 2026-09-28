@@ -9,7 +9,6 @@
     python -m lib.browser_control tabs
     python -m lib.browser_control open-url "https://youtube.com"
     python -m lib.browser_control eval "https://youtube.com" "document.title"
-    python -m lib.browser_control click "https://youtube.com" "button.ytp-play-button"
     python -m lib.browser_control youtube-play "музыка для кодинга"
     python -m lib.browser_control youtube-first
 """
@@ -19,7 +18,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -34,7 +32,9 @@ from lib.browser.cdp_client import (
     eval_js,
     is_running,
     wait_for_tab,
+    wait_until,
 )
+from lib.core.tuning import BROWSER_START_S
 from lib.browser.youtube_browser import youtube_open_first, youtube_play
 
 if sys.platform == "win32":
@@ -60,7 +60,12 @@ def _find_browser_exe() -> Optional[str]:
 
 
 def ensure_browser(port: int = DEFAULT_PORT) -> bool:
-    """Проверяет/запускает браузер с remote-debugging-port."""
+    """Проверяет/запускает браузер с remote-debugging-port.
+
+    Готовность — первый ответ CDP, а не пауза; страницу ждёт вызывающий код
+    событиями (`lib.browser.cdp_events`): браузер отвечает раньше, чем
+    успеет открыться вкладка.
+    """
     if is_running(port):
         print(f"[Browser] Уже запущен на порту {port}")
         return True
@@ -72,24 +77,15 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     profile.mkdir(exist_ok=True)
     print(f"[Browser] Запуск {exe} с debug-портом {port}")
     subprocess.Popen(
-        [
-            exe,
-            f"--remote-debugging-port={port}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--remote-allow-origins=*",
-            f"--user-data-dir={profile}",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    for _ in range(30):
-        time.sleep(1)
-        if is_running(port):
-            print("[Browser] Браузер готов")
-            return True
-    print("[Browser] Браузер не ответил за 30 секунд")
-    return False
+        [exe, f"--remote-debugging-port={port}", "--no-first-run",
+         "--no-default-browser-check", "--remote-allow-origins=*",
+         f"--user-data-dir={profile}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not wait_until(lambda: is_running(port), BROWSER_START_S):
+        print(f"[Browser] Браузер не ответил за {BROWSER_START_S:.0f} секунд")
+        return False
+    print("[Browser] Браузер готов")
+    return True
 
 
 def open_url(url: str, port: int = DEFAULT_PORT,

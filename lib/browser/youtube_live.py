@@ -5,17 +5,19 @@
 и корректно закрыть вкладку после теста.
 """
 
-import time
 from typing import Optional
 
 from lib.browser import cdp_client as cdc
+from lib.browser import cdp_events as cde
 from lib.browser.cdp_client import DEFAULT_PORT
 
-# Таймаут ожидания появления плеера на тестовой вкладке (секунды).
+# Потолок ожидания плеера — страховка от зависшей вкладки; штатно срабатывают
+# события страницы (загрузка, изменение DOM), см. cdp_events.
 PLAYER_TIMEOUT_S = 30.0
 
-# Задержка перед опросом состояния плеера (видео грузится постепенно).
-PLAYER_SETTLE_S = 3.0
+# Видео отдаёт метаданные: до этого состояние плеера нестабильно, и тест мог
+# прочесть «паузу» там, где только что начался автоплей.
+PLAYER_READY_JS = "document.querySelector('video').readyState >= 2"
 
 
 def _player_state(tab: dict) -> str:
@@ -44,10 +46,9 @@ def youtube_open_test_video(url: str,
     """Открывает тестовый ролик в новой вкладке и ждёт плеер.
 
     Возвращает вкладку (обязательно закрыть через close_tab после теста)
-    или None, если вкладку/плеер не удалось получить. Плеер ждём
-    циклом до таймаута: <video> появляется в DOM не сразу, а после
-    ускорения CDP (127.0.0.1 вместо localhost) одиночная проба
-    сразу после открытия вкладки стала гонкой.
+    или None, если вкладку/плеер не удалось получить. Ждём события самой
+    страницы: загрузку, появление `<video>` в DOM и метаданные ролика.
+    Одиночная проба сразу после открытия вкладки была гонкой.
     """
     tab = cdc.open_new_tab(url, port)
     if not tab:
@@ -56,20 +57,15 @@ def youtube_open_test_video(url: str,
     # Вкладку нужно сделать активной: OS-медиаклавиша (playpause)
     # адресуется активному табу, иначе пауза уйдёт на боевой ролик.
     cdc._activate(tab, port)
-    state = "no-video"
-    deadline = time.time() + PLAYER_TIMEOUT_S
-    while time.time() < deadline:
-        if "watch?v=" in _tab_url(tab):
-            state = _player_state(tab)
-            if state != "no-video":
-                break
-        time.sleep(1)
-    if state == "no-video":
+    cde.wait_page_loaded(tab, timeout=PLAYER_TIMEOUT_S)
+    ready = (cde.wait_element(tab, "video", timeout=PLAYER_TIMEOUT_S)
+             and "watch?v=" in _tab_url(tab))
+    if not ready:
         print("[Browser] Плеер тестового ролика не загрузился "
               f"за {PLAYER_TIMEOUT_S:.0f} секунд")
         cdc.close_tab(tab, port)
         return None
-    time.sleep(PLAYER_SETTLE_S)
+    cde.wait_condition(tab, PLAYER_READY_JS, timeout=PLAYER_TIMEOUT_S)
     return tab
 
 
