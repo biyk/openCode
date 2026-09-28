@@ -51,9 +51,9 @@ class FakeApi:
         return self.event
 
     def upsert_done_event(self, summary, task_uuid, minutes, end,
-                          event_id=None):
+                          event=None):
         self.events_written.append((summary, task_uuid, minutes, end,
-                                    event_id))
+                                    event))
         return self.was_new
 
     def execution_rows(self):
@@ -110,19 +110,27 @@ def test_execution_row_uses_elapsed_minutes():
 def test_done_event_created_with_elapsed_duration():
     api = FakeApi()
     stopped(api)
-    summary, uuid, minutes, end, event_id = api.events_written[0]
+    summary, uuid, minutes, end, event = api.events_written[0]
     assert (summary, uuid, minutes, end) == ("Починить велосипед", UUID, 20,
                                              NOW)
 
 
 def test_existing_event_updated_and_title_kept():
-    event = {"id": "ev-1", "summary": "Велосипед (план)"}
+    event = {"id": "ev-1", "summary": "Велосипед (план)", "colorId": ""}
     api = FakeApi(event=event, was_new=False)
     result = stopped(api)
     assert api.events_written[0][0] == "Велосипед (план)"
-    assert api.events_written[0][4] == "ev-1"
+    assert api.events_written[0][4] == event
     assert result["event_was_new"] is False
     assert column(api, "break_multiplier") == "0"   # не сдвигается при update
+
+
+def test_repeat_of_done_task_passes_the_marker_to_be_copied():
+    """Второе выполнение за день: colorId=7 уходит в upsert как основа копии."""
+    marker = {"id": "ev-1", "summary": "Велосипед", "colorId": "7"}
+    api = FakeApi(event=marker, was_new=False)
+    stopped(api)
+    assert api.events_written[0][4] is marker
 
 
 def test_once_mode_skips_journal_and_hero_but_writes_row():

@@ -85,7 +85,7 @@ def stop_task(task_uuid: str, api: Optional[Any] = None,
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(
         (event or {}).get("summary") or title, task_uuid, elapsed, now,
-        event_id=(event or {}).get("id"))
+        event=event)
 
     from_ms = as_int(row[COLS["last_execution"]]) or as_int(
         row[COLS["task_date"]])

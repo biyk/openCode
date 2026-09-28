@@ -51,9 +51,9 @@ class FakeApi:
         return self.event
 
     def upsert_done_event(self, summary, task_uuid, minutes, end,
-                          event_id=None):
+                          event=None):
         self.events_written.append((summary, task_uuid, minutes, end,
-                                    event_id))
+                                    event))
         return self.was_new
 
     def execution_rows(self):
@@ -129,19 +129,34 @@ def test_done_event_created_with_planned_duration():
     """Галочка colorId=7: длительность = план, конец = момент команды."""
     api = FakeApi()
     done(api)
-    summary, uuid, minutes, end, event_id = api.events_written[0]
-    assert (summary, uuid, minutes, end, event_id) == ("Пробуждение", UUID, 3,
-                                                       NOW, None)
+    summary, uuid, minutes, end, event = api.events_written[0]
+    assert (summary, uuid, minutes, end, event) == ("Пробуждение", UUID, 3,
+                                                    NOW, None)
 
 
 def test_existing_event_is_updated_and_its_title_kept():
     """Плановое событие сегодня → update вместо insert, заголовок его собственный."""
-    event = {"id": "ev-1", "summary": "Пробуждение (план)"}
+    event = {"id": "ev-1", "summary": "Пробуждение (план)", "colorId": ""}
     api = FakeApi(event=event, was_new=False)
     result = done(api)
     assert api.events_written[0][0] == "Пробуждение (план)"
-    assert api.events_written[0][4] == "ev-1"
+    assert api.events_written[0][4] == event
     assert result["event_was_new"] is False
+
+
+def test_repeat_execution_reuses_done_marker_for_the_copy_title():
+    """Повтор в тот же день: событием занимается upsert (копия), а не перенос.
+
+    Здесь проверяется только проброс найденного события: галочка colorId=7
+    уезжает в upsert целиком, и заголовок копия берёт её собственный.
+    Правило «перенос vs копия» — в tests/taskflow/test_real_life_sheet.py.
+    """
+    marker = {"id": "ev-1", "summary": "Пробуждение", "colorId": "7"}
+    api = FakeApi(event=marker, was_new=False)
+    result = done(api)
+    assert api.events_written[0][0] == "Пробуждение"
+    assert api.events_written[0][4] is marker
+    assert result["event_was_new"] is False   # счётчики не сдвигаются
 
 
 def test_repeat_bonus_only_when_event_is_new():
@@ -150,7 +165,8 @@ def test_repeat_bonus_only_when_event_is_new():
     done(new_event)
     assert column(new_event, "break_multiplier") == pytest.approx(1.0)
     assert column(new_event, "task_sort") == pytest.approx(0.98)
-    kept = FakeApi(event={"id": "ev-1", "summary": "Пробуждение"},
+    kept = FakeApi(event={"id": "ev-1", "summary": "Пробуждение",
+                          "colorId": ""},
                    was_new=False)
     done(kept)
     assert column(kept, "break_multiplier") == "0"      # как в исходной строке

@@ -79,7 +79,7 @@ def mark_task_done(task_uuid: str, api: Optional[Any] = None,
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(
         (event or {}).get("summary") or title, task_uuid, time_spent, now,
-        event_id=(event or {}).get("id"))
+        event=event)
 
     from_ms = last_ms or as_int(row[COLS["task_date"]])
     ri_new = repeat_real(as_float(row[COLS["repeat_index"]], 1.0) or 1.0,

@@ -2,7 +2,8 @@
 
 Google-сервис подменяем заглушкой: проверяем диапазоны, RAW-режим,
 UNFORMATTED_VALUE при чтении (иначе локаль ru ломает разбор чисел) и
-что строка всегда выравнивается до 20 колонок A:T.
+что строка всегда выравнивается до 20 колонок A:T. Тест события-галочки
+(find/upsert: перенос vs копия) — в tests/taskflow/test_done_event.py.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -137,31 +138,6 @@ def test_write_task_row_updates_whole_row_raw():
     assert sent["valueInputOption"] == "RAW"
     body = sent["body"]["values"][0]
     assert len(body) == 20 and body[1] == "3" and body[7] == 1790559350128
-
-
-def test_find_done_event_scans_only_today():
-    """Событие ищется по uuid в описании и только в границах сегодня."""
-    event = {"id": "ev-1", "summary": "Пробуждение", "description": UUID}
-    api, _, gcal = make_api(events=[{"id": "e2", "description": "нет"}, event])
-    assert api.find_done_event(UUID, NOW) == event
-    time_min, time_max = gcal.ranges[0]
-    assert time_min == NOW.replace(hour=0, minute=0, second=0, microsecond=0)
-    assert time_max == time_min + timedelta(days=1)
-    assert api.find_done_event("другой-uuid", NOW) is None
-
-
-def test_upsert_done_event_reports_new_only_and_raises_on_failure():
-    """True — когда вставили новое; False — когда обновили; сбой — RuntimeError."""
-    api, _, gcal = make_api()
-    assert api.upsert_done_event("Пробуждение", UUID, 3, NOW) is True
-    assert gcal.put[0]["event_id"] is None
-    assert api.upsert_done_event("Пробуждение", UUID, 3, NOW,
-                                 event_id="ev-1") is False
-    assert gcal.put[1]["event_id"] == "ev-1"
-
-    broken, _, _ = make_api(put_result="")
-    with pytest.raises(RuntimeError):
-        broken.upsert_done_event("Пробуждение", UUID, 3, NOW)
 
 
 def test_append_execution_uses_journal_range():

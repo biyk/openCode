@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from lib.google_calendar import GoogleCalendar
+from lib.google.google_calendar_mutate import DONE_COLOR
 from lib.taskflow.cells import as_float, as_int
 from lib.taskflow.task_start_sheet import SHEET_NAME, SPREADSHEET_ID
 
@@ -38,6 +39,11 @@ COLS = {
 def _pad(row: list[Any]) -> list[Any]:
     """Ровно ROW_WIDTH значений: недостающие хвосты — пустые строки."""
     return (list(row) + [""] * ROW_WIDTH)[:ROW_WIDTH]
+
+
+def _is_done_marker(ev: dict) -> bool:
+    """Событие уже «галочка» засчитанного выполнения (colorId=7)."""
+    return str(ev.get("colorId") or "").strip() == DONE_COLOR
 
 
 class RealLifeSheet:
@@ -114,7 +120,11 @@ class RealLifeSheet:
     # ---------- событие-«галочка» ----------
 
     def find_done_event(self, task_uuid: str, now: datetime) -> Optional[dict]:
-        """Сегодняшнее событие с task_uuid в описании (или None)."""
+        """Сегодняшнее событие с task_uuid в описании (или None).
+
+        Среди дня это может быть и плановая запись задачи, и уже поставленная
+        галочка: различает их вызывающий `upsert_done_event` по colorId.
+        """
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         events = self._gcal.list_events_between(
             day_start, day_start + timedelta(days=1))
@@ -125,19 +135,31 @@ class RealLifeSheet:
 
     def upsert_done_event(self, summary: str, task_uuid: str, minutes: int,
                           end: datetime,
-                          event_id: Optional[str] = None) -> bool:
-        """Галочка colorId=7. True — создана заново, False — обновлена.
+                          event: Optional[dict] = None) -> bool:
+        """Галочка colorId=7: плановое событие переносим, сделанное — копируем.
 
-        RuntimeError — запрос к календарю не прошёл (счётчики строки тогда
-        не сдвигаются: вызывающий прерывает засчёт до записи таблицы).
+        Одно мероприятие можно выполнить в день несколько раз, и каждое
+        обязано остаться в том промежутке, в котором оно было сделано.
+        Поэтому переносим сегодняшнее событие на [end − minutes, end],
+        только пока оно плановое (без цвета): галочка colorId=7 — след уже
+        засчитанного выполнения, её не трогаем, а вставляем полноценную
+        копию рядом.
+
+        True — сегодня события задачи не было вовсе (по этому флагу строка
+        таблицы сдвигает break_multiplier); False — перенесено или
+        продублировано. RuntimeError — запрос к календарю не прошёл (счётчики
+        строки тогда не сдвигаются: вызывающий прерывает засчёт до записи
+        таблицы).
         """
-        event_id_old = event_id
+        move = None
+        if event is not None and not _is_done_marker(event):
+            move = str(event.get("id") or "") or None
         done = self._gcal.put_done_event(
             summary=summary, description=task_uuid, minutes=minutes,
-            end=end, event_id=event_id)
+            end=end, event_id=move)
         if not done:
             raise RuntimeError("событие-галочка в календаре не создано")
-        return event_id_old is None
+        return event is None
 
     # ---------- журнал и герой ----------
 
