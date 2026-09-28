@@ -190,8 +190,26 @@
             "hits": 0,
             "command": "taskdone",
             "event": "Глобальные задачи"
+        },
+        "начинаю глобальные задачи": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "начал шесть тысяч шагов": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Пройти шесть к шагов (6к шагов )"
         }
     },
-    "laya": {},
+    "laya": {
+        "начал шесть ка шагов": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart"
+        }
+    },
     "undefined": {}
 }
