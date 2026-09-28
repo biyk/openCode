@@ -150,8 +150,12 @@ class OrchestratorEventMatchMixin:
         self._output.print_info(
             f"[Knowledge] Мероприятие: «{event_title}» → {action} ({cmd_id})")
         if self._matcher.needs_text(cmd_id):
-            return self._matcher.execute_by_id(cmd_id, (event_title,))
-        return self._matcher.execute_by_id(cmd_id)
+            ok = self._matcher.execute_by_id(cmd_id, (event_title,))
+        else:
+            ok = self._matcher.execute_by_id(cmd_id)
+        if ok:
+            self._chat_done(cmd_id)
+        return ok
 
     def _detect_event_action(self, core: str) -> Optional[str]:
         """Определяет «start» или «complete»: Laya → эвристика."""

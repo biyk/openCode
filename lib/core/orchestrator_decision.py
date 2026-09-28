@@ -25,8 +25,12 @@ class OrchestratorDecisionMixin:
             else:
                 settings = self._decision_text(cmd_id, text)
         if settings:
-            return self._matcher.execute_by_id(cmd_id, settings)
-        return self._matcher.execute_by_id(cmd_id)
+            ok = self._matcher.execute_by_id(cmd_id, settings)
+        else:
+            ok = self._matcher.execute_by_id(cmd_id)
+        if ok:
+            self._chat_done(cmd_id)   # чату видно результат (голос — озвучкой)
+        return ok
 
     def _decision_text(self, cmd_id: str, text: str) -> tuple[str, ...]:
         """Слова фразы для {{text}}: ядро без триггеров и ведущих командных слов.
@@ -63,7 +67,10 @@ class OrchestratorDecisionMixin:
                     f"[Command] Распознана команда: {cmd_id}"
                     + (f" (настройки: {', '.join(settings)})"
                        if settings else ""))
-                self._execute_with_settings(cmd_id, settings)
+                if self._execute_with_settings(cmd_id, settings):
+                    self._chat_done(cmd_id)
+                else:
+                    self._chat_reply(f"Команда «{cmd_id}» не выполнена")
                 self._window.clear()
                 return
             blocked = [(cmd_id, missing)]
@@ -97,7 +104,8 @@ class OrchestratorDecisionMixin:
                 hit = self._knowledge.resolve_event(kcore)
                 if hit is not None:
                     self._knowledge.bump(kcore)
-                    return self._execute_event_action(hit[0], hit[1])
+                    self._execute_event_action(hit[0], hit[1])
+                    return
         # 1.7. Само-отчёт («я почистил зубы», «закончил зарядку») — не просьба
         # к ассистенту, а старт/финиш сегодняшнего мероприятия. Пробуем
         # привязать к невыполненному событию ДО Лайи: иначе Лайя ложно тянет
@@ -122,6 +130,7 @@ class OrchestratorDecisionMixin:
                     "[Decision] Лайя и LLM: команда не распознана — "
                     "фраза в undefined, запрос в opencode не идёт"
                 )
+                self._chat_not_recognized()
                 return
             resolved, confidence, elapsed = detected
             self._output.print_info(
@@ -139,6 +148,8 @@ class OrchestratorDecisionMixin:
                 return
             self._output.print_error(
                 f"[Decision] Команда «{resolved}» не найдена или не выполнена")
+            self._chat_reply(
+                f"Команда «{resolved}» не найдена или не выполнена")
             return
         # 3. Legacy-путь (decision не настроен): mini-LLM intent, затем
         # фолбэк в console opencode.
@@ -150,6 +161,7 @@ class OrchestratorDecisionMixin:
                 )
                 if self._matcher.execute_by_id(detected):
                     self._output.print_text(detected)
+                    self._chat_done(detected)
                     self._remember_candidate(text, detected, literal_id)
                     return
                 missing = self._matcher.missing_requires(detected)

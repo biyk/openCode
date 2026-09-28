@@ -73,6 +73,17 @@ class CommandConfigMixin:
         """
         return self._data.get("fun_holes", {})
 
+    def get_telegram_config(self) -> dict:
+        """Возвращает секцию `telegram` (бот: команды текстом из мессенджера).
+
+        Ключи: enabled, token_env (имя переменной окружения с токеном),
+        allowed_chat_ids (whitelist чатов), proxy ("socks5h://host:port",
+        если прямого маршрута до Telegram нет), poll_timeout_s, retry_s,
+        max_len; значения по умолчанию — в lib.core.tuning. Токен в JSON
+        не хранится.
+        """
+        return self._data.get("telegram", {})
+
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""
         return self._data.get("requires", {})

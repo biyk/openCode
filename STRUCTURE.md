@@ -56,6 +56,7 @@ voice
 │   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
 │   │   ├── orchestrator.py  # Детерминированное ядро обработки текста: Orchestrator на миксинах, уровни commands/intent/opencode.
 │   │   ├── orchestrator_ask.py  # Миксин оркестратора: озвучить вопрос и перехватить следующую строку как ответ (PendingAsk с таймаутом), не пуская её в пайплайн команд; стоп-слово снимает вопрос
+│   │   ├── orchestrator_chat.py  # Миксин оркестратора: канал ответа текстовому источнику (reply) вместо озвучки — _begin_request/_chat_reply/_chat_done/_chat_not_recognized, dev-режим из чата запрещён
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
 │   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
 │   │   ├── orchestrator_llm.py  # Миксин оркестратора: LLM-детект команды после промаха Лайи (по примеру «распознать все») — self._llm выбирает id по смыслу, для команд с параметром вторым запросом вычленяет значение {{text}}, догадка ложится в laya-корзину
@@ -135,6 +136,12 @@ voice
 │   │   ├── tasks_parse.py  # Разбор фраз задач: триггеры, чистка, нормализация названий.
 │   │   ├── wake_fill.py  # Автозаполнение календаря задачами real_life_tasks на остаток дня по приоритету (taskSort, first-fit, excludes, идемпотентность) без записи в Таблицы; эквивалент «Заполнить календарь»
 │   │   └── wake_slots.py  # Свободные окна календаря и перенос задач из окна сна на окна после пробуждения (команда «я проснулся»): compute_free_slots и reschedule_sleep_events по restart/calendar.md
+│   ├── telegram/  # Канал команд из Telegram: тонкий клиент Bot API, сборка конфига и polling-бот, который гонит текст чата в тот же пайплайн оркестратора, что и микрофон
+│   │   ├── __init__.py  # Пакет Telegram-канала: Bot API клиент, конфиг секции telegram и polling-бот.
+│   │   ├── api.py  # Тонкий клиент Bot API Telegram поверх requests (getUpdates/sendMessage/getMe): прокси из секции telegram, сбои сети и ok=false логируются swallowed и возвращают «нет данных», polling-цикл из-за них не умирает, токен вырезается из текста ошибки
+│   │   ├── bot.py  # TelegramBot: daemon-поток long polling'а (offset, пауза retry_s при сбое); принимает команды только из whitelist чатов, /команды отвечают подсказкой, ответы режутся по max_len, текст чата уходит в колбэк on_text
+│   │   ├── config.py  # Секция telegram commands.json → TelegramConfig: токен только из окружения/.env (по имени token_env), whitelist allowed_chat_ids (+TELEGRAM_CHAT_IDS), proxy (+TELEGRAM_PROXY), тайминги из tuning; missing_parts говорит, чего не хватает для старта
+│   │   └── launch.py  # Фабрика start_telegram: секция telegram commands.json → TelegramApi + TelegramBot, стартует polling; без токена или без whitelist бот не поднимается, в лог прокси пишется без логина/пароля (proxy_label), текст чата идёт через submit_manual_text
 │   ├── versioning/  # Версии приложения: gate, checker и доступ к __version__.
 │   │   ├── __init__.py  # Инициализация пакета versioning — Версии приложения: gate, checker и доступ к __version__.
 │   │   ├── version.py  # Это модуль, который импортирует переменную __version__ из пакета lib и предоставляет функцию get_version() для получения текущей версии проекта.
@@ -228,6 +235,7 @@ voice
 │   │   ├── test_logger.py  # Это файл тестов, проверяющий работу класса Logger и вспомогательных функций логирования.
 │   │   ├── test_orchestrator.py  # Тесты Orchestrator: инициализация, эхо-затишье, дословные команды.
 │   │   ├── test_orchestrator_ask.py  # Тесты вопроса-ответа: озвучка и ожидание, отказ накладывать вопросы, перехват строки до пайплайна, просрочка вопроса, отмена стоп-словом, сбой колбэка
+│   │   ├── test_orchestrator_chat.py  # Тесты чат-канала: команда из чата отвечает «Выполнено» без TTS, сообщение не тормозит окно эха и озвучка, _say/_report_blocked идут в sink, промах Лайи виден чату, сбой отправки проглочен, обработка под замком
 │   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
@@ -333,6 +341,11 @@ voice
 │   │   ├── test_tasks_dedup.py  # Тесты задач: поиск дубликата exact/Laya перед созданием.
 │   │   ├── test_wake_fill.py  # Юнит-тесты автозаполнения: приоритет taskSort, фильтр подлежащих, идемпотентность по uuid, excludes, съедание окна, что Таблицы не пишутся (без сети)
 │   │   └── test_wake_slots.py  # Юнит-тесты окон и переноса из сна: compute_free_slots (дырки/мин.слот/курсор), перенос событий окна сна позже в порядке и с той же длительностью (без сети)
+│   ├── telegram/
+│   │   ├── test_api.py  # Тесты клиента Bot API: URL и параметры getUpdates/sendMessage, прокси в requests.proxies, ok=false отдельно от тишины (None), сетевая ошибка не валяет вызывающий код, токен не попадает в лог, временный timeout getMe восстанавливается
+│   │   ├── test_bot.py  # Тесты транспорта Telegram-бота: whitelist (неизвестный чат логируется один раз), offset long polling'а и пауза при сбое, /команды — подсказка, ответы частями по max_len
+│   │   ├── test_bot_factory.py  # Тесты фабрики start_telegram: выключенная секция, старт без токена или без whitelist отвергнут, готовый конфиг поднимает поток, текст чата уходит в submit_manual_text с reply, прокси доходит до API и не светит пароль в логе
+│   │   └── test_config.py  # Тесты конфига Telegram: токен по имени token_env, id чатов из JSON и TELEGRAM_CHAT_IDS, proxy из секции или TELEGRAM_PROXY, значения по умолчанию из tuning, whitelist сравнивает по строкам, read_token с явным env не трогает .env
 │   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.
 │   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
 │   │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.

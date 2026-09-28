@@ -12,11 +12,14 @@ class OrchestratorOpencodeMixin:
         """Ставит текст в фоновую очередь console opencode.
 
         raw=True — dev-режим: текст передаётся модели без BASE_PROMPT-обёртки.
+        Канал ответа запоминаем вместе с запросом: фоновый ответ должен уйти
+        тому, кто его заказал (чат), а не тому, чей запрос активен в момент
+        готовности.
         """
         if self._opencode is None:
             self._output.print_error("[OpenCode] Раннер не настроен")
             return
-        self._opencode_queue.put((text, raw))
+        self._opencode_queue.put((text, raw, getattr(self, "_reply", None)))
         self._ensure_opencode_worker()
 
     def _drain_opencode_queue(self) -> None:
@@ -43,7 +46,7 @@ class OrchestratorOpencodeMixin:
     def _opencode_worker_loop(self) -> None:
         """Фоновый воркер: обрабатывает запросы из очереди."""
         while True:
-            text, raw = self._opencode_queue.get()
+            text, raw, reply = self._opencode_queue.get()
             started = time.monotonic()
             try:
                 self._opencode_active = True
@@ -73,6 +76,8 @@ class OrchestratorOpencodeMixin:
                     f"[OpenCode] Итог ({elapsed:.0f}с): {answer}")
                 self._output.print_debug(
                     f"[OpenCode] Ответ (сводка): {answer}")
+                # Заказчик из чата (Telegram) ждёт ответ текстом, без озвучки
+                self._chat_send(reply, answer)
             except Exception as e:
                 self._output.print_error(
                     f"[OpenCode] Ошибка фонового запроса: {e}")

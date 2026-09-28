@@ -3,6 +3,7 @@
 import time
 
 from lib.voice_cmd.commands_match import _similarity
+from lib.core.orchestrator_chat import CHAT_NO_DEV_MODE
 
 # Фразы включения режима разработки (детерминированы, без матчера).
 # Vosk иногда коверкает окончания: «режим разработке», «режим разработку»,
@@ -53,6 +54,10 @@ class OrchestratorSpeechMixin:
         low = (core or text).lower()
 
         if _is_dev_enable_phrase(low):
+            if self._chat_active():
+                # Dev-режим — про микрофон и озвучку: из чата его не включать.
+                self._chat_reply(CHAT_NO_DEV_MODE)
+                return True
             self._dev_mode = not self._dev_mode
             if self._dev_mode:
                 self._output.print_info("[DevMode] Включён")
@@ -73,21 +78,25 @@ class OrchestratorSpeechMixin:
         return False
 
     def _say(self, message: str) -> None:
-        """Короткое голосовое сообщение (в консоль + озвучка)."""
+        """Короткое сообщение: текстовому источнику — в чат, остальным — вслух."""
         self._output.print_info(message)
+        if self._chat_reply(message):
+            return
         self._speaking = True
         self._abort_playback.clear()
         self._speak_async(message)
 
     def _report_blocked(self, cmd_id: str, missing: list[str]) -> None:
-        """Сообщает, каких статусов не хватает (консоль + голос).
+        """Сообщает, каких статусов не хватает (чат или консоль + голос).
 
-        Вместо молчаливого ухода в LLM пользователь слышит,
-        что нужно сделать (например, например, «Включи прокси»).
+        Вместо молчаливого ухода в LLM пользователь получает, что нужно
+        сделать (например, «Включи прокси»).
         """
         names = ", ".join(missing)
         self._output.print_error(f"[Blocked] «{cmd_id}»: нет статуса: {names}")
         message = ". ".join(self._matcher.need_message(n) for n in missing)
+        if self._chat_reply(message):
+            return
         self._speaking = True
         self._abort_playback.clear()
         self._speak_async(message)

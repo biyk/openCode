@@ -22,6 +22,7 @@ from lib.core.output import TranscriptionOutput  # noqa: E402
 from lib.core.task_monitor import start_task_monitor  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
 from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
+from lib.telegram.launch import start_telegram  # noqa: E402
 
 # ---------- Главная функция ----------
 
@@ -60,9 +61,16 @@ def main():
     # вопросы вслух и старт задачи по ответу.
     task_monitor = start_task_monitor(worker, output)
 
-    output.print_info("\n🎙️  Запись... Команды можно говорить или печатать.\n")
+    # Telegram-бот (секция telegram): те же команды текстом из мессенджера,
+    # ответы — в чат, без озвучки.
+    telegram = start_telegram(worker, output)
+
+    output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "
+                      "или писать в Telegram.\n")
     TextInputs(lambda t: submit_manual_text(worker, t), output=output).run()
 
+    if telegram is not None:
+        telegram.stop()
     if task_monitor is not None:
         task_monitor.stop()
     worker.stop()

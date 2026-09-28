@@ -7,12 +7,11 @@ class OrchestratorMemoryMixin:
     """Миксин Orchestrator: laya-кандидаты, undefined-корзина, контекст LLM."""
 
     def _execute_with_settings(self, cmd_id: str,
-                               settings: list[str]) -> None:
+                               settings: list[str]) -> bool:
         """Выполняет команду с настройками (если они есть)."""
         if settings:
-            self._matcher.execute_by_id(cmd_id, tuple(settings))
-        else:
-            self._matcher.execute_by_id(cmd_id)
+            return self._matcher.execute_by_id(cmd_id, tuple(settings))
+        return self._matcher.execute_by_id(cmd_id)
 
     def _remember_candidate(self, text: str, cmd_id: str,
                             literal_id: Optional[str]) -> None:

@@ -5,7 +5,7 @@
   «выход»/EOF, отключается без TTY;
 - submit_manual_text — печатная команда не требует кодового слова:
   если триггера нет, в конец дописывается MANUAL_TRIGGER, и строка уходит в
-  оркестратор уже «с ключом» (§10).
+  оркестратор уже «с ключом» (§10); канал reply (чат) передаётся дальше.
 """
 import pytest
 
@@ -65,8 +65,14 @@ class TestSubmitManualText:
         w._logger = mocker.MagicMock()
         w._accumulated = []
         w._processed = []
+        w._replies = []
         w._orchestrator = mocker.MagicMock()
-        w._orchestrator.process_text.side_effect = w._processed.append
+
+        def _record(text, reply=None):
+            w._processed.append(text)
+            w._replies.append(reply)
+
+        w._orchestrator.process_text.side_effect = _record
         return w
 
     def test_trigger_appended_when_absent(self, worker, mocker):
@@ -84,3 +90,9 @@ class TestSubmitManualText:
         ti_mod.submit_manual_text(worker, "   ")
         assert worker._processed == []
         worker._logger.log_command.assert_not_called()
+
+    def test_reply_channel_forwarded(self, worker, mocker):
+        sink = mocker.MagicMock()
+        worker._matcher.has_trigger.return_value = True
+        ti_mod.submit_manual_text(worker, "громче", reply=sink)
+        assert worker._replies == [sink]

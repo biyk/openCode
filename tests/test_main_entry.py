@@ -88,6 +88,9 @@ class TestMainEntryPoint:
             def get_task_monitor_config(self):
                 return {}
 
+            def get_telegram_config(self):
+                return {}
+
             def match_config(self):
                 return {}
 

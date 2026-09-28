@@ -19,6 +19,7 @@ from typing import Any, Callable, Optional
 from lib.voice_cmd.commands import CommandMatcher
 from lib.opencode.opencode_cli import OpenCodeCliRunner
 from lib.core.orchestrator_ask import OrchestratorAskMixin
+from lib.core.orchestrator_chat import OrchestratorChatMixin
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
 from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
 from lib.core.orchestrator_llm import OrchestratorLlmMixin
@@ -34,6 +35,7 @@ COMMAND_WINDOW_SIZE = 4
 
 class Orchestrator(
     OrchestratorAskMixin,
+    OrchestratorChatMixin,
     OrchestratorDecisionMixin,
     OrchestratorEventMatchMixin,
     OrchestratorLlmMixin,
@@ -77,10 +79,16 @@ class Orchestrator(
         self._speaking = False
         self._abort_playback = threading.Event()
         self._suppress_until = 0.0
-        self._opencode_queue: queue.Queue[tuple[str, bool]] = queue.Queue()
+        self._opencode_queue: queue.Queue[
+            tuple[str, bool, Optional[Callable[[str], None]]]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
         self._pending_ask = None
+        self._reply = None
+        # Строки микрофона и сообщения чата идут в один пайплайн: общее
+        # состояние (окно «трёх строк», озвучка, ожидаемый ответ) не должно
+        # рваться посередине обработки другого источника.
+        self._input_lock = threading.Lock()
         self._window: deque[str] = deque(
             maxlen=COMMAND_WINDOW_SIZE)
 
@@ -104,33 +112,43 @@ class Orchestrator(
         """Момент (time.monotonic) окончания окна эхо-затишья."""
         return self._suppress_until
 
-    def process_text(self, text: str) -> None:
-        """Обрабатывает текст: стоп-слово, команда или запрос к LLM."""
-        if time.monotonic() < self._suppress_until:
-            return
-        if self._speaking:
-            self.maybe_abort(text)
-            return
-        if self._opencode_active and self.maybe_abort(text):
-            # Пока opencode думает, стоп-слово только отменяет ожидаемый ответ
-            return
-        if self._handle_dev_mode_controls(text):
-            return
-        if self._dev_mode:
-            # Режим разработки: все фразы напрямую в модель, без матчера.
+    def process_text(self, text: str,
+                     reply: Optional[Callable[[str], None]] = None) -> None:
+        """Обрабатывает текст: стоп-слово, команда или запрос к LLM.
+
+        reply — канал ответа для текстового источника (Telegram): строка
+        пришла готовым текстом, а не звуком с колонок, поэтому окна
+        эхо-затишья и ранней озвучки к ней не применяются, а ответы уходят
+        в чат вместо динамиков (см. orchestrator_chat).
+        """
+        with self._input_lock:
+            chat = self._begin_request(reply)
+            if not chat:
+                if time.monotonic() < self._suppress_until:
+                    return
+                if self._speaking:
+                    self.maybe_abort(text)
+                    return
+            if self._opencode_active and self.maybe_abort(text):
+                # Пока opencode думает, стоп-слово только отменяет ожидаемый ответ
+                return
+            if self._handle_dev_mode_controls(text):
+                return
+            if self._dev_mode:
+                # Режим разработки: все фразы напрямую в модель, без матчера.
+                self._output.print_text(text)
+                self._output.print_info(
+                    "[DevMode] Фраза передана в модель напрямую")
+                self._enqueue_opencode(text, raw=True)
+                return
+            # Сначала выводим распознанный текст в консоль и лог
             self._output.print_text(text)
-            self._output.print_info(
-                "[DevMode] Фраза передана в модель напрямую")
-            self._enqueue_opencode(text, raw=True)
-            return
-        # Сначала выводим распознанный текст в консоль и лог
-        self._output.print_text(text)
-        # Ответ на заданный фоном вопрос — не команда: перехватываем строку
-        # раньше уровней commands.json (см. orchestrator_ask).
-        if self._take_ask_answer(text):
-            return
-        # 1..3. commands.json → база знаний → Laya/legacy → opencode-cli.
-        self._process_commands_level(text)
+            # Ответ на заданный фоном вопрос — не команда: перехватываем строку
+            # раньше уровней commands.json (см. orchestrator_ask).
+            if self._take_ask_answer(text):
+                return
+            # 1..3. commands.json → база знаний → Laya/legacy → opencode-cli.
+            self._process_commands_level(text)
 
     def _speak_async(self, answer: str) -> None:
         """Запускает озвучку в фоне, оставляя цикл распознавания активным."""

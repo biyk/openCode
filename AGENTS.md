@@ -64,6 +64,7 @@ python main.py
 - `lib/diagnostics/` — `diagnose_cli`, `diagnose_supervisor`.
 - `lib/versioning/` — `version`, `version_gate`, `version_checker`.
 - `lib/providers/` — LLM-провайдеры.
+- `lib/telegram/` — `api` (клиент Bot API), `config` (секция `telegram`), `bot` (polling-поток), `launch` (`start_telegram`).
 
 **НЕ переносить в подпапки**: модули, вызываемые как **`python -m lib.X`** из `targets/*/commands.json` и SKILL.md — `tts`, `reminders`, `tasks`, `plans`, `diagnose`, `browser_control`, `google_calendar`, `sleep_event`, `wake_event`, `task_start`. Их пути — часть конфига и навыков; перенос ломает живые shell-команды. Всё остальное — по подпапкам.
 
@@ -104,6 +105,15 @@ python main.py
 - Любой сбой проверки (COM, не Windows, неизвестное устройство) — **открытый** шлюз (fail-open): оглохнуть из-за сломанного условия хуже, чем из-за музыки.
 - Секция `record_gate` в `targets/<host>/commands.json` (enabled/allowed_device/poll_s/min_peak/ignored_processes), дефолты — `lib/core/tuning.py` (`RECORD_GATE_*`; allowed_device — подстрока имени, регистр не важен). Шлюз собирает `build_record_gate(matcher, output)` в `__init__` worker'а, запускает `run()`, снимает `stop()`.
 - Тесты: `tests/runtime/test_audio_devices.py` (что считается звуком: тишина при Active, пик при state=1, мьют, мёртвый метр), `tests/runtime/test_record_gate.py` (таблица случаев правила, fail-open, скидка на свой TTS, фабрика), `tests/stt/test_worker_record_gate.py` (колбэк и цикл захвата); живые проверки — `python temp/gate_peak.py` (пики всех сессий + вердикт из реального конфига) и `python temp/gate_peak2.py` (поднимает `temp/play_loop.ps1` и показывает, что шлюз закрывается ровно в моменты звука).
+
+### 4.7 Команды из Telegram (`telegram`)
+- Третий источник текста после микрофона и консоли: `lib/telegram/launch.py::start_telegram(worker, output)` поднимает daemon-поток long polling'а (`lib/telegram/bot.py::TelegramBot`) рядом с `task_monitor` (вызывается из `main.py`, там же `stop()`).
+- Сообщение чата идёт **тем же путём, что печать в консоль**: `submit_manual_text(worker, text, reply=sink)` → `Orchestrator.process_text(text, reply=...)`, поэтому правило «трёх строк» (§10) и дописывание триггера не дублируются.
+- `reply` — канал ответа запроса (миксин `lib/core/orchestrator_chat.py`): `_say`/`_report_blocked`/итог opencode уходят в чат, динамики молчат. Голосовой запрос (без reply) снимает канал. Строка чата — не эхо колонок, поэтому окно `_suppress_until` и гейт `_speaking` к ней не применяются; сериализация источников — замком `_input_lock` в `process_text`.
+- Безопасность: бот запускает shell-команды на ПК, поэтому обязателен whitelist `allowed_chat_ids` (или `TELEGRAM_CHAT_IDS` в `.env`) — без него и без токена бот не стартует. Токен **только** из окружения по имени `token_env` (`.env`, в JSON его быть не может — файл в git). Сообщение из неизвестного чата логируется один раз со своим id — его и копировать в whitelist. Управление dev-режимом из чата отвергается (§6).
+- Транспорт — `requests` (`lib/telegram/api.py`) плюс PySocks (он нужен для схемы `socks5h://`, добавлен в `requirements.txt`); `get_updates` возвращает `None` при сбой API (отдельно от пустого списка) → цикл делает паузу `retry_s`. Ответы режутся по `max_len` (4096). Тайминги — `TELEGRAM_*` в `lib/core/tuning.py`, секция `telegram` в `targets/<host>/commands.json` (enabled/token_env/allowed_chat_ids/proxy/poll_timeout_s/retry_s/max_len).
+- **Прокси обязателен на этом ПК**: прямого маршрута до `api.telegram.org:443` нет (TCP-таймаут), есть SOCKS5 `192.168.1.107:1080` — тот же адрес, что у статуса `proxy` (`lib/runtime/status_checkers.py`). Ключ `proxy` (`socks5h://host:port` — DNS тоже через прокси) или `TELEGRAM_PROXY` в `.env`; PySocks уже в окружении. В лог прокси пишется без логина/пароля (`launch.py::proxy_label`), токен вырезается из текста ошибок requests.
+- Тесты: `tests/telegram/test_api.py`, `test_config.py`, `test_bot.py`, `test_bot_factory.py` (мок requests/Api), `tests/core/test_orchestrator_chat.py` (роутинг ответа), `tests/stt/test_text_inputs.py` (проброс reply).
 
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.

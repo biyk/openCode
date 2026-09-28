@@ -7,11 +7,15 @@ from typing import Callable, Optional
 MANUAL_TRIGGER = "пожалуйста"
 
 
-def submit_manual_text(worker, text: str) -> None:
+def submit_manual_text(worker, text: str,
+                       reply: Optional[Callable[[str], None]] = None) -> None:
     """Печатный аналог строки STT: дописывает триггер и гонит в тот же путь.
 
     Ручной ввод не требует кодового слова — если в строке нет триггера,
     в конец добавляется MANUAL_TRIGGER, и команда сопоставляется без изменений.
+
+    reply — канал ответа (чат в Telegram): оркестратор отдаёт результат
+    текстом в него и не озвучивает его колонками.
     """
     from lib.stt.transcription_worker import _fix_encoding
     text = _fix_encoding(text).strip()
@@ -21,7 +25,7 @@ def submit_manual_text(worker, text: str) -> None:
         text = f"{text} {MANUAL_TRIGGER}"
     worker._logger.log_command(text)
     worker._accumulated.append(text)
-    worker._orchestrator.process_text(text)
+    worker._orchestrator.process_text(text, reply=reply)
 
 
 class TextInputs:

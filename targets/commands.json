@@ -107,5 +107,10 @@
     "intent": {
         "enabled": false,
         "include_media": true
+    },
+    "telegram": {
+        "enabled": false,
+        "token_env": "TELEGRAM_BOT_TOKEN",
+        "allowed_chat_ids": []
     }
 }
