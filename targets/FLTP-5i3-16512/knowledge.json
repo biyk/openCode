@@ -109,34 +109,62 @@
             "kind": "command",
             "hits": 0,
             "command": "diagnose"
-        }
-    },
-    "laya": {
+        },
+        "страна фри оку": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Струна Фуриоку"
+        },
+        "нет грязной посуды": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Нет грязной посуды"
+        },
+        "струна фури оку": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Струна Фуриоку"
+        },
         "я застелить кровать": {
             "kind": "command",
             "hits": 0,
             "command": "taskdone",
-            "event": "застелить кровать"
+            "event": "Застелил кровать"
+        },
+        "застелить кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Застелил кровать"
+        },
+        "начал торговать на бирже": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Торговать на бирже"
+        },
+        "пошел чистить зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Почистил зубы утром"
+        },
+        "что меня сейчас": {
+            "kind": "command",
+            "hits": 1,
+            "command": "calendar-plans"
         }
     },
+    "laya": {},
     "undefined": {
         "сколько сейчас время": {
             "kind": "command",
             "hits": 0
         },
-        "струна фури оку": {
-            "kind": "command",
-            "hits": 0
-        },
-        "что счета голову иди суши": {
-            "kind": "command",
-            "hits": 0
-        },
-        "страна фри оку": {
-            "kind": "command",
-            "hits": 0
-        },
-        "нет грязной посуды": {
+        "что у меня сейчас": {
             "kind": "command",
             "hits": 0
         }
