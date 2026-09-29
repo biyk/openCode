@@ -61,48 +61,20 @@ class CommandMatchMixin:
             return None, [], 0.0
         return best_id, tokens[best_len:], best_score
 
-    def find_command(self, window: list[str]) -> tuple[Optional[str], list[str], bool]:
-        """Поиск команды уровня commands.json по концепции трёх строк.
+    def find_command(self, text: str) -> tuple[Optional[str], list[str]]:
+        """Поиск команды уровня commands.json в ОДНОЙ строке.
 
-        window — последние строки потока (по порядку поступления).
-        Возвращает (cmd_id, настройки, wait):
-          - wait=True → в последней строке ключ, команды пока нет:
-            ждём следующую строку ввода и ищем команду в ней;
-          - cmd_id не None → команда найдена (настройки собраны);
-          - (None, [], False) → ложный вызов: вокруг ключа команд нет.
+        Триггер и команда должны стоять в одной строке: ядро строки
+        (текст без триггеров) матчится на команду. Соседние строки не
+        смотрим и следующую не ждём. Возвращает (cmd_id, настройки);
+        (None, []) — команды в строке нет.
         """
         self.reload()
-        window = [_normalize(w) for w in window]
-        key_idx = None
-        for i, line in enumerate(window):
-            if self.has_trigger(line):
-                key_idx = i
-        if key_idx is None:
-            return None, [], False
-        candidates = [(0, self.core_phrase(window[key_idx]))]
-        if key_idx > 0:
-            candidates.append((-1, self.core_phrase(window[key_idx - 1])))
-        if key_idx < len(window) - 1:
-            candidates.append((1, self.core_phrase(window[key_idx + 1])))
-        best_match = None  # (пишк score, порядок приоритета, cmd_id, settings)
-        for pos, cand in candidates:
-            if not cand.strip():
-                continue
-            cmd_id, settings, score = self._match_command(cand)
-            if cmd_id is None:
-                continue
-            candidate = (score, -abs(pos), cmd_id, settings)
-            if best_match is None or candidate[:2] > best_match[:2]:
-                best_match = candidate
-        if best_match is not None:
-            return best_match[2], best_match[3], False
-        # Ждём следующую строку только если ключ — последняя строка и в ней
-        # кроме триггеров больше ничего нет (команда ожидается после ключа).
-        # Иначе — не распознано, уходим к дисижн-слою (Laya).
-        if key_idx >= len(window) - 1 and not self.core_phrase(
-                window[key_idx]).strip():
-            return None, [], True
-        return None, [], False
+        if not self.has_trigger(text):
+            return None, []
+        cmd_id, settings, _score = self._match_command(
+            self.core_phrase(text))
+        return cmd_id, settings
 
     def settings_for(self, cmd_id: str) -> dict:
         """Возвращает секцию настроек команды {"слово": {"param": множитель}}."""

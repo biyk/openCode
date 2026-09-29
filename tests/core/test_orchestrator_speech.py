@@ -18,7 +18,7 @@ class TestOrchestratorSpeech:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_command.return_value = (None, [], False)
+            orch._matcher.find_command.return_value = (None, [])
             orch._matcher.missing_requires.return_value = []
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
@@ -103,7 +103,7 @@ class TestOrchestratorSpeech:
         opencode = mocker.MagicMock()
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch._opencode_active = True
@@ -118,7 +118,7 @@ class TestOrchestratorSpeech:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста расскажи")
@@ -134,7 +134,7 @@ class TestOrchestratorSpeech:
         opencode.run.return_value = "Запоздавший ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.side_effect = [False, True]
         orch.process_text("пожалуйста расскажи")

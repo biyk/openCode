@@ -19,7 +19,7 @@ class TestOrchestratorDevmode:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_command.return_value = (None, [], False)
+            orch._matcher.find_command.return_value = (None, [])
             orch._matcher.missing_requires.return_value = []
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
@@ -79,7 +79,7 @@ class TestOrchestratorDevmode:
         orch = self._make(mocker, opencode=opencode)
         orch._dev_mode = True
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = []
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
@@ -106,7 +106,7 @@ class TestOrchestratorDevmode:
         on_exit = mocker.MagicMock()
         orch = self._make(mocker, on_exit=on_exit)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.core_phrase.return_value = DEV_MODE_EXIT_PHRASE
         orch.process_text(DEV_MODE_EXIT_PHRASE)
         on_exit.assert_not_called()

@@ -140,9 +140,9 @@ class TestTriggers:
             json.dump(cfg, f)
         from lib.voice_cmd.commands import CommandMatcher
         matcher = CommandMatcher(path)
-        assert matcher.find_command(["алиса анализ"]) == (
-            "diagnose", [], False)
-        assert matcher.find_command(["алиса проверь логи"]) == (
-            "diagnose", [], False)
-        assert matcher.find_command(["пожалуйста выключи"]) == (
-            "stop", [], False)
+        assert matcher.find_command("алиса анализ") == (
+            "diagnose", [])
+        assert matcher.find_command("алиса проверь логи") == (
+            "diagnose", [])
+        assert matcher.find_command("пожалуйста выключи") == (
+            "stop", [])

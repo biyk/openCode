@@ -1,8 +1,8 @@
 """Тесты команд списка покупок на живом конфиге устройства.
 
-Уровень 1 (правило «трёх строк», §10 AGENTS.md) проверяется по реальному
-targets/FLTP-5i3-16512/commands.json: шаблоны «купил» и «купить» похожи
-(≈0.91), и тест гарантирует, что они не перетягивают друг друга, а
+Уровень 1 (триггер и команда в одной строке, §10 AGENTS.md) проверяется по
+реальному targets/FLTP-5i3-16512/commands.json: шаблоны «купил» и «купить»
+похожи (≈0.91), и тест гарантирует, что они не перетягивают друг друга, а
 {{text}} собирает название товара.
 """
 
@@ -32,28 +32,30 @@ def config():
 
 def test_add_and_bought_do_not_steal_each_other(matcher):
     """«нужно купить X» → shop-add, «купил X» → shop-bought, товар — настройка."""
-    assert matcher.find_command(["алиса нужно купить молоко"]) == (
-        "shop-add", ["молоко"], False)
-    assert matcher.find_command(["алиса купил молоко"]) == (
-        "shop-bought", ["молоко"], False)
-    assert matcher.find_command(["алиса я купил хлеб"]) == (
-        "shop-bought", ["хлеб"], False)
+    assert matcher.find_command("алиса нужно купить молоко") == (
+        "shop-add", ["молоко"])
+    assert matcher.find_command("алиса купил молоко") == (
+        "shop-bought", ["молоко"])
+    assert matcher.find_command("алиса я купил хлеб") == (
+        "shop-bought", ["хлеб"])
 
 
 def test_add_to_shopping_list_phrase(matcher):
     """Регресс: «добавь в список покупок X» — level 1, без Laya/EventMatch."""
     assert matcher.find_command(
-        ["алиса добавь в список покупок осушитель воздуха"]) == (
-        "shop-add", ["осушитель", "воздуха"], False)
+        "алиса добавь в список покупок осушитель воздуха") == (
+        "shop-add", ["осушитель", "воздуха"])
     assert matcher.find_command(
-        ["алиса внеси в список покупок молоко"]) == (
-        "shop-add", ["молоко"], False)
+        "алиса внеси в список покупок молоко") == (
+        "shop-add", ["молоко"])
 
 
-def test_command_on_line_after_key(matcher):
-    """Ключ в одной строке, команда в следующей — три строки потока (§10)."""
-    assert matcher.find_command(["алиса", "надо купить сыр"]) == (
-        "shop-add", ["сыр"], False)
+def test_command_and_key_must_share_line(matcher):
+    """Ключ и команда в разных строках больше не склеиваются (правило §10)."""
+    assert matcher.find_command("алиса") == (None, [])
+    assert matcher.find_command("надо купить сыр") == (None, [])
+    assert matcher.find_command("алиса надо купить сыр") == (
+        "shop-add", ["сыр"])
 
 
 def test_templates_pass_product_to_cli(matcher):

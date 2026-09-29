@@ -74,13 +74,12 @@ def matcher() -> CommandMatcher:
 
 def test_sleepmode_phrase_matches_command(matcher):
     """«спать»/«я спать»/«я пошел спать» (и варианты) матчатся на sleepmode."""
-    for window in (["алиса спать"], ["алиса я спать"],
-                   ["алиса я лег спать"], ["лег спать пожалуйста"],
-                   ["алиса я лёг спать"], ["алиса я пошел спать"],
-                   ["алиса я пошёл спать"]):
-        cmd_id, _settings, wait = matcher.find_command(window)
-        assert cmd_id == "sleepmode", f"{window}: ожидался sleepmode, получил {cmd_id}"
-        assert not wait
+    for text in ("алиса спать", "алиса я спать",
+                 "алиса я лег спать", "лег спать пожалуйста",
+                 "алиса я лёг спать", "алиса я пошел спать",
+                 "алиса я пошёл спать"):
+        cmd_id, _settings = matcher.find_command(text)
+        assert cmd_id == "sleepmode", f"{text}: ожидался sleepmode, получил {cmd_id}"
 
 
 def test_sleepmode_sequence_steps_resolvable(matcher):
@@ -93,11 +92,10 @@ def test_sleepmode_sequence_steps_resolvable(matcher):
 
 def test_wake_phrase_matches_command(matcher):
     """«я проснулся»/«я встал»/«доброе утро» матчатся на команду wakefix."""
-    for window in (["алиса я проснулся"], ["алиса проснулся"],
-                   ["алиса я встал"], ["доброе утро пожалуйста"]):
-        cmd_id, _settings, wait = matcher.find_command(window)
-        assert cmd_id == "wakefix", f"{window}: ожидался wakefix, получил {cmd_id}"
-        assert not wait
+    for text in ("алиса я проснулся", "алиса проснулся",
+                 "алиса я встал", "доброе утро пожалуйста"):
+        cmd_id, _settings = matcher.find_command(text)
+        assert cmd_id == "wakefix", f"{text}: ожидался wakefix, получил {cmd_id}"
 
 
 def test_wakefix_command_resolvable(matcher):
@@ -108,12 +106,13 @@ def test_wakefix_command_resolvable(matcher):
 
 def test_taskstart_matches_and_renders(matcher):
     """«я начал {задача}» → taskstart с настройками; {{text}} подставлен."""
-    for window, settings in (
-            (["алиса я начал починить велосипед"], ["починить", "велосипед"]),
-            (["алиса я приступил к отчету"], ["к", "отчету"]),
-            (["я начал мыть посуду пожалуйста"], ["мыть", "посуду"])):
-        cmd_id, got, wait = matcher.find_command(window)
-        assert (cmd_id, list(got), wait) == ("taskstart", settings, False), window
+    for text, settings in (
+            ("алиса я начал починить велосипед",
+             ["починить", "велосипед"]),
+            ("алиса я приступил к отчету", ["к", "отчету"]),
+            ("я начал мыть посуду пожалуйста", ["мыть", "посуду"])):
+        cmd_id, got = matcher.find_command(text)
+        assert (cmd_id, list(got)) == ("taskstart", settings), text
     cmd = matcher.get_command("taskstart", ("помыть", "пол"))
     assert cmd == 'python -m lib.task_start "помыть пол"'
 

@@ -17,7 +17,7 @@ class TestOrchestratorIntent:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_command.return_value = (None, [], False)
+            orch._matcher.find_command.return_value = (None, [])
             orch._matcher.missing_requires.return_value = []
             orch._matcher.needs_text.return_value = False
             orch._matcher.triggers = ["пожалуйста", "алиса"]
@@ -31,7 +31,7 @@ class TestOrchestratorIntent:
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = ["media"]
         orch._matcher.status_snapshot.return_value = {"media": False}
         orch.process_text("пожалуйста включи")
@@ -48,7 +48,7 @@ class TestOrchestratorIntent:
         intent.detect.return_value = "openyoutube"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста включи и ютюб")
         intent.detect.assert_called_once()
@@ -61,7 +61,7 @@ class TestOrchestratorIntent:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста сделай кромку")
         text, context = intent.detect.call_args.args
@@ -82,7 +82,7 @@ class TestOrchestratorIntent:
         intent.detect.return_value = "volumeup"
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.execute_by_id.return_value = False
         orch.process_text("пожалуйста сделай кромку")
         orch._matcher.execute_by_id.assert_called_once_with("volumeup")
@@ -97,7 +97,7 @@ class TestOrchestratorIntent:
         intent.detect.return_value = "openyoutube"
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.execute_by_id.return_value = False
         orch._matcher.missing_requires.return_value = ["proxy"]
         orch._matcher.need_message.return_value = "Проверь доступность прокси"

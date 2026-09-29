@@ -57,7 +57,7 @@ class Checker:
         return self._matcher.core_phrase(text)
 
     def recognized(self, text: str) -> bool:
-        if self._matcher.find_command([text])[0] is not None:
+        if self._matcher.find_command(text)[0] is not None:
             return True
         return self._laya(text, self._commands_file) is not None
 

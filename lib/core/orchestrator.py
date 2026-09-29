@@ -13,7 +13,6 @@
 import queue
 import threading
 import time
-from collections import deque
 from typing import Any, Callable, Optional
 
 from lib.voice_cmd.commands import CommandMatcher
@@ -27,10 +26,6 @@ from lib.core.orchestrator_memory import OrchestratorMemoryMixin
 from lib.core.orchestrator_opencode import OrchestratorOpencodeMixin
 from lib.core.orchestrator_speech import OrchestratorSpeechMixin
 from lib.core.output import TranscriptionOutput
-
-# Сколько последних строк потока держим для поиска команды уровня
-# commands.json (концепция «трёх строк»: над ключом / с ключом / после ключа).
-COMMAND_WINDOW_SIZE = 4
 
 
 class Orchestrator(
@@ -86,11 +81,9 @@ class Orchestrator(
         self._pending_ask = None
         self._reply = None
         # Строки микрофона и сообщения чата идут в один пайплайн: общее
-        # состояние (окно «трёх строк», озвучка, ожидаемый ответ) не должно
-        # рваться посередине обработки другого источника.
+        # состояние (озвучка, ожидаемый ответ) не должно рваться
+        # посередине обработки другого источника.
         self._input_lock = threading.Lock()
-        self._window: deque[str] = deque(
-            maxlen=COMMAND_WINDOW_SIZE)
 
     @property
     def dev_mode(self) -> bool:

@@ -32,12 +32,11 @@ class TestDecisionChainWithDefectiveSpeech:
     def test_commands_fails_then_laya_returns_right_command(
             self, matcher, mocker, phrase, expected):
         """commands.json не находит команду, Laya даёт правильную."""
-        cmd_id, _settings, wait = matcher.find_command([phrase])
+        cmd_id, _settings = matcher.find_command(phrase)
         assert cmd_id is None, (
             f"{phrase}: commands.json не должен находить команду, "
             f"найдена {cmd_id}"
         )
-        assert not wait
 
         decision = mocker.MagicMock()
         decision.detect.return_value = (expected, 0.99, 0.25)
@@ -59,10 +58,9 @@ class TestDecisionChainWithDefectiveSpeech:
 
     def test_clean_phrase_matches_at_level_one(self, matcher):
         """Нормальная «открой ютуб» ловится commands.json без Laya."""
-        cmd_id, _settings, wait = matcher.find_command(
-            ["алиса открой ютуб"])
+        cmd_id, _settings = matcher.find_command(
+            "алиса открой ютуб")
         assert cmd_id == "openyoutube"
-        assert not wait
 
     def test_laya_command_gets_phrase_as_text(self, matcher, mocker):
         """Laya дала {{text}}-команду — ядро фразы уходит ей как текст."""

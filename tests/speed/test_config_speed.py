@@ -35,14 +35,14 @@ class TestConfigSpeed:
         matcher = CommandMatcher(_commands_file())
         bench.record("config.find_command",
                      lambda: matcher.find_command(
-                         ["алиса выключи музыку"]), runs=20)
+                         "алиса выключи музыку"), runs=20)
 
     def test_find_command_miss(self, bench):
         """Промах по порогу 90% (худший случай: перебор всех шаблонов)."""
         matcher = CommandMatcher(_commands_file())
         bench.record("config.find_command_miss",
                      lambda: matcher.find_command(
-                         ["алиса совершенно не команда вот прям совсем"]),
+                         "алиса совершенно не команда вот прям совсем"),
                      runs=20)
 
     def test_knowledge_resolve(self, bench):

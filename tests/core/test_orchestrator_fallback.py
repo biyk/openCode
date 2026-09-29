@@ -17,7 +17,7 @@ class TestOrchestratorFallback:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_command.return_value = (None, [], False)
+            orch._matcher.find_command.return_value = (None, [])
             orch._matcher.missing_requires.return_value = []
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
@@ -28,7 +28,7 @@ class TestOrchestratorFallback:
         """Строка без триггера и без команды просто печатается."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = False
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch.process_text("привет мир")
         orch._output.print_text.assert_called_once_with("привет мир")
         orch._matcher.execute_by_id.assert_not_called()
@@ -54,7 +54,7 @@ class TestOrchestratorFallback:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста расскажи")
@@ -81,7 +81,7 @@ class TestOrchestratorFallback:
         opencode.run.return_value = None
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста что-то")
@@ -96,7 +96,7 @@ class TestOrchestratorFallback:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста сделай кромку")
@@ -112,7 +112,7 @@ class TestOrchestratorFallback:
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False
         orch.process_text("пожалуйста неизвестный запрос")
@@ -130,7 +130,7 @@ class TestOrchestratorFallback:
         opencode.run.return_value = "Ответ"
         orch = self._make(mocker, opencode=opencode)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = ["media"]
         orch._abort_playback = mocker.MagicMock()
         orch._abort_playback.is_set.return_value = False

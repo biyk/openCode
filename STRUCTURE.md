@@ -311,7 +311,7 @@ voice
 │   │   └── test_status_speed.py  # Замеры проверок статусов (живые: TCP, PowerShell, CDP) и худшего пути блокировки команды ensure()/missing_requires()
 │   ├── stt/  # Автотесты STT-слоя: сквозная интеграция распознавания речи в команду.
 │   │   ├── __init__.py  # Пакет автотестов STT-слоя.
-│   │   ├── test_stt_command_integration.py  # Интеграция STT→команда: реальный worker.run() c настоящим Orchestrator и CommandMatcher (мокнуты лишь Vosk, микрофон и shell) — базовый матч, настройка {сильно}, ключ после команды, правило «ждём следующую строку», {{text}}, sequence по шагам, ложный вызов.
+│   │   ├── test_stt_command_integration.py  # Интеграция STT→команда: реальный worker.run() c настоящим Orchestrator и CommandMatcher (мокнуты лишь Vosk, микрофон и shell) — базовый матч, настройка {сильно}, ключ после команды в той же строке, {{text}}, sequence по шагам, ложный вызов.
 │   │   ├── test_text_inputs.py  # Тесты ручного ввода: TextInputs.run (строки в on_text, пустые/выход/EOF/не-TTY) и submit_manual_text (дописывает триггер к печатной команде без ключа).
 │   │   └── test_worker_record_gate.py  # Тесты шлюза в worker'е: аудио-колбэк не кладёт кадры при blocked, кладёт без шлюза; run() поднимает поток опроса, stop() снимает, переключение шлюза сбрасывает распознаватель
 │   ├── synth/  # Автотесты синтеза речи: движки, конвейер, воспроизведение.
@@ -350,7 +350,7 @@ voice
 │   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.
 │   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
 │   │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
-│   │   ├── test_commands_find.py  # Тесты CommandMatcher: концепция трех строк, find_command.
+│   │   ├── test_commands_find.py  # Тесты CommandMatcher: ключ и команда в одной строке, find_command.
 │   │   ├── test_commands_live.py  # Живые функциональные тесты команд: реально запускают volumeup/volumedown и проверяют изменение системной громкости через Core Audio API.
 │   │   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
 │   │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
@@ -380,7 +380,7 @@ voice
 │   ├── test_main_run.py  # Тесты воркера: очередь аудио.
 │   ├── test_main_run_abort.py  # Тесты воркера: стоп-слова и ошибки.
 │   └── test_main_worker.py  # Тесты воркера: инициализация и колбэки.
-├── AGENTS.md  # Руководство для агентов Voice Control: правила коммитов (только по команде), version gate, команды сборки/тестов, архитектура (Vosk STT → Orchestrator), Google Calendar/ Tasks, аудио и стоп-слова, LLM-провайдеры (race), концепция голосовых команд (commands.json, 90% порог, концепция трёх строк).
+├── AGENTS.md  # Руководство для агентов Voice Control: правила коммитов (только по команде), version gate, команды сборки/тестов, архитектура (Vosk STT → Orchestrator), Google Calendar/ Tasks, аудио и стоп-слова, LLM-провайдеры (race), концепция голосовых команд (commands.json, 90% порог, ключ и команда в одной строке).
 ├── COMMANDS.md  # Это файл‑документация, в котором описаны голосовые команды, их триггеры, соответствующие навыки, параметры и вызываемые скрипты, служит справочником для работы голосового ассистента.
 ├── README.md  # README.md — это файл описания проекта, содержащий инструкцию по установке, использованию и функционалу голосового помощника для Windows.
 ├── SPEED.md  # Документ скоростных замеров: как запускать tests/speed, baseline-метрики, план оптимизаций и журнал «до/после»

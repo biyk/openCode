@@ -49,16 +49,8 @@ class OrchestratorDecisionMixin:
 
     def _process_commands_level(self, text: str) -> None:
         """Обрабатывает цепочку: commands.json → Laya/legacy → opencode."""
-        # 1. Команды commands.json — концепция «трёх строк».
-        self._window.append(text)
-        cmd_id, settings, wait = self._matcher.find_command(
-            list(self._window))
-        if wait:
-            # Ключ есть, команды вокруг него нет — ждём следующую строку.
-            self._output.print_info(
-                "[Command] commands.json: ключ есть, команды нет — "
-                "ждём следующую строку")
-            return
+        # 1. Команды commands.json — триггер и команда в одной строке.
+        cmd_id, settings = self._matcher.find_command(text)
         blocked: list[tuple[str, list[str]]] = []
         if cmd_id is not None:
             missing = self._matcher.missing_requires(cmd_id)
@@ -71,10 +63,8 @@ class OrchestratorDecisionMixin:
                     self._chat_done(cmd_id)
                 else:
                     self._chat_reply(f"Команда «{cmd_id}» не выполнена")
-                self._window.clear()
                 return
             blocked = [(cmd_id, missing)]
-            self._window.clear()
             self._output.print_info(
                 f"[Command] Команда {cmd_id} найдена, но заблокирована: "
                 f"нет статуса: {', '.join(missing)}")

@@ -14,7 +14,7 @@ def _make(mocker, **kwargs):
     defaults.update(kwargs)
     orch = Orchestrator(**defaults)
     if "matcher" not in kwargs:
-        orch._matcher.find_command.return_value = (None, [], False)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.has_trigger.return_value = False
         orch._matcher.core_phrase.side_effect = lambda text: text
     mocker.patch.object(orch, "_say")

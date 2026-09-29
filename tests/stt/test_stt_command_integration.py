@@ -7,8 +7,8 @@ TranscriptionWorker-каркас, настоящий Orchestrator и насто�
 что заглушка что-то вернула.
 
 Покрываем ветки конфига (§10): базовый матч, настройки {сильно}, ключ после
-команды, правило «ждём следующую строку» (команда в строке после ключа),
-свободный текст {{text}}, sequence по шагам, ложный вызов, стоп-слово в речи.
+команды (в той же строке), свободный текст {{text}}, sequence по шагам,
+ложный вызов, ключ и команда в разных строках (не склеиваются).
 """
 import json
 import os
@@ -131,12 +131,13 @@ class TestSttToCommandIntegration:
             mocker, commands_file, ["сделай громче пожалуйста"])
         assert executed == ["echo volumeup 6"]
 
-    def test_command_on_line_after_bare_key(self, mocker, commands_file):
-        """Пустое ядро ключа → ждём строку: команда находится в следующей."""
+    def test_key_and_command_on_different_lines_not_matched(
+            self, mocker, commands_file):
+        """Ключ и команда в разных строках не склеиваются: ничего не исполняется."""
         executed = self._run_chain(
             mocker, commands_file,
             ["алиса", "выключи"])
-        assert executed == ["echo stop"]
+        assert executed == []
 
     def test_free_text_goes_into_command(self, mocker, commands_file):
         """{{text}} собирает название задачи после команды."""

@@ -27,7 +27,7 @@ def _build(tmp_path, llm, needs_text=True, missing=()):
     matcher.triggers = ("алиса",)
     matcher.has_trigger.side_effect = lambda t: any(
         w in t for w in matcher.triggers)
-    matcher.find_command.return_value = (None, [], False)
+    matcher.find_command.return_value = (None, [])
     matcher.core_phrase.side_effect = lambda t: t.replace("алиса ", "").strip()
     matcher.match_config.return_value = {
         "task-add": ["поставь задачу", "добавь задачу"],

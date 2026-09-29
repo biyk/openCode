@@ -6,7 +6,7 @@ from lib.core.orchestrator import Orchestrator
 from lib.voice_cmd.knowledge import LAYA, KnowledgeStore
 
 
-def _build(tmp_path, core, decision, find=(None, [], False),
+def _build(tmp_path, core, decision, find=(None, []),
            missing=None):
     """Оркестратор с настоящим KnowledgeStore и моками matcher/decision."""
     knowledge = KnowledgeStore(str(tmp_path / "knowledge.json"))
@@ -41,6 +41,6 @@ class TestRememberCandidate:
         decision.detect.return_value = ("openyoutube", 0.9, 0.1)
         orch, knowledge = _build(
             tmp_path, "открой ютюб", decision,
-            find=("openyoutube", [], False), missing=["proxy"])
+            find=("openyoutube", []), missing=["proxy"])
         orch.process_text("алиса открой ютюб")
         assert knowledge.entries(LAYA) == {}

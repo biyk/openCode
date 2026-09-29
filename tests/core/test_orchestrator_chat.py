@@ -29,7 +29,7 @@ def _make(mocker, **kwargs):
     orch = Orchestrator(matcher=mocker.MagicMock(), output=mocker.MagicMock(),
                         tts=mocker.MagicMock(), **kwargs)
     m = orch._matcher
-    m.find_command.return_value = (None, [], False)
+    m.find_command.return_value = (None, [])
     m.missing_requires.return_value = []
     m.has_trigger.return_value = True
     m.core_phrase.return_value = "пауза"
@@ -43,7 +43,7 @@ def _make(mocker, **kwargs):
 class TestGates:
     def test_command_replies_done_without_tts(self, mocker):
         orch = _make(mocker)
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         sink = Sink()
         orch.process_text("пожалуйста пауза", reply=sink)
         assert sink.texts == ["Выполнено: playpause"]
@@ -52,7 +52,7 @@ class TestGates:
 
     def test_failed_command_is_reported_to_chat(self, mocker):
         orch = _make(mocker)
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.execute_by_id.return_value = False
         sink = Sink()
         orch.process_text("пожалуйста пауза", reply=sink)
@@ -61,7 +61,7 @@ class TestGates:
     def test_chat_ignores_suppress_window(self, mocker):
         """Строка чата — не эхо колонок: окно затишья её не тормозит."""
         orch = _make(mocker)
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._suppress_until = time.monotonic() + 60
         sink = Sink()
         orch.process_text("пожалуйста пауза", reply=sink)
@@ -71,7 +71,7 @@ class TestGates:
     def test_chat_ignores_speaking_gate(self, mocker):
         """Пока идёт озвучка, чат всё равно исполняет команду."""
         orch = _make(mocker)
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._speaking = True
         sink = Sink()
         orch.process_text("пожалуйста пауза", reply=sink)
@@ -92,12 +92,12 @@ class TestGates:
         orch = _make(mocker)
         seen = {}
 
-        def find(_lines):
+        def find(_text):
             got = orch._input_lock.acquire(blocking=False)
             seen["free"] = got
             if got:
                 orch._input_lock.release()
-            return (None, [], False)
+            return (None, [])
 
         orch._matcher.find_command.side_effect = find
         orch.process_text("пожалуйста пауза", reply=Sink())
@@ -172,7 +172,7 @@ class TestLevelReports:
         """Сбой отправки не роняет обработку команды."""
         log = mocker.patch("lib.core.orchestrator_chat.swallowed")
         orch = _make(mocker)
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch.process_text("пожалуйста пауза", reply=Sink(fail=True))
         assert log.call_args.args[0] == "chat.reply"
         orch._matcher.execute_by_id.assert_called_once()

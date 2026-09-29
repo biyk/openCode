@@ -91,11 +91,11 @@ class TestCommandTemplates:
         })
         try:
             matcher = CommandMatcher(path)
-            assert matcher.find_command([
+            assert matcher.find_command(
                 "алиса напомни через тридцать минут сходить в магазин",
-            ]) == ("calendar-reminder", [
+            ) == ("calendar-reminder", [
                 "через", "тридцать", "минут", "сходить", "в", "магазин",
-            ], False)
+            ])
         finally:
             os.unlink(path)
 
@@ -116,9 +116,9 @@ class TestCommandTemplates:
         })
         try:
             matcher = CommandMatcher(path)
-            assert matcher.find_command([
+            assert matcher.find_command(
                 "алиса поставь напоминание позвонить маме",
-            ]) == ("calendar-reminder", ["позвонить", "маме"], False)
+            ) == ("calendar-reminder", ["позвонить", "маме"])
         finally:
             os.unlink(path)
 
@@ -137,9 +137,9 @@ class TestCommandTemplates:
         })
         try:
             matcher = CommandMatcher(path)
-            assert matcher.find_command([
+            assert matcher.find_command(
                 "пожалуйста создай задачу убраться у кошки",
-            ]) == ("task-add", ["убраться", "у", "кошки"], False)
+            ) == ("task-add", ["убраться", "у", "кошки"])
         finally:
             os.unlink(path)
 

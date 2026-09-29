@@ -19,7 +19,7 @@ def _build(tmp_path, seed=None, core="дичь", needs_text=False, decision=None
             json.dump(seed, f, ensure_ascii=False)
     knowledge = KnowledgeStore(kpath)
     matcher = MagicMock()
-    matcher.find_command.return_value = (None, [], False)
+    matcher.find_command.return_value = (None, [])
     matcher.has_trigger.return_value = True
     matcher.core_phrase.return_value = core
     matcher.missing_requires.return_value = []

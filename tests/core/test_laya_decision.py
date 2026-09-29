@@ -119,7 +119,7 @@ class TestOrchestratorDecisionPath:
 
     def _make(self, mocker, decision):
         matcher = mocker.MagicMock()
-        matcher.find_command.return_value = (None, [], False)
+        matcher.find_command.return_value = (None, [])
         matcher.missing_requires.return_value = []
         matcher.has_trigger.return_value = True
         matcher.needs_text.return_value = False

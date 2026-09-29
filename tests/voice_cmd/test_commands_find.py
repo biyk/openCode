@@ -1,4 +1,4 @@
-"""Тесты CommandMatcher: концепция «трёх строк» (find_command)."""
+"""Тесты CommandMatcher: триггер и команда в одной строке (find_command)."""
 import pytest
 import os
 import tempfile
@@ -85,61 +85,47 @@ class TestCommandFind:
     def test_find_command_key_with_command_same_line(self, temp_commands_file):
         """[Алиса] _сделай громче_ — команда в строке ключа."""
         matcher = CommandMatcher(temp_commands_file)
-        assert matcher.find_command(["алиса сделай громче"]) == (
-            "volumeup", [], False)
+        assert matcher.find_command("алиса сделай громче") == (
+            "volumeup", [])
 
-    def test_find_command_command_before_key_previous_line(self):
-        """_выключи_ / [Пожалуйста] — команда над ключом."""
+    def test_find_command_command_and_key_split_lines_not_matched(self):
+        """Команда и ключ в разных строках — не склеиваются (новое правило)."""
         matcher = CommandMatcher(self._full_cfg()())
-        assert matcher.find_command([
-            "как же меня это достало", "выключи", "пожалуйста"
-        ]) == ("stop", [], False)
-
-    def test_find_command_command_after_key_next_line(self, temp_commands_file):
-        """[Алиса] в строке, команда — следующей строкой."""
-        matcher = CommandMatcher(temp_commands_file)
-        assert matcher.find_command(["какая же ты тупая алиса"]) == (
-            None, [], False)
-        assert matcher.find_command([
-            "какая же ты тупая алиса", "сделай громче немного"
-        ]) == ("volumeup", ["немного"], False)
+        assert matcher.find_command("выключи") == (None, [])
+        assert matcher.find_command("пожалуйста") == (None, [])
+        assert matcher.find_command("алиса выключи") == ("stop", [])
 
     def test_find_command_settings_strong(self, temp_commands_file):
         """{сильно} удваивает шаг громкости."""
         matcher = CommandMatcher(temp_commands_file)
-        assert matcher.find_command(["алиса сделай громче сильно"]) == (
-            "volumeup", ["сильно"], False)
+        assert matcher.find_command("алиса сделай громче сильно") == (
+            "volumeup", ["сильно"])
 
     def test_find_command_fuzzy_match_above_threshold(self):
         """Фраза близкая к шаблону (≥90%) распознаётся (не дословно)."""
         matcher = CommandMatcher(self._full_cfg()())
-        assert matcher.find_command(["пожалуйста сделой громче"]) == (
-            "volumeup", [], False)
+        assert matcher.find_command("пожалуйста сделой громче") == (
+            "volumeup", [])
 
     def test_find_command_fuzzy_below_threshold_rejected(self):
         """Совпадение ниже 90% — мимо: не угадываем, уходим к Laya."""
         matcher = CommandMatcher(self._full_cfg()())
-        assert matcher.find_command(["пожалуйста сделаыми громче"]) == (
-            None, [], False)
+        assert matcher.find_command("пожалуйста сделаыми громче") == (
+            None, [])
 
-    def test_find_command_no_command_around_key(self):
-        """Ключ без команды вокруг — ложный вызов."""
+    def test_find_command_no_command_in_line(self):
+        """Ключ без команды в строке — ложный вызов."""
         matcher = CommandMatcher(self._full_cfg()())
-        assert matcher.find_command(["але все плохо"]) == (None, [], False)
+        assert matcher.find_command("але все плохо") == (None, [])
+        assert matcher.find_command("да блин какая же ты тупая алиса") == (
+            None, [])
 
-    def test_find_command_no_command_when_key_last_line_not_wait(
-            self, temp_commands_file):
-        """Ключ последний, слова есть, но команды нет — не ждём, к Laya."""
+    def test_find_command_bare_trigger_no_wait(self, temp_commands_file):
+        """Голый ключ без содержания — не ждём, возвращаем промах."""
         matcher = CommandMatcher(temp_commands_file)
-        assert matcher.find_command(["да блин", "какая же ты тупая алиса"]) == (
-            None, [], False)
-
-    def test_find_command_bare_trigger_waits(self, temp_commands_file):
-        """Голый ключ без содержания — ждём следующую строку."""
-        matcher = CommandMatcher(temp_commands_file)
-        assert matcher.find_command(["пожалуйста"]) == (None, [], True)
-        assert matcher.find_command(["алиса"]) == (None, [], True)
-        assert matcher.find_command(["алиса пожалуйста"]) == (None, [], True)
+        assert matcher.find_command("пожалуйста") == (None, [])
+        assert matcher.find_command("алиса") == (None, [])
+        assert matcher.find_command("алиса пожалуйста") == (None, [])
 
     def test_find_command_settings_multiplier_applied(self, tmp_path, mocker):
         """Настройки меняют {{step}} через секцию settings."""

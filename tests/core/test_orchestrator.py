@@ -18,7 +18,7 @@ class TestOrchestratorProcess:
         defaults.update(kwargs)
         orch = Orchestrator(**defaults)
         if "matcher" not in kwargs:
-            orch._matcher.find_command.return_value = (None, [], False)
+            orch._matcher.find_command.return_value = (None, [])
             orch._matcher.missing_requires.return_value = []
             orch._matcher.triggers = ["пожалуйста", "алиса"]
             orch._matcher.status_snapshot.return_value = {}
@@ -95,7 +95,7 @@ class TestOrchestratorProcess:
         """Дословная команда с триггером выполняется (id в print_info)."""
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("пожалуйста пауза")
@@ -110,7 +110,7 @@ class TestOrchestratorProcess:
         orch = self._make(mocker)
         orch._matcher.has_trigger.return_value = True
         orch._matcher.find_command.return_value = (
-            "volumeup", ["немного"], False)
+            "volumeup", ["немного"])
         orch._matcher.missing_requires.return_value = []
         orch._matcher.execute_by_id.return_value = True
         orch.process_text("алиса сделай громче немного")
@@ -119,54 +119,29 @@ class TestOrchestratorProcess:
         orch._output.print_info.assert_any_call(
             "[Command] Распознана команда: volumeup (настройки: немного)")
 
-    def test_process_text_command_blocked_clears_window(self, mocker):
-        """Заблокированная команда очищает окно и идёт в intent."""
+    def test_process_text_command_blocked_goes_to_intent(self, mocker):
+        """Заблокированная команда отдаётся дальше в intent."""
         intent = mocker.MagicMock()
         intent.detect.return_value = None
         orch = self._make(mocker, intent=intent)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
+        orch._matcher.find_command.return_value = ("playpause", [])
         orch._matcher.missing_requires.return_value = ["media"]
         orch._matcher.status_snapshot.return_value = {"media": False}
         orch.process_text("пожалуйста включи")
-        assert len(orch._window) == 0
         text, context = intent.detect.call_args.args
         assert context["blocked"] == [("playpause", ["media"])]
 
-    def test_process_text_wait_holds_for_next_line(self, mocker):
-        """wait=True — ничего не выполняем, ждём следующую строку."""
-        orch = self._make(mocker)
+    def test_process_text_bare_trigger_not_matched(self, mocker):
+        """Голый ключ без команды в строке — не ждём, уходим к Laya."""
+        decision = mocker.MagicMock()
+        decision.detect.return_value = None
+        orch = self._make(mocker, decision=decision)
         orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], True)
+        orch._matcher.find_command.return_value = (None, [])
         orch._matcher.missing_requires.return_value = []
-        orch.process_text("какая же ты тупая алиса")
+        orch._matcher.core_phrase.return_value = ""
+        orch.process_text("алиса")
         orch._matcher.execute_by_id.assert_not_called()
-        orch._output.print_text.assert_called_once_with("какая же ты тупая алиса")
-        orch._matcher.find_command.assert_called_once_with(["какая же ты тупая алиса"])
-
-    def test_process_text_window_grows_across_lines(self, mocker):
-        """Окно строк накапливается: команда находит письмо по ключу."""
-        orch = self._make(mocker)
-        orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = (None, [], True)
-        orch._matcher.missing_requires.return_value = []
-        orch.process_text("какая же ты тупая алиса")
-        orch._matcher.find_command.return_value = ("stop", [], False)
-        orch._matcher.execute_by_id.return_value = True
-        orch.process_text("выключи")
-        orch._matcher.execute_by_id.assert_called_once_with("stop")
-        calls = [c.args[0] for c in orch._matcher.find_command.call_args_list]
-        assert calls == [
-            ["какая же ты тупая алиса"],
-            ["какая же ты тупая алиса", "выключи"],
-        ]
-
-    def test_process_text_command_found_clears_window(self, mocker):
-        """После выполнения команды окно строк очищается."""
-        orch = self._make(mocker)
-        orch._matcher.has_trigger.return_value = True
-        orch._matcher.find_command.return_value = ("playpause", [], False)
-        orch._matcher.missing_requires.return_value = []
-        orch._matcher.execute_by_id.return_value = True
-        orch.process_text("пожалуйста пауза")
-        assert len(orch._window) == 0
+        orch._matcher.find_command.assert_called_once_with("алиса")
+        decision.detect.assert_called_once_with("алиса")

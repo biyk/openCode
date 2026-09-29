@@ -168,7 +168,7 @@ class TestSelfReportBeatsLayaCommand:
 
     def _make(self, mocker):
         matcher = mocker.MagicMock()
-        matcher.find_command.return_value = (None, [], False)
+        matcher.find_command.return_value = (None, [])
         matcher.has_trigger.return_value = True
         matcher.needs_text.return_value = False
         matcher.core_phrase.return_value = "я почистил зубы"
