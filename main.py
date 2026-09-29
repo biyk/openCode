@@ -57,13 +57,16 @@ def main():
     )
     cron.start()
 
-    # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
-    # вопросы вслух и старт задачи по ответу.
-    task_monitor = start_task_monitor(worker, output)
-
     # Telegram-бот (секция telegram): те же команды текстом из мессенджера,
-    # ответы — в чат, без озвучки.
+    # ответы — в чат, без озвучки. Поднимаем до монитора: оповещение о
+    # переработке дублируется в чат через bot.broadcast.
     telegram = start_telegram(worker, output)
+
+    # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
+    # вопросы вслух, старт задачи по ответу и оповещение о переработке.
+    task_monitor = start_task_monitor(
+        worker, output,
+        notify=telegram.broadcast if telegram is not None else None)
 
     output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "
                       "или писать в Telegram.\n")

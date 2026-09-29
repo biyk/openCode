@@ -133,6 +133,19 @@ class TelegramBot:
             if not self._api.send_message(self._chat_id, chunk):
                 self._print("[Telegram] Ответ не отправлен (ошибка в логе)")
 
+    def broadcast(self, text: str) -> None:
+        """Инициативное уведомление во все чаты whitelist (не в ответ).
+
+        Оповещение о переработке (`task_monitor` → `overtime`) уходит сюда:
+        ждать, пока пользователь сам напишет боту, нельзя. Пустой whitelist —
+        ничего не делаем (бот без разрешённых чатов не поднимается).
+        """
+        for chat_id in sorted(self._config.chat_ids):
+            for chunk in self.chunks(text):
+                if not self._api.send_message(chat_id, chunk):
+                    self._print("[Telegram] Уведомление не отправлено "
+                                "(ошибка в логе)")
+
     def chunks(self, text: str) -> list[str]:
         """Режет ответ по telegram.max_len, сохраняя границы строк."""
         limit = max(1, int(self._config.max_len))

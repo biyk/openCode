@@ -64,7 +64,8 @@ voice
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
 │   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
-│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start); каждый цикл ещё и закрытие дыр календаря (fun_holes)
+│   │   ├── overtime.py  # Оповещение о переработке задачи: озвучка + консоль + дубль в Telegram сообщением (say, не вопрос — ответа не ждём); разово на запущенную задачу, при стопе/рестарте разрешается заново
+│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start); каждый цикл ещё и закрытие дыр календаря (fun_holes) и оповещение о переработке (overtime)
 │   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*, TASK_MONITOR_*, TASK_DONE_TEXT, FUN_*); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
 │   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
@@ -129,7 +130,7 @@ voice
 │   │   ├── real_life_sheet.py  # Транспорт листов приложения: строка задачи A:T по task_uuid, событие-галочка, журнал task_executions и hero_money на общих OAuth-creds
 │   │   ├── rewards_sheet.py  # Листы наград: поиск награды в real_life_rewards по заголовку и строка списания в rewards_history (uuid, мс, gold_spent, заголовок, reward_id, серий даты) плюс hero_money
 │   │   ├── stop_task.py  # Эквивалент клика ⏹ «остановить и засчитать» запущенной задачи: длительность по факту, усреднение плана с фактом в колонке B, O=0; CLI python -m lib.taskflow.stop_task
-│   │   ├── task_check.py  # Оценка строк real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle
+│   │   ├── task_check.py  # Оценка real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle; find_overtime — задачи, идущие дольше task_time×множитель (переработка)
 │   │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
 │   │   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
 │   │   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
@@ -245,7 +246,9 @@ voice
 │   │   ├── test_orchestrator_memory.py  # Тесты Orchestrator: авто-кандидат недословной фразы падает в laya-корзину базы знаний (дословная — нет).
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
+│   │   ├── test_overtime.py  # Тесты оповещения о переработке: голос+консоль+Telegram через say (не ask), тишина в норме, разовость на одну задачу, повтор после перезапуска, работает без Telegram-канала
 │   │   ├── test_task_monitor.py  # Тесты фонового контроля: idle → вопрос и запуск угаданной задачи, неизвестный ответ, busy без вопросов, deferred/skip, сборка по секции task_monitor, хук дыр календаря каждый цикл
+│   │   ├── test_task_monitor_overtime.py  # Тесты связки task_monitor и переработки: каждый такт дёргает OvertimeNotifier.check на снимке таблицы (и в busy), фабрика собирает нотифайер по секции, overtime_enabled=false → None, проброс notify и множителя
 │   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9, озвучка завершения разработки (текст + вызов из post-commit)
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
@@ -330,7 +333,7 @@ voice
 │   │   ├── test_real_life_sheet.py  # Юнит-тесты транспорта real_life_*: диапазоны и RAW/UNFORMATTED_VALUE, поиск строки по uuid, журнал и hero_money (без сети)
 │   │   ├── test_rewards_sheet.py  # Тесты листов наград: поиск награды без регистра/пробелов, колонки строки rewards_history в порядке JS-клиента и серий даты, списание hero_money
 │   │   ├── test_stop_task.py  # Юнит-тесты ⏹: длительность по факту, усреднение колонки B, журнал и награда по факту, O=0, не-запущенная → RuntimeError, mode 5 без журнала (без сети)
-│   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid
+│   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid; find_overtime: 169>93×1.2 срабатывает, в норме/plan=0/idle — нет
 │   │   ├── test_task_complete.py  # Юнит-тесты команды «завершил задачу»: выбор ветви ⏹/✅ по start_date, пустое название → запущенная, поиск по названию через TaskStart, ошибки (без сети)
 │   │   ├── test_task_complete_cli.py  # Тесты CLI завершения: печать ⏹ по факту и ✅ по плану, skipped не ошибка, коды выхода и текст ошибки (без сети)
 │   │   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
@@ -344,7 +347,7 @@ voice
 │   │   └── test_wake_slots.py  # Юнит-тесты окон и переноса из сна: compute_free_slots (дырки/мин.слот/курсор), перенос событий окна сна позже в порядке и с той же длительностью (без сети)
 │   ├── telegram/
 │   │   ├── test_api.py  # Тесты клиента Bot API: URL и параметры getUpdates/sendMessage, прокси в requests.proxies, ok=false отдельно от тишины (None), сетевая ошибка не валяет вызывающий код, токен не попадает в лог, временный timeout getMe восстанавливается
-│   │   ├── test_bot.py  # Тесты транспорта Telegram-бота: whitelist (неизвестный чат логируется один раз), offset long polling'а и пауза при сбое, /команды — подсказка, ответы частями по max_len
+│   │   ├── test_bot.py  # Тесты транспорта Telegram-бота: whitelist (неизвестный чат логируется один раз), offset long polling'а и пауза при сбое, /команды — подсказка, ответы частями по max_len, broadcast — во все чаты whitelist независимо от их сообщения
 │   │   ├── test_bot_factory.py  # Тесты фабрики start_telegram: выключенная секция, старт без токена или без whitelist отвергнут, готовый конфиг поднимает поток, текст чата уходит в submit_manual_text с reply, прокси доходит до API и не светит пароль в логе
 │   │   └── test_config.py  # Тесты конфига Telegram: токен по имени token_env, id чатов из JSON и TELEGRAM_CHAT_IDS, proxy из секции или TELEGRAM_PROXY, значения по умолчанию из tuning, whitelist сравнивает по строкам, read_token с явным env не трогает .env
 │   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.

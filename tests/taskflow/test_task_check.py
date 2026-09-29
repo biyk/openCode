@@ -1,6 +1,6 @@
-"""Тесты оценки таблицы задач: запущенные строки (task_check)."""
+"""Тесты оценки таблицы задач: запущенные строки и переработка (task_check)."""
 
-from lib.taskflow.task_check import evaluate
+from lib.taskflow.task_check import evaluate, find_overtime
 
 
 def _row(title="Уборка", start=0, uuid="u-1"):
@@ -47,3 +47,44 @@ class TestRunningRows:
         check = evaluate([_row(title="  ", start=1_700_000_000_000, uuid=None)])
         assert check.running[0].title == ""
         assert check.running[0].uuid == ""
+
+
+class TestOvertime:
+    """Переработка: задача идёт дольше task_time × множителя (норма B)."""
+
+    MIN = 60_000                                        # мс в минуте
+    START = 1_700_000_000_000
+
+    def _check(self, plan=93, start=None):
+        return evaluate([{"task_title": "Обед", "task_time": plan,
+                          "start_date": start or self.START,
+                          "task_uuid": "u-1"}])
+
+    def test_evaluate_keeps_start_and_plan(self):
+        """evaluate кладёт в RunningTask старт (мс) и норму (мин)."""
+        task = self._check(plan=93).running[0]
+        assert task.start_ms == self.START
+        assert task.task_time == 93
+
+    def test_over_multiplier_is_overtime(self):
+        """169 мин при норме 93 (×1,2 = 111,6) — переработка."""
+        now = self.START + 169 * self.MIN
+        over = find_overtime(self._check(plan=93), now, multiplier=1.2)
+        assert len(over) == 1
+        assert over[0].title == "Обед"
+        assert over[0].plan == 93
+        assert over[0].elapsed == 169
+
+    def test_within_multiplier_is_not_overtime(self):
+        """Ровно норма ×1,2 ещё не переработка (строже, чем порог)."""
+        now = self.START + 100 * self.MIN
+        assert find_overtime(self._check(plan=93), now, multiplier=1.2) == []
+
+    def test_zero_plan_is_skipped(self):
+        """Норма ≤ 0 (план не задан) — сравнивать не с чем, не звеним."""
+        now = self.START + 999 * self.MIN
+        assert find_overtime(self._check(plan=0), now, multiplier=1.2) == []
+
+    def test_idle_check_has_no_overtime(self):
+        """Ничего не запущено — переработки нет."""
+        assert find_overtime(self._check(start=0), self.START) == []

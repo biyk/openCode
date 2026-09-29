@@ -143,6 +143,36 @@ class TestReply:
         assert "не отправлен" in output.print_info.call_args.args[0]
 
 
+class TestBroadcast:
+    """Инициативное уведомление (оповещение о переработке) во все чаты."""
+
+    def test_sends_to_every_allowed_chat(self):
+        api = MagicMock()
+        config = _config(chat_ids=frozenset({"111", "222"}))
+        _bot(api=api, config=config).broadcast("Всё ли в порядке?")
+        sent = {c.args[0] for c in api.send_message.call_args_list}
+        assert sent == {"111", "222"}
+        assert all(c.args[1] == "Всё ли в порядке?"
+                   for c in api.send_message.call_args_list)
+
+    def test_ignores_whether_user_ever_wrote(self):
+        """В отличие от reply, broadcast не зависит от последнего чата."""
+        api = MagicMock()
+        _bot(api=api).broadcast("текст")            # никто не писал боту
+        api.send_message.assert_called_once()
+
+    def test_empty_whitelist_sends_nothing(self):
+        api = MagicMock()
+        _bot(api=api, config=_config(chat_ids=frozenset())).broadcast("т")
+        api.send_message.assert_not_called()
+
+    def test_send_failure_is_reported(self):
+        output, api = MagicMock(), MagicMock()
+        api.send_message.return_value = False
+        _bot(api=api, output=output).broadcast("текст")
+        assert "не отправлено" in output.print_info.call_args.args[0]
+
+
 class TestChunks:
     def test_groups_lines_up_to_limit(self):
         bot = _bot(config=_config(max_len=10))

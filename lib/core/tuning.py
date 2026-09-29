@@ -79,6 +79,20 @@ TASK_MONITOR_INTERVAL_S = 600.0
 # Переопределяется: task_monitor.answer_timeout_s.
 TASK_ANSWER_TIMEOUT_S = 90.0
 
+# ─── Переработка задачи (task_monitor → overtime) ──────────────────────────
+
+# Множитель нормы: запущенная задача «в переработке», когда идёт дольше
+# task_time (колонка B real_life_tasks) × множителя. 1.2 = «на 20% дольше
+# плана». Это НЕ вопрос с ожиданием ответа: только озвучить + вывести +
+# продублировать в Telegram. Переопределяется:
+# task_monitor.overtime_multiplier.
+TASK_OVERTIME_MULTIPLIER = 1.2
+
+# Шаблон оповещения о переработке (task_monitor.OvertimeNotifier). Подстановка:
+# {title} — название задачи, {elapsed} — минут в работе, {plan} — норма B.
+TASK_OVERTIME_TEXT = ("Задача «{title}» идёт {elapsed} минут "
+                      "при норме {plan}. Всё ли в порядке?")
+
 # ─── Озвучка завершения разработки (чтобы пользователь слышал конец работы) ──
 
 # Что произнести вслух, когда разработка завершена. `.git/hooks/post-commit`

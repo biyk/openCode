@@ -330,7 +330,9 @@
     "task_monitor": {
         "enabled": true,
         "interval_min": 10,
-        "answer_timeout_s": 90
+        "answer_timeout_s": 90,
+        "overtime_enabled": true,
+        "overtime_multiplier": 1.2
     },
     "fun_holes": {
         "enabled": true,
