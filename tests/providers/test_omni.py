@@ -21,7 +21,7 @@ class TestOmniRouterClient:
         """Дефолтные base_url и model."""
         client = self._client()
         assert client._base_url == "http://localhost:20128/v1"
-        assert client._model == "auto"
+        assert client._model == "auto/best-fast"
 
     def test_init_custom_url_strips_slash(self):
         """base_url обрезает завершающий слэш."""
@@ -145,7 +145,7 @@ class TestOmniRouterClient:
         info_call = mock_output.print_info.call_args_list[0][0][0]
         assert "[LLM]" in info_call
         assert "OmniRouter" in info_call
-        assert "auto" in info_call
+        assert "auto/best-fast" in info_call
 
     def test_ask_not_announces_when_disabled(self, mocker):
         """При announce=False print_info не вызывается (используется в Race)."""

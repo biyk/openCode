@@ -5,7 +5,7 @@ from pathlib import Path
 from lib.core.logger import Logger
 from lib.providers import BaseLLMClient
 
-SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text()
+SYSTEM_PROMPT = Path("prompts/chat_template.txt").read_text(encoding="utf-8")
 
 
 class OmniRouterClient(BaseLLMClient):
@@ -18,7 +18,7 @@ class OmniRouterClient(BaseLLMClient):
                  history_limit: int = 10, timeout: int = 300, log_history: bool = True,
                  announce: bool = True):
         self._base_url = (base_url or "http://localhost:20128/v1").rstrip("/")
-        self._model = model or "auto"
+        self._model = model or "auto/best-fast"
         self._history_limit = history_limit
         self._timeout = timeout
         self._log_history = log_history
