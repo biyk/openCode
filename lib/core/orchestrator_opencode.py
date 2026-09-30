@@ -77,7 +77,8 @@ class OrchestratorOpencodeMixin:
                 self._output.print_debug(
                     f"[OpenCode] Ответ (сводка): {answer}")
                 # Заказчик из чата (Telegram) ждёт ответ текстом, без озвучки
-                self._chat_send(reply, answer)
+                if self._chat_send(reply, answer):
+                    self._maybe_flavor("", answer, sink=reply)
             except Exception as e:
                 self._output.print_error(
                     f"[OpenCode] Ошибка фонового запроса: {e}")

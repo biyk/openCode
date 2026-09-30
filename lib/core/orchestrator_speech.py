@@ -81,10 +81,12 @@ class OrchestratorSpeechMixin:
         """Короткое сообщение: текстовому источнику — в чат, остальным — вслух."""
         self._output.print_info(message)
         if self._chat_reply(message):
+            self._maybe_flavor("", message)
             return
         self._speaking = True
         self._abort_playback.clear()
         self._speak_async(message)
+        self._maybe_flavor("", message)
 
     def _report_blocked(self, cmd_id: str, missing: list[str]) -> None:
         """Сообщает, каких статусов не хватает (чат или консоль + голос).

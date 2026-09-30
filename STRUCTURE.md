@@ -51,6 +51,7 @@ voice
 │   │   ├── __init__.py  # Инициализация пакета core — Ядро обработки: Orchestrator и миксины, decision-слой Лайи, лог и вывод.
 │   │   ├── errors.py  # Учёт проглоченных ошибок: swallowed() логирует глухой except и возвращает default; для OAuth-сбоев добавляет подсказку про reauth.py.
 │   │   ├── event_text.py  # Текст названий мероприятий для матчинга: clean_title (вырезает скобки и эмодзи), title_segments (режет составной заголовок «Завтрак. Принять витамины» по точкам, не трогая «шт.») и strip_noise (срезает ведущие слова-паразиты)
+│   │   ├── flavor.py  # Чистые хелперы оживления ответа (без TTS/потоков/LLM): дефолты секции flavor (FLAVOR_*), load_prompt (utf-8 с кэшем по mtime), build_prompt (подстановка {command}/{response}), clean_phrase (одна короткая фраза: срез по первому предложению, снятие кавычек/префикса, обрезка по границе слова)
 │   │   ├── laya_batch.py  # Транспорт и батчинг choice-вопроса Лайи: run_query (один POST /v1/systemone, ошибки не глотает), plan_batches (разбор критериев на примерно равные батчи ≤ max_opts) и query_batches (двухступенчатый выбор: победитель батча → финальный вопрос среди победителей) — обход лимита 422
 │   │   ├── laya_decision.py  # Decision-слой Лайи: LayaDecision — HTTP-клиент локального сервера Laya (управление запущенным процессом, ensure_server, запрос detect, пороги, сообщения об ошибках); build_decision(matcher, output) создаёт клиент из commands.json (None, если выключен или сервер недоступен)
 │   │   ├── logger.py  # Это модуль логирования, который сохраняет команды, сообщения LLM и их историю, а также предоставляет функции для получения последних логов и чтения истории чата.
@@ -59,6 +60,7 @@ voice
 │   │   ├── orchestrator_chat.py  # Миксин оркестратора: канал ответа текстовому источнику (reply) вместо озвучки — _begin_request/_chat_reply/_chat_done/_chat_not_recognized, dev-режим из чата запрещён
 │   │   ├── orchestrator_decision.py  # Миксин оркестратора: уровень decision (Лайя) — если commands.json команду не нашёл, обращение к Laya.detect, выполнение/блокировка/пропуск; legacy-путь intent, фолбэк в opencode
 │   │   ├── orchestrator_event_match.py  # Миксин оркестратора: фолбэк нераспознанной речи — привязка к невыполненному мероприятию дня (colorId!=7), определение start/complete через Laya или эвристику прошедшего времени, запуск taskstart/taskdone
+│   │   ├── orchestrator_flavor.py  # Миксин оркестратора: фоновая креативная добавка к любому ответу — _init_flavor читает секцию flavor, _maybe_flavor запускает daemon-поток (no-op при выкл/пусто/нет LLM/busy), _flavor_worker генерирует через race.classify и clean_phrase, _emit_flavor вставляет фразу в тот же канал (чат — дописать, голос — дождаться конца озвучки с учётом стоп-слова), fail-open через swallowed, без рекурсии
 │   │   ├── orchestrator_llm.py  # Миксин оркестратора: LLM-детект команды после промаха Лайи (по примеру «распознать все») — self._llm выбирает id по смыслу, для команд с параметром вторым запросом вычленяет значение {{text}}, догадка ложится в laya-корзину
 │   │   ├── orchestrator_memory.py  # Миксин оркестратора: laya/undefined-кандидаты базы знаний из пайплайна, контекст LLM для intent-фолбэка.
 │   │   ├── orchestrator_opencode.py  # Миксин оркестратора: фоновая очередь и воркер console opencode.
@@ -187,7 +189,8 @@ voice
 │   ├── tts.py  # Синтез речи: TextToSpeech поверх движков и плеера.
 │   └── wake_event.py  # Команда «я проснулся»: находит ближайшее начавшееся событие «СОН», фиксирует его завершение текущим временем, засчитывает по ✅ задачу «Пробуждение», затем переносит задачи из окна сна на окна позже и автозаполняет остаток дня (restart/calendar.md); CLI python -m lib.wake_event
 ├── prompts/
-│   └── chat_template.txt  # Это файл шаблона подсказки для чат‑бота, определяющий стиль и правила ответов.
+│   ├── chat_template.txt  # Это файл шаблона подсказки для чат‑бота, определяющий стиль и правила ответов.
+│   └── flavor_template.txt  # Шаблон инструкции для «оживления» ответа: одна короткая ободряющая/юмористическая фраза-дополнение по ситуации (команда {command}, ответ {response}), без кавычек и префиксов
 ├── scripts/
 │   ├── __init__.py  # Это инициализирующий файл пакета скриптов репозитория, который позволяет импортировать и использовать скрипты для генерации документации и повышения версий.
 │   ├── announce_done.py  # Озвучивает вслух завершение разработки (текст из lib/core/tuning.py::TASK_DONE_TEXT), вызывается из hook post-commit
@@ -239,6 +242,7 @@ voice
 │   │   ├── test_errors.py  # Тесты swallowed(): возврат default, уровень лога, подсказка reauth для RefreshError/401.
 │   │   ├── test_event_match_retry.py  # Тест ретрая event-match: сетевой сбой (SSLEOFError/OSError) в find_task_event повторяется один раз, вторая неудача — штатный пропуск
 │   │   ├── test_event_text.py  # Юнит-тесты текста названий: clean_title (скобки/эмодзи/безопасный None), title_segments (разбиение по точке/запятой, «шт.» не режется, отбрасывание кусков <2), strip_noise (слова-паразиты, ё/е)
+│   │   ├── test_flavor.py  # Тесты чистых хелперов flavor: build_prompt (подстановка, пустое→—), clean_phrase (первое предложение, кавычки/префикс, перенос, схлопывание пробелов, обрезка по слову), load_prompt (utf-8, кэш по mtime, перечитка, отсутствующий файл→None)
 │   │   ├── test_laya_batch.py  # Юнит-тесты батчинга Лайи: plan_batches (≈равные батчи ≤ max_opts), query_batches (один вопрос vs разбиение, выбор max confidence, сумма elapsed) и run_query на моке urlopen
 │   │   ├── test_laya_decision.py  # Юнит-тесты decision-слоя Лайи: HTTP-клиент (успех, none, порог, ошибки, недоступный сервер) и путь оркестратора — команда распознана/не распознана/заблокирована/неизвестна, legacy без decision
 │   │   ├── test_laya_paths.py  # Регресс: корень проекта для auto_launch Laya (_projects_root) — каталог с lib/, а не сам lib (иначе «exe/модель не найдены»)
@@ -250,6 +254,7 @@ voice
 │   │   ├── test_orchestrator_devmode.py  # Тесты Orchestrator: режим разработки.
 │   │   ├── test_orchestrator_event_match.py  # Юнит-тесты фолбэка по мероприятиям: фильтр colorId=7, привязка фразы к невыполненной задаче, start/complete через Laya и эвристику (без сети)
 │   │   ├── test_orchestrator_fallback.py  # Тесты Orchestrator: фолбэк в console opencode.
+│   │   ├── test_orchestrator_flavor.py  # Тесты миксина оживления: _maybe_flavor no-op (выкл/пусто/нет LLM/busy/нет шаблона), успешный путь в голос и в чат, сбой classify проглочен, пустая фраза не эмитится, _emit_flavor уважает abort и таймаут ожидания, _init_flavor дефолты и чтение конфига
 │   │   ├── test_orchestrator_intent.py  # Тесты Orchestrator: mini-LLM intent.
 │   │   ├── test_orchestrator_knowledge.py  # Сквозные тесты базы знаний в пайплайне: confirmed-команда и confirmed-синоним мероприятия обходят LLM и нечёткий матчинг, curated-event с доски идёт в {{text}} без перерезки, laya-корзина не решает, распознанное Лайей пишется в laya, нераспознанное — в undefined
 │   │   ├── test_orchestrator_llm.py  # Тесты LLM-детекта команды: id + параметр из второго запроса идут в execute_by_id, команда без параметра исполняется одним вызовом, блокировка по requires не исполняет, ответ NONE не обрабатывается, фолбэк включён в шаг промаха Лайи

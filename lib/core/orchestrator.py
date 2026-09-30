@@ -21,6 +21,7 @@ from lib.core.orchestrator_ask import OrchestratorAskMixin
 from lib.core.orchestrator_chat import OrchestratorChatMixin
 from lib.core.orchestrator_decision import OrchestratorDecisionMixin
 from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
+from lib.core.orchestrator_flavor import OrchestratorFlavorMixin
 from lib.core.orchestrator_llm import OrchestratorLlmMixin
 from lib.core.orchestrator_memory import OrchestratorMemoryMixin
 from lib.core.orchestrator_opencode import OrchestratorOpencodeMixin
@@ -33,6 +34,7 @@ class Orchestrator(
     OrchestratorChatMixin,
     OrchestratorDecisionMixin,
     OrchestratorEventMatchMixin,
+    OrchestratorFlavorMixin,
     OrchestratorLlmMixin,
     OrchestratorMemoryMixin,
     OrchestratorOpencodeMixin,
@@ -84,6 +86,7 @@ class Orchestrator(
         # состояние (озвучка, ожидаемый ответ) не должно рваться
         # посередине обработки другого источника.
         self._input_lock = threading.Lock()
+        self._init_flavor()
 
     @property
     def dev_mode(self) -> bool:

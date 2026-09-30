@@ -182,6 +182,11 @@ class TestCommandExec:
         finally:
             os.unlink(temp_path)
 
+    def test_get_flavor_config(self, temp_commands_file):
+        """Если секции flavor нет — get_flavor_config возвращает пустой dict."""
+        matcher = CommandMatcher(temp_commands_file)
+        assert matcher.get_flavor_config() == {}
+
     def test_match_config_returns_match(self, temp_commands_file):
         """match_config возвращает словарь фраз для классификатора."""
         matcher = CommandMatcher(temp_commands_file)

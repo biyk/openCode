@@ -392,5 +392,11 @@
         "proxy": "socks5h://192.168.1.107:1080",
         "poll_timeout_s": 20,
         "retry_s": 15
+    },
+    "flavor": {
+        "enabled": true,
+        "max_len": 120,
+        "timeout_s": 15,
+        "prompt": "prompts/flavor_template.txt"
     }
 }

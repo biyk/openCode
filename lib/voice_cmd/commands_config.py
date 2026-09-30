@@ -73,6 +73,15 @@ class CommandConfigMixin:
         """
         return self._data.get("fun_holes", {})
 
+    def get_flavor_config(self) -> dict:
+        """Возвращает секцию `flavor` (оживление ответа креативной фразой).
+
+        Ключи: enabled, max_len (предельная длина фразы, символов),
+        timeout_s (сколько ждать ответ LLM), prompt (путь к шаблону);
+        значения по умолчанию — в lib.core.flavor.
+        """
+        return self._data.get("flavor", {})
+
     def get_telegram_config(self) -> dict:
         """Возвращает секцию `telegram` (бот: команды текстом из мессенджера).
 
