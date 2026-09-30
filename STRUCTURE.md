@@ -339,6 +339,7 @@ voice
 │   │   ├── test_task_complete_cli.py  # Тесты CLI завершения: печать ⏹ по факту и ✅ по плану, skipped не ошибка, коды выхода и текст ошибки (без сети)
 │   │   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
 │   │   ├── test_task_start.py  # Юнит-тесты запуска задачи: формула resume (now-O), только G, уже запущена/нет uuid/нет строки, шумовые слова и порог похожести (без сети)
+│   │   ├── test_task_start_tiebreak.py  # Тесты тай-брейка EventMatch: при равной похожести берётся событие самое раннее по времени начала («почистил зубы» утром → «утро», а не «вечер»); время — только тай-брейк ПОСЛЕ скора, более похожее позднее событие сильнее
 │   │   ├── test_tasks.py  # Тесты задач: разбор фраз, создание.
 │   │   ├── test_tasks_complete_cli.py  # Тесты задач: CLI complete/create.
 │   │   ├── test_tasks_complete_match.py  # Тесты задач: подбор по названию.

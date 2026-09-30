@@ -118,13 +118,14 @@ class TaskStartHandler:
     def _search(self, name: str, events: list[dict],
                 filter_fn: Optional[Callable[[dict], bool]],
                 report: Optional[Callable[[str, float], None]]) -> Optional[dict]:
-        """Матчинг названия по одному списку событий (порог TITLE_THRESHOLD)."""
+        """Матчинг по списку (порог TITLE_THRESHOLD); равные — берём раннее по времени."""
         target = _norm(strip_noise(name))
         if not target:
             return None
         best: Optional[tuple[tuple[float, int], dict]] = None
         scored: list[tuple[float, str]] = []
-        for ev in events:
+        ordered = sorted(events, key=lambda e: str(e.get("start") or "\uffff"))
+        for idx, ev in enumerate(ordered):
             if filter_fn is not None and not filter_fn(ev):
                 continue
             summary = ev.get("summary") or ""
@@ -132,14 +133,13 @@ class TaskStartHandler:
                     if s]
             if not segs:
                 continue
-            longest = max(len(s) for s in segs)
             if any(seg == target for seg in segs):
                 if report is not None:
                     report(summary, 1.0)
                 return ev
             score = max(_segment_score(target, seg) for seg in segs)
             scored.append((score, summary))
-            key = (score, longest)
+            key = (score, -idx)
             if best is None or key > best[0]:
                 best = (key, ev)
         if report is not None:
