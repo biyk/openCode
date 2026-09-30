@@ -131,3 +131,38 @@ def test_event_without_uuid_is_error():
                 start_date=0)
     result = h.complete_task("отчет")
     assert result["ok"] is False and "нет uuid" in result["error"]
+
+
+class ListCalendar(FakeCalendar):
+    """Календарь, у которого list_events отдаёт заранее заданный список."""
+
+    def __init__(self, upcoming):
+        super().__init__([])
+        self._upcoming = upcoming
+
+    def list_events(self, limit=50):
+        return self._upcoming
+
+
+def _complete_with(upcoming):
+    return TaskCompleteHandler(gcal=ListCalendar(upcoming), api=FakeApi(0),
+                               now=NOW)
+
+
+def test_next_task_skips_sleep_done_and_the_just_finished():
+    """«СОН», colorId=7 и uuid только что сделанной задачи — не «следующая»."""
+    h = _complete_with([
+        {"summary": "СОН", "colorId": "", "description": ""},
+        {"summary": "Уже закрыто", "colorId": "7", "description": "uuid aa"},
+        {"summary": "Только что", "colorId": "3",
+         "description": f"uuid {UUID}"},
+        {"summary": "Полить цветы", "colorId": "", "description": "uuid bb"},
+    ])
+    nxt = h.next_task(done_uuid=UUID)
+    assert nxt is not None and nxt["summary"] == "Полить цветы"
+
+
+def test_next_task_none_when_nothing_upcoming():
+    h = _complete_with([{"summary": "СОН", "colorId": "",
+                         "description": ""}])
+    assert h.next_task(done_uuid=UUID) is None

@@ -17,12 +17,26 @@ import sys
 from datetime import datetime
 from typing import Any, Optional
 
+from lib.core.errors import swallowed
 from lib.google_calendar import GoogleCalendar
+from lib.google.google_calendar_mutate import DONE_COLOR
+from lib.sleep_event import SLEEP_TITLE_RE
 from lib.task_start import TaskStartHandler
 from lib.taskflow.cells import as_int
 from lib.taskflow.done_task import mark_task_done
 from lib.taskflow.real_life_sheet import COLS, RealLifeSheet
 from lib.taskflow.stop_task import stop_task
+
+# Озвучка завершения: похвала + следующая задача (клиент говорит сам, как в
+# lib.plans/lib.shopping — голосовой цикл ничего не добавляет).
+# Фраза собрана БЛОКАМИ: неизменные фреймы («Задача выполнена.», «Вы
+# умничка!», «Следующая задача:») — свой блок (кэшируются один раз на все
+# задачи навсегда), название задачи — отдельный блок (кэш по названию).
+# Так ежедневные фреймы не генерятся заново, а новое название синтезируется
+# во время проговаривания уже готового фрейма (speak_blocks).
+DONE_FRAME = "Задача выполнена."
+DONE_PRAISE = "Вы умничка!"
+NEXT_FRAME = "Следующая задача:"
 
 
 class TaskCompleteHandler:
@@ -77,14 +91,67 @@ class TaskCompleteHandler:
             result = mark_task_done(task_uuid, api=self.api, now=self.now)
         result["branch"] = "⏹" if in_progress else "✅"
         result.setdefault("title", info)
+        result["uuid"] = task_uuid
         return result
+
+    def next_task(self, done_uuid: Optional[str] = None) -> Optional[dict]:
+        """Ближайшее незакрытое мероприятие после сейчас (кроме сделанного).
+
+        list_events отдаёт будущие события, уже отсортированные по началу;
+        отбрасываем выполненные (colorId=DONE_COLOR), «СОН» и только что
+        закрытую задачу — остаётся то, что делать следующим.
+        """
+        try:
+            events = self.gcal.list_events(limit=50)
+        except Exception as e:  # нет токена/сети — озвучка без «следующей»
+            swallowed("task_complete.next", e)
+            return None
+        for ev in events:
+            if str(ev.get("colorId") or "").strip() == DONE_COLOR:
+                continue
+            if done_uuid and done_uuid in str(ev.get("description") or ""):
+                continue
+            summary = str(ev.get("summary") or "").strip()
+            if not summary or SLEEP_TITLE_RE.search(summary):
+                continue
+            return ev
+        return None
+
+
+def _celebrate(handler: TaskCompleteHandler, result: dict) -> list[str]:
+    """Блоки озвучки: похвала за сделанную задачу + что следующее.
+
+    Неизменный фрейм и название — РАЗНЫЕ блоки: фрейм попадёт в кэш и
+    заиграет мгновенно, название (новое/редкое) сгенерится за его спиной.
+    """
+    blocks = [DONE_FRAME]
+    title = str(result.get("title") or "").strip()
+    if title:
+        blocks.append(f"{title}.")
+    blocks.append(DONE_PRAISE)
+    nxt = handler.next_task(result.get("uuid"))
+    if nxt:
+        next_title = str(nxt.get("summary") or "").strip()
+        if next_title:
+            blocks += [NEXT_FRAME, f"{next_title}."]
+    return blocks
+
+
+def _speak(blocks: list[str]) -> None:
+    """Озвучить блоки; TTS лениво (как в shopping), сбой — в лог."""
+    from lib.tts import TextToSpeech
+    try:
+        TextToSpeech().speak_blocks(blocks)
+    except Exception as e:
+        print("[Voice] Озвучка не удалась:", e)
 
 
 def _main(argv: Optional[list[str]] = None) -> int:
     """CLI: `python -m lib.task_complete ["название задачи"]`. 0 — успех."""
     name = " ".join(sys.argv[1:] if argv is None else argv).strip()
+    handler = TaskCompleteHandler()
     try:
-        result = TaskCompleteHandler().complete_task(name)
+        result = handler.complete_task(name)
     except Exception as e:  # нет токена/сети/неизвестный repeat_mode
         print(f"[complete] ошибка завершения: {e}")
         return 1
@@ -101,6 +168,9 @@ def _main(argv: Optional[list[str]] = None) -> int:
     else:
         print(f"✅ «{result['title']}» засчитана по плану: "
               f"{result['time_spent']} мин, награда {result['money']:.2f}")
+    blocks = _celebrate(handler, result)
+    print(" ".join(blocks))
+    _speak(blocks)
     return 0
 
 
