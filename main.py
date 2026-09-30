@@ -62,7 +62,9 @@ def main():
     # ответы — в чат, без озвучки. Поднимаем до монитора: оповещение о
     # переработке дублируется в чат через bot.broadcast, а нажатие кнопки
     # предложения задачи запускает её через make_task_picker.
-    telegram = start_telegram(worker, output, on_pick=make_task_picker())
+    telegram = start_telegram(worker, output,
+                              on_pick=make_task_picker(
+                                  record=worker._matcher.record_use))
 
     # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
     # вопросы вслух, старт задачи по ответу и оповещение о переработке.

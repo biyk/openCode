@@ -61,6 +61,7 @@ def start_task_monitor(worker: Any, output: Any,
         interval_s=interval_s, fun=fun, overtime=overtime,
         title_fn=foreground_title, classify_fn=classify_until_answer,
         notify=notify, gcal=GoogleCalendar(), offer=offer,
+        record=worker._matcher.record_use,
         answer_timeout_s=float(config.get("answer_timeout_s",
                                           TASK_ANSWER_TIMEOUT_S)))
     monitor.start()

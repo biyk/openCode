@@ -13,9 +13,18 @@ from typing import Any, Callable, Optional
 from lib.core.errors import swallowed
 from lib.task_start import TaskStartHandler
 
+# Команда, под которой старт задачи считается в статистике использования.
+TASKSTART_CMD_ID = "taskstart"
 
-def make_task_picker(handler: Optional[Any] = None) -> Callable[[str], str]:
-    """Возвращает `pick(title) -> reply`: запускает задачу, текст для чата."""
+
+def make_task_picker(handler: Optional[Any] = None,
+                     record: Optional[Callable[[str], None]] = None
+                     ) -> Callable[[str], str]:
+    """Возвращает `pick(title) -> reply`: запускает задачу, текст для чата.
+
+    record — колбэк статистики ( matcher.record_use ): клик кнопки идёт мимо
+    execute_by_id, поэтому фиксируем `taskstart` явно; None — не считаем.
+    """
     holder: dict[str, Any] = {}
 
     def _handler() -> Any:
@@ -32,6 +41,8 @@ def make_task_picker(handler: Optional[Any] = None) -> Callable[[str], str]:
             swallowed("task_pick.start", error)
             return f"Не удалось запустить «{title}» (см. лог)"
         if result.get("ok"):
+            if record is not None:            # старт по кнопке — в статистику
+                record(TASKSTART_CMD_ID)
             name = result.get("title") or title
             return f"▶️ Задача «{name}» запущена"
         return f"❌ {result.get('error') or f'задача «{title}» не запущена'}"
@@ -39,4 +50,4 @@ def make_task_picker(handler: Optional[Any] = None) -> Callable[[str], str]:
     return pick
 
 
-__all__ = ["make_task_picker"]
+__all__ = ["make_task_picker", "TASKSTART_CMD_ID"]

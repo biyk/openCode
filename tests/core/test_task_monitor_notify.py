@@ -8,6 +8,7 @@
 from unittest.mock import MagicMock
 
 from lib.core.task_monitor import PROPOSE_PREFIX, QUESTION_IDLE, TaskMonitor
+from lib.core.task_pick import TASKSTART_CMD_ID
 
 
 class _Asker:
@@ -82,3 +83,49 @@ class TestIdleQuestionTelegram:
         monitor, ask, _ = _monitor(mocker, _rows(("Уборка", 0)), notify=None)
         assert monitor.tick() == "idle"
         assert ask.questions[0][1] == "task_idle"
+
+
+class TestIdleAnswerRecord:
+    """Старт задачи по ответу на idle-вопрос идёт в статистику (мимо матчера)."""
+
+    def _monitor_with(self, mocker, start_result):
+        ask = _Asker(accepted=True)
+        record = mocker.MagicMock()
+        handler = mocker.MagicMock()
+        handler.find_task_event.return_value = {"summary": "Уборка"}
+        handler.start_task.return_value = start_result
+        monitor = TaskMonitor(
+            ask=ask, say=mocker.MagicMock(), output=mocker.MagicMock(),
+            core=lambda text: text, sheet=_sheet(_rows(("Уборка", 0))),
+            handler=handler, record=record)
+        return monitor, ask, record, handler
+
+    def test_successful_start_records(self, mocker):
+        monitor, ask, record, handler = self._monitor_with(
+            mocker, {"ok": True, "title": "Уборка", "row": 3})
+        monitor.tick()
+        ask.on_answer("уборка")
+        handler.start_task.assert_called_once_with("Уборка")
+        record.assert_called_once_with(TASKSTART_CMD_ID)
+
+    def test_failed_start_does_not_record(self, mocker):
+        monitor, ask, record, _ = self._monitor_with(
+            mocker, {"ok": False, "error": "уже запущена"})
+        monitor.tick()
+        ask.on_answer("уборка")
+        record.assert_not_called()
+
+    def test_no_recorder_is_harmless(self, mocker):
+        """record=None (дефолт) — старт работает, статистика не пишется."""
+        ask = _Asker(accepted=True)
+        handler = mocker.MagicMock()
+        handler.find_task_event.return_value = {"summary": "Уборка"}
+        handler.start_task.return_value = {"ok": True, "title": "Уборка",
+                                           "row": 3}
+        monitor = TaskMonitor(
+            ask=ask, say=mocker.MagicMock(), output=mocker.MagicMock(),
+            core=lambda text: text, sheet=_sheet(_rows(("Уборка", 0))),
+            handler=handler)
+        monitor.tick()
+        ask.on_answer("уборка")     # не падает без record
+        handler.start_task.assert_called_once_with("Уборка")

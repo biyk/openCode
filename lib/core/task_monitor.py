@@ -19,6 +19,7 @@ from typing import Any, Callable, Optional
 from lib.core.errors import swallowed
 from lib.core.overtime import OvertimeNotifier
 from lib.core.rest_watch import RestWatch
+from lib.core.task_pick import TASKSTART_CMD_ID
 from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
 from lib.task_start import TaskStartHandler
 from lib.taskflow.real_life_sheet import RealLifeSheet
@@ -47,7 +48,8 @@ class TaskMonitor:
                  classify_fn: Optional[Callable[[str], Any]] = None,
                  notify: Optional[Callable[[str], None]] = None,
                  gcal: Any = None,
-                 offer: Optional[Callable[[str, list], None]] = None) -> None:
+                 offer: Optional[Callable[[str, list], None]] = None,
+                 record: Optional[Callable[[str], None]] = None) -> None:
         self._ask = ask
         self._say = say
         self._output = output
@@ -62,6 +64,7 @@ class TaskMonitor:
         self._notify = notify
         self._gcal = gcal
         self._offer = offer
+        self._record = record
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -170,6 +173,8 @@ class TaskMonitor:
             return
         result = self._task_handler().start_task(title)
         if result.get("ok"):
+            if self._record is not None:    # старт по ответу — в статистику
+                self._record(TASKSTART_CMD_ID)
             self._output.print_info(
                 f"[TaskMonitor] Задача «{title}» запущена "
                 f"(строка {result['row']})")

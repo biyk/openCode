@@ -125,22 +125,31 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
                       settings: tuple[str, ...] = ()) -> bool:
         """Выполняет команду по id (или составную sequence по шагам).
 
-        Успешный запуск помечается в статистику использования (CommandStats);
-        сама статистика fail-open — сбой записи не влияет на результат.
+        Статистику ведения: каждый реально исполненный шаг считает
+        `_execute_step` (в т.ч. подшаги sequence); здесь добавляётся только
+        счёт самой составной команды как макро (её id), иначе одиночная
+        команда была бы засчитана дважды. Статистика fail-open.
         """
         self.reload()
         seq = self.sequences().get(cmd_id)
         if seq is not None:
             ok = self._execute_sequence(cmd_id, seq, settings)
-        else:
-            ok = self._execute_step(cmd_id, settings)
-        if ok:
-            self._stats.bump(cmd_id)
-        return ok
+            if ok:
+                self._stats.bump(cmd_id)   # составная команда как макро
+            return ok
+        return self._execute_step(cmd_id, settings)
+
+    def record_use(self, cmd_id: str) -> None:
+        """Пишет запуск команды, исполненной вне execute_by_id (кнопка/фон).
+
+        Голос/текст/LLM считаются через `_execute_step`; пути мимо матчера
+        (клик кнопки «начать задачу», ответ на idle-вопрос) зовут это явно.
+        """
+        self._stats.bump(cmd_id)
 
     def _execute_step(self, cmd_id: str,
                       settings: tuple[str, ...] = ()) -> bool:
-        """Выполняет один шаг: проверка requires, shell, provides."""
+        """Выполняет один шаг: проверка requires, shell, provides, статистика."""
         if self.missing_requires(cmd_id):
             return False
         command = self._get_command(cmd_id, settings)
@@ -149,6 +158,7 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         if not self._run(command):
             return False
         self._mark_provides(cmd_id)
+        self._stats.bump(cmd_id)   # любая реально исполненная команда
         return True
 
     def _execute_sequence(self, seq_id: str, seq: dict,

@@ -149,3 +149,34 @@ class TestMatcherHook:
         assert matcher.execute_by_id("combo") is True
         snap = CommandStats(stats_file).snapshot()
         assert snap["combo"]["count"] == 1         # засчитан составной id
+
+    def test_sequence_bumps_each_step(self, commands, mocker):
+        """Подшаг sequence тоже считается (combo → шаг volumeup)."""
+        matcher = self._matcher(commands, mocker)
+        stats_file = stats_path_for(str(commands))
+        if os.path.exists(stats_file):
+            os.unlink(stats_file)
+        mocker.patch("lib.voice_cmd.commands.subprocess.run")
+        assert matcher.execute_by_id("combo") is True
+        snap = CommandStats(stats_file).snapshot()
+        assert snap["volumeup"]["count"] == 1      # исполненный шаг засчитан
+
+    def test_blocked_step_not_counted(self, commands, mocker):
+        """Шаг, заблокированный requires, не попадает в статистику."""
+        matcher = self._matcher(commands, mocker)
+        stats_file = stats_path_for(str(commands))
+        if os.path.exists(stats_file):
+            os.unlink(stats_file)
+        mocker.patch.object(
+            matcher, "missing_requires", return_value=["media_session"])
+        assert matcher.execute_by_id("volumeup") is False
+        assert CommandStats(stats_file).snapshot() == {}
+
+    def test_record_use_counts_outside_matcher(self, commands, mocker):
+        """record_use пишет команду, запущенную мимо execute_by_id."""
+        matcher = self._matcher(commands, mocker)
+        stats_file = stats_path_for(str(commands))
+        if os.path.exists(stats_file):
+            os.unlink(stats_file)
+        matcher.record_use("taskstart")
+        assert CommandStats(stats_file).snapshot()["taskstart"]["count"] == 1
