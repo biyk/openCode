@@ -52,7 +52,7 @@ python main.py
 `tests/` зеркалит те же имена папок (`tests/core/`, `tests/google/`, …).
 - `lib/core/` — `orchestrator*`, `laya_decision`, `logger`, `output`.
 - `lib/stt/` — `transcription_worker`, `vosk_model`, `encoding` (починка cp866).
-- `lib/synth/` — `tts_engines`, `tts_playback`.
+- `lib/synth/` — `tts_engines`, `tts_pipeline`, `tts_playback`, `tts_cache`.
 - `lib/opencode/` — `opencode_cli`, `opencode_output`.
 - `lib/voice_cmd/` — `commands*`, `knowledge`, `intent`, `config_loader` (шаг 1, §10).
 - `lib/scheduling/` — `cron*`, `time_parser*`, `sleep_event`/`wake_event` тесты здесь.
@@ -128,6 +128,7 @@ python main.py
 - `lib/reminders.py` — парсинг детерминированный; если время не указано → **+60 минут**.
 - `lib/google/google_tasks.py` — «добавь задачу …» это записи Google Tasks (список `@default`) через `lib/tasks.py::TaskHandler`; scope `tasks` + `calendar.events` запрашиваются вместе, чтобы ре-авторизация не ломала напоминания. Флаг: `google.tasks.enabled` в `targets/<host>/commands.json` (шаг 0.6 в `lib/core/orchestrator.py`).
 - `lib/task_start.py` («я начал/я приступил {задача}») пишет старт в Google Таблицу `real_life_tasks` через `lib/taskflow/task_start_sheet.py` — те же OAuth-creds. `TaskStartHandler.find_task_event` матчит название нечётко по сегодняшним событиям (порог `TITLE_THRESHOLD` 0.75; составной заголовок — по точкам), затем по таблице; тот же подбор дёргает EventMatch (`_try_event_match`) для start/complete нераспознанного мероприятия. **Правило выбора: при равной похожести берётся событие самое раннее по времени начала** (раньше ничью решал самый длинный заголовок → «почистил зубы» утром уходило в «…вечер. Расстелить кровать»); время — только тай-брейк ПОСЛЕ скора, более точное позднее событие сильнее раннего слабого. Реализовано сортировкой кандидатов по `start` в `_search` (безвременные псевдо-события таблицы — в конец). Тесты: `tests/taskflow/test_task_start_tiebreak.py`.
+- `lib/task_complete.py` («завершил задачу {название}», он же `taskdone` и ветвь complete у EventMatch) озвучивает итог сам, как `lib.plans`/`lib.shopping` (голосовой цикл молчит): после успеха — похвала «Задача «…» выполнена. Вы умничка!» и следующая задача (`TaskCompleteHandler.next_task`: ближайшее будущее событие из `list_events`, кроме закрытых `colorId=7`, «СОН» и только что сделанного). Текст фраз — константы `PRAISE_TEXT`/`NEXT_TEXT`; озвучка и поиск «следующей» не роняют команду (TTS/календарь в `try`). Нет будущей задачи — фраза «Следующая…» не произносится. Тесты: `tests/taskflow/test_task_complete_cli.py` (мок `lib.tts.TextToSpeech` + `next_task`), `test_task_complete.py` (отбор следующей).
 - Сон/пробуждение: `lib/sleep_event.py`, `lib/wake_event.py` правят событие «СОН» в Calendar.
 
 ## 6. Аудио и стоп-слова
@@ -137,6 +138,8 @@ python main.py
 - Частые причины «ассистент не остановился» — стоп-слова и кодировка (см. `_fix_encoding` в `lib/stt/transcription_worker.py`).
 - `_fix_encoding` вынесен в `lib/stt/encoding.py` (worker ≤ лимита строк §9); имя `transcription_worker._fix_encoding` сохранено как алиас — тесты мокют его именно там.
 - Ещё одна причина «ассистент молчит в ответ» — шлюз записи §4.6: с колонок играет медиа, и микрофон заглушён намеренно.
+- **Кэш mp3 gTTS** (`lib/synth/tts_cache.py`): каждая озвученная фраза раньше пересоздавалась через сеть. Теперь gTTS пишет в `temp/mp3/<sha1(lang|text)>.mp3`, а `speak()` сначала ищет там: попадание — играет копию без сети (и работает офлайн), промах — синтез + `store`. `cached_copy` обновляет дату файла (он переживёт `purge`), `purge` удаляет древнее `TTL_DAYS=7` (срабатывает раз в час при записи). Кэш на диске — общий для долгоживущего воркера и коротких CLI-процессов. Проигрывание всегда идёт из временной копии, поэтому `_play_file` (удаляющий файл) не трогает кэш. Тесты: `tests/synth/test_tts_cache.py`.
+- **Блочная озвучка** (`lib/synth/tts_pipeline.py::speak_blocks`): цель — не генерить то, что уже есть. Анонс режется на блоки (`_split_sentences` по пунктуации — запятая/точка = пауза), и каждый блок ищется в кэше отдельно. Конвейер кидает все блоки в пул сразу: кэшированные возвращаются мгновенно и играют, а новый (неизвестный) блок синтезируется **параллельно с проговариванием готового** — задержка сети прячется за озвучкой. Стабильные (ежедневные) фразы надо давать ОТДЕЛЬНЫМИ блоками от переменных данных: так фрейм кэшируется один раз на все задачи, а генерится только название. Пример — `lib/task_complete.py::_celebrate` возвращает СПИСОК блоков (`Задача выполнена.` / `<название>.` / `Вы умничка!` / `Следующая задача:` / `<след.>.`), а не одну строку. Тесты: `tests/synth/test_tts_pipeline.py::TestSpeakBlocks`.
 
 ## 7. LLM-провайдеры
 - Активный провайдер: `race` (OmniRouter + LM Studio, первый непустой ответ). Конфиг в `providers.json`, клиенты в `lib/providers/`.

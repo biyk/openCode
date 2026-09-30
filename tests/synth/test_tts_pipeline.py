@@ -70,3 +70,89 @@ class TestTtsPipeline:
 
         played = [call.args[0] for call in mock_play.call_args_list]
         assert played == ["/tmp/one.mp3"]
+
+
+class TestSpeakBlocks:
+    """speak_blocks: блоки без перерезки, порядок, кэш прячет генерацию."""
+
+    @patch("lib.tts.TextToSpeech._play_file")
+    @patch("lib.tts.TextToSpeech.speak")
+    def test_blocks_passed_verbatim_no_resplit(self, mock_speak, mock_play):
+        seen = []
+
+        def sp(text, abort_event=None):
+            seen.append(text)
+            return f"/tmp/{len(seen)}.mp3"
+
+        mock_speak.side_effect = sp
+        blocks = ["Раз, два, три.", "четыре; пять"]
+        TextToSpeech(max_workers=2).speak_blocks(blocks)
+        assert seen == blocks
+
+    @patch("lib.tts.TextToSpeech._play_file")
+    @patch("lib.tts.TextToSpeech.speak")
+    def test_blocks_played_in_order(self, mock_speak, mock_play):
+        blocks = ["A.", "B.", "C."]
+        paths = ["/tmp/a.mp3", "/tmp/b.mp3", "/tmp/c.mp3"]
+        mock_speak.side_effect = (
+            lambda t, abort_event=None: paths[blocks.index(t)])
+        TextToSpeech(max_workers=3).speak_blocks(blocks)
+        played = [c.args[0] for c in mock_play.call_args_list]
+        assert played == paths
+
+    @patch("lib.tts.TextToSpeech._play_file")
+    @patch("lib.tts.TextToSpeech.speak")
+    def test_single_block(self, mock_speak, mock_play):
+        mock_speak.return_value = "/tmp/s.mp3"
+        TextToSpeech().speak_blocks(["  Готово  "])
+        mock_speak.assert_called_once_with("Готово", None)
+        mock_play.assert_called_once_with("/tmp/s.mp3", None)
+
+    @patch("lib.tts.TextToSpeech.speak")
+    def test_empty_blocks(self, mock_speak, capsys):
+        done = []
+        TextToSpeech().speak_blocks(["", "   "], on_finished=lambda: done.append(1))
+        assert "Пустой текст" in capsys.readouterr().out
+        assert done == [1]
+        mock_speak.assert_not_called()
+
+    @patch("lib.tts.TextToSpeech._play_file")
+    @patch("lib.tts.TextToSpeech.speak")
+    def test_speak_and_play_delegates(self, mock_speak, mock_play):
+        mock_speak.side_effect = (
+            lambda t, abort_event=None: f"/tmp/{t}.mp3")
+        TextToSpeech(max_workers=2).speak_and_play("Первое. Второе.")
+        spoken = {c.args[0] for c in mock_speak.call_args_list}
+        assert spoken == {"Первое.", "Второе."}
+
+    def test_cached_frame_plays_while_new_name_generates(self, tmp_path, monkeypatch):
+        """Кэшированный фрейм не идёт в сеть — генерится только новое имя."""
+        from pathlib import Path
+        from lib.synth import tts_cache
+
+        monkeypatch.setattr(tts_cache, "CACHE_DIR", tmp_path / "mp3")
+        frame = "Задача выполнена."
+        seed = Path(tts_cache.tempfile.mkstemp(suffix=".mp3")[1])
+        seed.write_bytes(b"ID3")
+        tts_cache.store("ru", frame, str(seed))
+
+        gen = []
+
+        class FakeG:
+            def __init__(self, **kwargs):
+                pass
+
+            def save(self, p):
+                gen.append(p)
+                Path(p).write_bytes(b"ID3name")
+
+        monkeypatch.setattr("lib.synth.tts_engines.gTTS", FakeG)
+        played = []
+        tts = TextToSpeech()
+        monkeypatch.setattr(tts, "_play_file",
+                            lambda p, a=None: played.append(p))
+
+        tts.speak_blocks([frame, "Отчёт."])
+
+        assert len(gen) == 1            # сеть — только для нового названия
+        assert len(played) == 2         # оба блока сыграны по порядку

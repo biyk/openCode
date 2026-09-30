@@ -1,19 +1,18 @@
-"""Проигрывание аудио и конвейер озвучки (миксин TTS)."""
+"""Проигрывание аудио (миксин TTS): SAPI-синтез, файлы, плееры."""
 
 import os
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 _BASE_DIR = Path(__file__).resolve().parents[2]
 _SAPI_SCRIPT = _BASE_DIR / "bin" / "tts_sapi.ps1"
 
 
 class TtsPlaybackMixin:
-    """Миксин TextToSpeech: SAPI, плееры, параллельный конвейер."""
+    """Миксин TextToSpeech: SAPI, плееры, воспроизведение файлов."""
 
     def _speak_sapi(self, text: str) -> Optional[str]:
         """Синтез через системный голос Windows (System.Speech) в WAV."""
@@ -129,71 +128,3 @@ class TtsPlaybackMixin:
         except Exception:
             proc.terminate()
             raise
-
-    def _speak_and_play_single(self, text: str,
-                               on_finished: Optional[Callable[[], None]],
-                               abort_event: Optional[threading.Event] = None) -> None:
-        """Синтез и проигрывание одного блока."""
-        if abort_event is not None and abort_event.is_set():
-            print("[TTS] Воспроизведение прервано")
-            if on_finished:
-                on_finished()
-            return
-        audio_path = self.speak(text, abort_event)
-        if not audio_path:
-            print("[TTS] Воспроизведение отменено - файл не создан")
-            if on_finished:
-                on_finished()
-            return
-        if abort_event is not None and abort_event.is_set():
-            print("[TTS] Воспроизведение прервано")
-            if on_finished:
-                on_finished()
-            return
-        self._play_file(audio_path, abort_event)
-        if on_finished:
-            on_finished()
-
-    def _speak_and_play_pipeline(self, text: str,
-                                 on_finished: Optional[Callable[[], None]],
-                                 abort_event: Optional[threading.Event] = None) -> None:
-        """Параллельный синтез блоков и последовательное проигрывание.
-
-        При срабатывании abort_event синтез оставшихся блоков отменяется
-        (ожидающие задачи отменяются, активная продолжается в фоне без блокировки).
-        """
-        sentences = self._split_sentences(text)
-        pool = ThreadPoolExecutor(max_workers=self._max_workers)
-        try:
-            futures = [pool.submit(self.speak, s, abort_event) for s in sentences]
-            for future in futures:
-                if abort_event is not None and abort_event.is_set():
-                    break
-                audio_path = future.result()
-                if audio_path:
-                    self._play_file(audio_path, abort_event)
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
-        if on_finished:
-            on_finished()
-
-    def speak_and_play(self, text: str,
-                       on_finished: Optional[Callable[[], None]] = None,
-                       abort_event: Optional[threading.Event] = None) -> None:
-        """Синтез речи и воспроизведение.
-
-        Текст длиннее одного блока синтезируется по блокам параллельно,
-        проигрывается строго по порядку. abort_event позволяет прервать
-        озвучку в любой момент.
-        """
-        if not text:
-            print("[TTS] Пустой текст")
-            if on_finished:
-                on_finished()
-            return
-
-        sentences = self._split_sentences(text)
-        if len(sentences) <= 1:
-            self._speak_and_play_single(text, on_finished, abort_event)
-        else:
-            self._speak_and_play_pipeline(text, on_finished, abort_event)

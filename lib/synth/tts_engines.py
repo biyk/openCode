@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 from gtts import gTTS
 
+from lib.synth import tts_cache
+
 _BASE_DIR = Path(__file__).resolve().parents[2]
 _PIPER_MODEL = _BASE_DIR / "models" / "piper" / "ru_RU-irina-medium.onnx"
 
@@ -22,6 +24,7 @@ class TtsEnginesMixin:
             tts = gTTS(text=text, lang=self._lang, slow=False,
                        timeout=self._gtts_timeout)
             tts.save(temp_path)
+            tts_cache.store(self._lang, text, temp_path)
             print(f"[TTS] gTTS: сохранено {temp_path}")
             return temp_path
         except Exception as e:

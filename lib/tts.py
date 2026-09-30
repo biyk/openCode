@@ -5,11 +5,13 @@ import threading
 from typing import Any, Optional
 
 from lib.core.logger import Logger
+from lib.synth import tts_cache
 from lib.synth.tts_engines import TtsEnginesMixin
+from lib.synth.tts_pipeline import TtsPipelineMixin
 from lib.synth.tts_playback import TtsPlaybackMixin
 
 
-class TextToSpeech(TtsEnginesMixin, TtsPlaybackMixin):
+class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
     """Синтез речи с офлайн-фолбэком.
 
     Основной движок — Google Translate TTS (gTTS). При недоступности сети
@@ -48,6 +50,11 @@ class TextToSpeech(TtsEnginesMixin, TtsPlaybackMixin):
         if not text:
             print("[TTS] Пустой текст")
             return None
+
+        cached = tts_cache.cached_copy(self._lang, text)
+        if cached:
+            print(f"[TTS] Кэш: {text[:50]}{'...' if len(text) > 50 else ''}")
+            return cached
 
         print(f"[TTS] Синтез: {text[:50]}{'...' if len(text) > 50 else ''}")
 

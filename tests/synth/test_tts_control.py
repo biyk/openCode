@@ -54,8 +54,7 @@ class TestTtsControl:
         with patch.object(tts, "speak",
                           side_effect=["/tmp/1.mp3", "/tmp/2.mp3"]):
             with patch.object(tts, "_play_file", side_effect=fake_play):
-                tts._speak_and_play_pipeline(
-                    "Один. Два.", None, abort_event=abort)
+                tts.speak_and_play("Один. Два.", None, abort_event=abort)
         assert played == ["/tmp/1.mp3"]
 
     def test_speak_and_play_pipeline_abort_before_play(self):
@@ -65,8 +64,7 @@ class TestTtsControl:
         abort.set()
         with patch.object(tts, "speak"):
             with patch.object(tts, "_play_file") as play:
-                tts._speak_and_play_pipeline(
-                    "Один. Два.", None, abort_event=abort)
+                tts.speak_and_play("Один. Два.", None, abort_event=abort)
         play.assert_not_called()
 
     def test_speak_and_play_single_no_audio_callback(self):
@@ -94,8 +92,7 @@ class TestTtsControl:
         called = []
         with patch.object(tts, "speak", return_value=None):
             with patch.object(tts, "_play_file"):
-                tts._speak_and_play_pipeline(
-                    "Один. Два.", lambda: called.append(1))
+                tts.speak_and_play("Один. Два.", lambda: called.append(1))
         assert called == [1]
 
     def test_speak_and_play_empty_text_callback(self):
