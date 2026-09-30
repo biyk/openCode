@@ -8,7 +8,8 @@
 from unittest.mock import MagicMock
 
 from lib.core.overtime import OvertimeNotifier
-from lib.core.task_monitor import TaskMonitor, start_task_monitor
+from lib.core.task_monitor import TaskMonitor
+from lib.core.task_monitor_launch import start_task_monitor
 from lib.core.tuning import TASK_OVERTIME_MULTIPLIER
 
 MIN = 60_000

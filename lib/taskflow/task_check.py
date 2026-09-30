@@ -14,7 +14,7 @@ start_date пишут и JS-клиент, и голосовые команды, 
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from lib.core.tuning import TASK_OVERTIME_MULTIPLIER
 from lib.taskflow.cells import as_int
@@ -86,3 +86,19 @@ def find_overtime(check: SheetCheck, now_ms: int,
                 title=task.title, uuid=task.uuid,
                 elapsed=elapsed, plan=task.task_time))
     return over
+
+
+def suggest_idle_task(tasks: list[dict[str, Any]]) -> Optional[str]:
+    """Первая незапущенная задача (start_date = 0) с непустым заголовком.
+
+    Монитор предлагает её вслух, когда ничего не запущено: «чем занимаешься?
+    предлагаю задачу: …». Строки в порядке таблицы — берём самую верхнюю
+    готовую. Пустая таблица / все запущены — None.
+    """
+    for row in tasks:
+        if as_int(row.get("start_date")) > 0:
+            continue
+        title = str(row.get("task_title") or "").strip()
+        if title:
+            return title
+    return None

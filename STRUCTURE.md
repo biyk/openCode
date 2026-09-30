@@ -65,7 +65,10 @@ voice
 │   │   ├── orchestrator_speech.py  # Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка.
 │   │   ├── output.py  # Это модуль, реализующий класс для вывода сообщений в консоль и записи их в лог‑файл, используемый в проекте для логирования работы ассистента.
 │   │   ├── overtime.py  # Оповещение о переработке задачи: озвучка + консоль + дубль в Telegram сообщением (say, не вопрос — ответа не ждём); разово на запущенную задачу, при стопе/рестарте разрешается заново
-│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» и запуск угаданной задачи (task_start); каждый цикл ещё и закрытие дыр календаря (fun_holes) и оповещение о переработке (overtime)
+│   │   ├── rest_watch.py  # Фоновая (в отдельном daemon-потоке) проверка активного окна на отдых: check_async запускает опрос модели, не занимая цикл task_monitor; новый опрос не стартует, пока предыдущий ждёт ответ (флаг+лок); _run берёт заголовок, классифицирует и озвучивает отдых, сбой проглатывает (swallowed)
+│   │   ├── task_monitor.py  # Фоновый контроль таблицы задач раз в interval_min: нет запущенных → вопрос «чем ты сейчас занимаешься?» с предложением по календарю (current_or_next из task_schedule: идущая сейчас или следующая задача, откат к suggest_idle_task без событий) и запуск угаданной по ответу (task_start); idle-оффер дублируется в Telegram — 3 задачи до «СОН» кнопками через offer(text,titles) либо текстом через notify; проверка активного окна на отдых уходит в фон (RestWatch), каждый цикл ещё дыры календаря (fun_holes) и переработка (overtime)
+│   │   ├── task_monitor_launch.py  # Фабрика start_task_monitor: читает секцию task_monitor/fun_holes commands.json, собирает дыры календаря (fun_fill) и оповещатель переработки, внедряет монитору примитивы окна отдыха (foreground_title+classify_until_answer — ждать ответ, не блокируя основной поток), календарь (GoogleCalendar) для время-зависимого предложения и колбэк offer для кнопок в Telegram, запускает daemon-поток; вынесено из task_monitor.py под лимит 200 строк
+│   │   ├── task_pick.py  # make_task_picker(handler): обработка клика кнопки «начать задачу» — зовёт TaskStartHandler.start_task по названию и возвращает текст в чат (▶️ запущена / ❌ ошибка); ленивый клиент в проде, сбой проглочен (swallowed) — нажатие не роняет polling
 │   │   └── tuning.py  # Центр настройки: все пороги и лимиты ассистента в одном месте с русскими комментариями (DECISION_THRESHOLD=0.9, LAYA_MAX_OPTS, EVENT_ACTION_THRESHOLD, DEDUP/TITLE/TOKEN_*, TASK_MONITOR_*, TASK_DONE_TEXT, FUN_*); крутятся по ложным срабатываниям, где уместно — оверрайд в commands.json
 │   ├── diagnostics/  # Диагностика: запуск супервизора и CLI (для lib.diagnose).
 │   │   ├── __init__.py  # Инициализация пакета diagnostics — Диагностика: запуск супервизора и CLI (для lib.diagnose).
@@ -96,7 +99,8 @@ voice
 │   │   ├── status.py  # Хранилище статусов: опрос, кэш, _run_check.
 │   │   ├── status_checkers.py  # Встроенные проверки статусов: vpn, media, browser.
 │   │   ├── status_poll.py  # Миксин хранилища статусов: фоновый опрос, заголовок консоли, ensure() с негативным TTL (свежие проверки не дублируются)
-│   │   └── win_com.py  # Низкоуровневый Windows COM через ctypes: GUID, вызовы методов по индексу vtable, QI/Activate/CoCreateInstance — база для WASAPI-запросов (pywin32 в проекте нет)
+│   │   ├── win_com.py  # Низкоуровневый Windows COM через ctypes: GUID, вызовы методов по индексу vtable, QI/Activate/CoCreateInstance — база для WASAPI-запросов (pywin32 в проекте нет)
+│   │   └── window_title.py  # Заголовок переднего окна Windows через ctypes user32 (GetForegroundWindow/GetWindowTextW), без pywin32; пустая строка, если окна/заголовка нет
 │   ├── scheduling/  # Расписание и время: cron-планировщик, парсер cron, парсер времени.
 │   │   ├── __init__.py  # Инициализация пакета scheduling — Расписание и время: cron-планировщик, парсер cron, парсер времени.
 │   │   ├── cron.py  # Планировщик как cron: читает cron/crontab.json, фоновый поток раз в секунду запускает сработавшие задания (script/shell), дедупликация по минуте, пропуски не догоняются, announce через TTS
@@ -132,7 +136,8 @@ voice
 │   │   ├── real_life_sheet.py  # Транспорт листов приложения: строка задачи A:T по task_uuid, событие-галочка, журнал task_executions и hero_money на общих OAuth-creds
 │   │   ├── rewards_sheet.py  # Листы наград: поиск награды в real_life_rewards по заголовку и строка списания в rewards_history (uuid, мс, gold_spent, заголовок, reward_id, серий даты) плюс hero_money
 │   │   ├── stop_task.py  # Эквивалент клика ⏹ «остановить и засчитать» запущенной задачи: длительность по факту, усреднение плана с фактом в колонке B, O=0; CLI python -m lib.taskflow.stop_task
-│   │   ├── task_check.py  # Оценка real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle; find_overtime — задачи, идущие дольше task_time×множитель (переработка)
+│   │   ├── task_check.py  # Оценка real_life_tasks без Google: какие задачи запущены (start_date ≠ 0; числа и текст в колонке читаем as_int) → SheetCheck с флагом idle; find_overtime — задачи, идущие дольше task_time×множитель (переработка); suggest_idle_task — первая незапущенная строка с заголовком (кандидат для предложения на idle)
+│   │   ├── task_schedule.py  # Время-зависимый выбор задач для предложения по сегодняшним событиям календаря (uuid в description): current_or_next — идущая сейчас либо следующая (голосовой вопрос), upcoming_titles — до 3 незапущенных от now до «СОН» (кнопки), sleep_edge — ближайший отход ко сну; idle_offer собирает пару (голос, кнопки) с откатом к suggest_idle_task без событий; чистые функции, сеть не трогает
 │   │   ├── task_start_sheet.py  # Клиент Google Таблицы real_life_tasks: строка по task_uuid, пакетное чтение G/O, точечная запись старта; те же creds OAuth, что у календаря
 │   │   ├── tasks_complete.py  # Миксин задач: завершение по названию exact/substring/fuzzy.
 │   │   ├── tasks_dedup.py  # Поиск дубликата задачи перед добавлением: строгое совпадение, затем Laya (вопрос по пачке названий + парное подтверждение).
@@ -141,10 +146,11 @@ voice
 │   │   └── wake_slots.py  # Свободные окна календаря и перенос задач из окна сна на окна после пробуждения (команда «я проснулся»): compute_free_slots и reschedule_sleep_events по restart/calendar.md
 │   ├── telegram/  # Канал команд из Telegram: тонкий клиент Bot API, сборка конфига и polling-бот, который гонит текст чата в тот же пайплайн оркестратора, что и микрофон
 │   │   ├── __init__.py  # Пакет Telegram-канала: Bot API клиент, конфиг секции telegram и polling-бот.
-│   │   ├── api.py  # Тонкий клиент Bot API Telegram поверх requests (getUpdates/sendMessage/getMe): прокси из секции telegram, сбои сети и ok=false логируются swallowed и возвращают «нет данных», polling-цикл из-за них не умирает, токен вырезается из текста ошибки
-│   │   ├── bot.py  # TelegramBot: daemon-поток long polling'а (offset, пауза retry_s при сбое); принимает команды только из whitelist чатов, /команды отвечают подсказкой, ответы режутся по max_len, текст чата уходит в колбэк on_text
+│   │   ├── api.py  # Тонкий клиент Bot API Telegram поверх requests (getUpdates/sendMessage/getMe/answerCallbackQuery): getUpdates берёт message+callback_query, sendMessage умеет inline-клавиатуру (reply_markup), answer_callback снимает «часики» нажатия; прокси из секции telegram, сбои сети и ok=false логируются swallowed и возвращают «нет данных», polling-цикл не умирает, токен вырезается из ошибки
+│   │   ├── bot.py  # TelegramBot: daemon-поток long polling'а (offset, пауза retry_s при сбое); принимает команды только из whitelist чатов, /команды отвечают подсказкой, ответы режутся по max_len, текст чата уходит в on_text; нажатие кнопки (callback_query) маршрутизируется в TaskOffers, offer() шлёт вопрос с кнопками предложения задач
 │   │   ├── config.py  # Секция telegram commands.json → TelegramConfig: токен только из окружения/.env (по имени token_env), whitelist allowed_chat_ids (+TELEGRAM_CHAT_IDS), proxy (+TELEGRAM_PROXY), тайминги из tuning; missing_parts говорит, чего не хватает для старта
-│   │   └── launch.py  # Фабрика start_telegram: секция telegram commands.json → TelegramApi + TelegramBot, стартует polling; без токена или без whitelist бот не поднимается, в лог прокси пишется без логина/пароля (proxy_label), текст чата идёт через submit_manual_text
+│   │   ├── launch.py  # Фабрика start_telegram: секция telegram commands.json → TelegramApi + TelegramBot, стартует polling; без токена или без whitelist бот не поднимается, в лог прокси пишется без логина/пароля (proxy_label), текст чата идёт через submit_manual_text
+│   │   └── offers.py  # Кнопки предложения задач в Telegram: OfferStore — карта «токен↔заголовок» (зациклена, callback_data короче лимита 64 байт) и сборка inline_keyboard; TaskOffers.offer шлёт вопрос с кнопками во все чаты whitelist, handle_callback по токену зовёт on_pick(title), answer_callback снимает нажатие, whitelist-проверка и провал on_pick проглочены
 │   ├── versioning/  # Версии приложения: gate, checker и доступ к __version__.
 │   │   ├── __init__.py  # Инициализация пакета versioning — Версии приложения: gate, checker и доступ к __version__.
 │   │   ├── version.py  # Это модуль, который импортирует переменную __version__ из пакета lib и предоставляет функцию get_version() для получения текущей версии проекта.
@@ -172,6 +178,7 @@ voice
 │   ├── google_calendar.py  # Календарь: OAuth, авторизация, CLI list.
 │   ├── plans.py  # Это модуль lib/plans.py, реализующий обработчик голосового запроса о текущих планах, который получает актуальное событие из Google Calendar и возвращает его для озвучки.
 │   ├── reminders.py  # Это модуль, реализующий обработку голосовых команд напоминаний, парсит время и текст, создаёт событие в Google Calendar и предоставляет CLI‑интерфейс.
+│   ├── rest_check.py  # Опрос модели «отдых ли активное окно?» по заголовку: rest_prompt строит вопрос, parse_rest_answer разбирает structured-ответ (Ответ/Вероятность/Объяснение, отдых = только «да»), classify спрашивает один раз через OmniRouter (модель auto), classify_until_answer крутит с паузой пока не придёт разборчатый ответ (бэкенд то и дело отдаёт таймаут/мусор); взять заголовок и печатать — дело вызывающего (task_monitor)
 │   ├── shopping.py  # Команды «нужно купить {товар}» и «купил {товар}»: строка в таблицу списка покупок / поиск и удаление позиции; CLI python -m lib.shopping add|bought|list
 │   ├── sleep_event.py  # Команда «спать»: находит событие «СОН» (идущее/скорое) в Google Calendar и фиксирует его начало текущим временем; CLI python -m lib.sleep_event
 │   ├── task_complete.py  # Команда «завершил задачу {название}»: без названия — текущая запущенная (⏹), с названием — сегодняшнее мероприятие; ветвь ⏹/✅ выбирается по start_date; после успеха озвучивает похвалу и следующую задачу; CLI python -m lib.task_complete
@@ -250,8 +257,13 @@ voice
 │   │   ├── test_orchestrator_speech.py  # Тесты Orchestrator: озвучка, стоп-слова, воркер opencode.
 │   │   ├── test_output.py  # Это тестовый файл, содержащий набор юнит‑тестов для проверки функциональности и логирования класса TranscriptionOutput.
 │   │   ├── test_overtime.py  # Тесты оповещения о переработке: голос+консоль+Telegram через say (не ask), тишина в норме, разовость на одну задачу, повтор после перезапуска, работает без Telegram-канала
+│   │   ├── test_rest_watch.py  # Тесты RestWatch: _run озвучивает только отдых/молчит иначе/глотает сбой примитива/сбрасывает флаг; check_async: выключен без примитивов, запускает ровно один поток и не плодит повтор пока идёт, возвращается не блокируя
 │   │   ├── test_task_monitor.py  # Тесты фонового контроля: idle → вопрос и запуск угаданной задачи, неизвестный ответ, busy без вопросов, deferred/skip, сборка по секции task_monitor, хук дыр календаря каждый цикл
+│   │   ├── test_task_monitor_notify.py  # Тесты idle-вопроса task_monitor: вопрос содержит предложение задачи, уходит в Telegram через notify; deferred/busy/notify=None — в чат ничего не идёт
+│   │   ├── test_task_monitor_offer.py  # Тесты idle-ветки task_monitor с календарём: идущая сейчас задача в голосовом вопросе + 3 названия кнопками в offer (notify молчит), без gcal и при сбое чтения календаря — откат к таблице и notify текстом (offer не зовётся), ask отвергнут → deferred без оффера
 │   │   ├── test_task_monitor_overtime.py  # Тесты связки task_monitor и переработки: каждый такт дёргает OvertimeNotifier.check на снимке таблицы (и в busy), фабрика собирает нотифайер по секции, overtime_enabled=false → None, проброс notify и множителя
+│   │   ├── test_task_monitor_rest.py  # Тесты idle-ветки task_monitor: на idle монитор делегирует проверку окна фоновому RestWatch (check_async до вопроса, не блокируя цикл), на busy не запускает, без примитивов (дефолт) сеть и печать не трогаются
+│   │   ├── test_task_pick.py  # Тесты make_task_picker: ok → «▶️ … запущена» с вызовом start_task по названию, ошибка → «❌ …», исключениеstart_task проглочено и возвращён текст «Не удалось»
 │   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9, озвучка завершения разработки (текст + вызов из post-commit)
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.
@@ -286,7 +298,8 @@ voice
 │   │   ├── test_status.py  # Тесты статусов: загрузка и реестр.
 │   │   ├── test_status_checks.py  # Тесты статусов: выполнение проверок.
 │   │   ├── test_status_ensure_ttl.py  # Юнит-тесты негативного TTL ensure(): свежий статус не перепроверяется, протухший — перепроверяется, recheck_ttl=0 возвращает старое поведение
-│   │   └── test_status_poll.py  # Тесты статусов: фоновый опрос.
+│   │   ├── test_status_poll.py  # Тесты статусов: фоновый опрос.
+│   │   └── test_window_title.py  # Тесты заголовка окна: мокаем ctypes.windll.user32 — возврат заголовка, пусто при отсутствии hwnd и при пустом заголовке
 │   ├── scheduling/  # Автотесты расписания: cron, парсер времени, напоминания, сон/пробуждение.
 │   │   ├── test_cron_edit.py  # Юнит-тесты правки crontab.json: сдвиг на now+7ч30, сохранение прочих полей, отсутствующие задание/файл, нестандартное расписание, атомарность записи
 │   │   ├── test_cron_output.py  # Юнит-тесты логирования вывода cron-заданий: stdout в логе при успехе и ошибке, защита от не-bytes
@@ -337,10 +350,11 @@ voice
 │   │   ├── test_real_life_sheet.py  # Юнит-тесты транспорта real_life_*: диапазоны и RAW/UNFORMATTED_VALUE, поиск строки по uuid, журнал и hero_money (без сети)
 │   │   ├── test_rewards_sheet.py  # Тесты листов наград: поиск награды без регистра/пробелов, колонки строки rewards_history в порядке JS-клиента и серий даты, списание hero_money
 │   │   ├── test_stop_task.py  # Юнит-тесты ⏹: длительность по факту, усреднение колонки B, журнал и награда по факту, O=0, не-запущенная → RuntimeError, mode 5 без журнала (без сети)
-│   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid; find_overtime: 169>93×1.2 срабатывает, в норме/plan=0/idle — нет
+│   │   ├── test_task_check.py  # Тесты оценки таблицы: старты 0/''/'0'/None — idle, текстовый timestamp — запуск, несколько запущенных строк, пустые название/uuid; find_overtime: 169>93×1.2 срабатывает, в норме/plan=0/idle — нет; suggest_idle_task: первая незапущенная, пропуск запущенных/пустых заголовков, пусто/все-запущены → None
 │   │   ├── test_task_complete.py  # Юнит-тесты команды «завершил задачу»: выбор ветви ⏹/✅ по start_date, пустое название → запущенная, поиск по названию через TaskStart, ошибки (без сети)
 │   │   ├── test_task_complete_cli.py  # Тесты CLI завершения: печать ⏹ по факту и ✅ по плану, skipped не ошибка, коды выхода и текст ошибки (без сети)
 │   │   ├── test_task_live.py  # Живые тесты Google Tasks (VOICE_LIVE_GOOGLE=1): реальная команда task-add create -> id -> verify -> delete.
+│   │   ├── test_task_schedule.py  # Тесты task_schedule: идущая сейчас важнее следующей, следующая при простое, ничего не предложено после завершения, запущенная/галочка(colorId=7) исключены, 3 ближайшие, отсечка по сну, sleep_edge берёт ближайший «СОН», idle_offer с откатом без событий
 │   │   ├── test_task_start.py  # Юнит-тесты запуска задачи: формула resume (now-O), только G, уже запущена/нет uuid/нет строки, шумовые слова и порог похожести (без сети)
 │   │   ├── test_task_start_tiebreak.py  # Тесты тай-брейка EventMatch: при равной похожести берётся событие самое раннее по времени начала («почистил зубы» утром → «утро», а не «вечер»); время — только тай-брейк ПОСЛЕ скора, более похожее позднее событие сильнее
 │   │   ├── test_tasks.py  # Тесты задач: разбор фраз, создание.
@@ -353,8 +367,10 @@ voice
 │   ├── telegram/
 │   │   ├── test_api.py  # Тесты клиента Bot API: URL и параметры getUpdates/sendMessage, прокси в requests.proxies, ok=false отдельно от тишины (None), сетевая ошибка не валяет вызывающий код, токен не попадает в лог, временный timeout getMe восстанавливается
 │   │   ├── test_bot.py  # Тесты транспорта Telegram-бота: whitelist (неизвестный чат логируется один раз), offset long polling'а и пауза при сбое, /команды — подсказка, ответы частями по max_len, broadcast — во все чаты whitelist независимо от их сообщения
+│   │   ├── test_bot_callback.py  # Тесты маршрутизации TelegramBot: callback_query уходит в TaskOffers.handle_callback (не в on_text), offer() делегирует в TaskOffers.offer, _remember задаёт чат ответа
 │   │   ├── test_bot_factory.py  # Тесты фабрики start_telegram: выключенная секция, старт без токена или без whitelist отвергнут, готовый конфиг поднимает поток, текст чата уходит в submit_manual_text с reply, прокси доходит до API и не светит пароль в логе
-│   │   └── test_config.py  # Тесты конфига Telegram: токен по имени token_env, id чатов из JSON и TELEGRAM_CHAT_IDS, proxy из секции или TELEGRAM_PROXY, значения по умолчанию из tuning, whitelist сравнивает по строкам, read_token с явным env не трогает .env
+│   │   ├── test_config.py  # Тесты конфига Telegram: токен по имени token_env, id чатов из JSON и TELEGRAM_CHAT_IDS, proxy из секции или TELEGRAM_PROXY, значения по умолчанию из tuning, whitelist сравнивает по строкам, read_token с явным env не трогает .env
+│   │   └── test_offers.py  # Тесты offers: токен восстанавливает заголовок, markup по кнопке на задачу, вытеснение старых токенов, offer шлёт markup во все чаты и текстом при пустом списке, handle_callback запускает/отвечает/игнорит чужой чат/молчит на забытый токен/глотает сбой on_pick
 │   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.
 │   │   ├── test_command_stats.py  # Тесты статистики использования: bump счётчика и first/last_seen, пустой/битый файл fail-open, сбой записи проглочен, отчёт сортируется и показывает никогда не служившие, хук execute_by_id (успех пишет, неудача нет, sequence — по составному id)
 │   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
@@ -388,7 +404,8 @@ voice
 │   ├── test_main_entry.py  # Тесты main: точка входа приложения.
 │   ├── test_main_run.py  # Тесты воркера: очередь аудио.
 │   ├── test_main_run_abort.py  # Тесты воркера: стоп-слова и ошибки.
-│   └── test_main_worker.py  # Тесты воркера: инициализация и колбэки.
+│   ├── test_main_worker.py  # Тесты воркера: инициализация и колбэки.
+│   └── test_rest_check.py  # Тесты rest_check: rest_prompt содержит заголовок и ярлыки полей, structured-парсер Ответ/Вероятность/Объяснение (да/нет/не знаю, разное написание, мусор без полей, вероятность без %), classify: пустой заголовок не дёргает сеть, шлёт rest_prompt, мусор не отдых; classify_until_answer: ретраи до разборчатого ответа, пауза только между попытками, лимит попыток, пустой заголовок
 ├── AGENTS.md  # Руководство для агентов Voice Control: правила коммитов (только по команде), version gate, команды сборки/тестов, архитектура (Vosk STT → Orchestrator), Google Calendar/ Tasks, аудио и стоп-слова, LLM-провайдеры (race), концепция голосовых команд (commands.json, 90% порог, ключ и команда в одной строке).
 ├── COMMANDS.md  # Это файл‑документация, в котором описаны голосовые команды, их триггеры, соответствующие навыки, параметры и вызываемые скрипты, служит справочником для работы голосового ассистента.
 ├── README.md  # README.md — это файл описания проекта, содержащий инструкцию по установке, использованию и функционалу голосового помощника для Windows.

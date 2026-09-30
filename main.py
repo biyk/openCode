@@ -19,7 +19,8 @@ if sys.platform == "win32":
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
 from lib.core.output import TranscriptionOutput  # noqa: E402
-from lib.core.task_monitor import start_task_monitor  # noqa: E402
+from lib.core.task_monitor_launch import start_task_monitor  # noqa: E402
+from lib.core.task_pick import make_task_picker  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
 from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
 from lib.telegram.launch import start_telegram  # noqa: E402
@@ -59,14 +60,16 @@ def main():
 
     # Telegram-бот (секция telegram): те же команды текстом из мессенджера,
     # ответы — в чат, без озвучки. Поднимаем до монитора: оповещение о
-    # переработке дублируется в чат через bot.broadcast.
-    telegram = start_telegram(worker, output)
+    # переработке дублируется в чат через bot.broadcast, а нажатие кнопки
+    # предложения задачи запускает её через make_task_picker.
+    telegram = start_telegram(worker, output, on_pick=make_task_picker())
 
     # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
     # вопросы вслух, старт задачи по ответу и оповещение о переработке.
     task_monitor = start_task_monitor(
         worker, output,
-        notify=telegram.broadcast if telegram is not None else None)
+        notify=telegram.broadcast if telegram is not None else None,
+        offer=telegram.offer if telegram is not None else None)
 
     output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "
                       "или писать в Telegram.\n")

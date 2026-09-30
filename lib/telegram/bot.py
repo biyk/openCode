@@ -19,6 +19,7 @@ from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
 from lib.telegram.config import TelegramConfig
+from lib.telegram.offers import TaskOffers
 
 # Подсказка на служебные /команды: в чате их печатают чаще, чем команды.
 HELP_TEXT = ("Команды пишите как речь: «громче», «включи ютуб», "
@@ -30,7 +31,8 @@ class TelegramBot:
 
     def __init__(self, api: Any, config: TelegramConfig,
                  on_text: Callable[[str, Callable[[str], None]], None],
-                 output: Any = None) -> None:
+                 output: Any = None,
+                 on_pick: Optional[Callable[[str], str]] = None) -> None:
         self._api = api
         self._config = config
         self._on_text = on_text
@@ -40,6 +42,8 @@ class TelegramBot:
         self._offset = 0
         self._chat_id: Optional[str] = None
         self._unknown: set[str] = set()
+        self._offers = TaskOffers(api, config, on_pick=on_pick,
+                                  reply=self.reply, set_chat=self._remember)
 
     # ---------- Поток ----------
 
@@ -91,7 +95,10 @@ class TelegramBot:
             self._offset = max(self._offset, uid + 1)
 
     def handle(self, update: dict) -> Optional[str]:
-        """Отдаёт текст разрешённого сообщения в пайплайн; None — не команда."""
+        """Отдаёт текст/нажатие разрешённого чата в пайплайн; None — не команда."""
+        callback = update.get("callback_query")
+        if isinstance(callback, dict):
+            return self._offers.handle_callback(callback)
         message = update.get("message")
         if not isinstance(message, dict):
             return None
@@ -123,6 +130,14 @@ class TelegramBot:
                     f"telegram.allowed_chat_ids")
 
     # ---------- Ответы ----------
+
+    def _remember(self, chat_id: str) -> None:
+        """Запоминает чат ответа (нажатие кнопки приходит без пред. сообщения)."""
+        self._chat_id = chat_id
+
+    def offer(self, text: str, titles: list) -> None:
+        """Инициативный вопрос с кнопками выбора задачи во все чаты whitelist."""
+        self._offers.offer(text, titles)
 
     def reply(self, text: str) -> None:
         """Отправляет ответ в чат, откуда пришла команда (длинное — частями)."""

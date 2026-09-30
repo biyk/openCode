@@ -85,20 +85,43 @@ class TelegramApi:
         result = self._call("getUpdates", {
             "offset": offset,
             "timeout": timeout_s,
-            # Обычные сообщения: edited/реакции/каналы нам не команды.
-            "allowed_updates": json.dumps(["message"]),
+            # Сообщения и нажатия кнопок (inline keyboard): edited/реакции/
+            # каналы нам не команды.
+            "allowed_updates": json.dumps(["message", "callback_query"]),
         })
         if not isinstance(result, list):
             return None
         return [u for u in result if isinstance(u, dict)]
 
-    def send_message(self, chat_id: Any, text: str) -> bool:
-        """Отправляет текст в чат; True — Telegram принял сообщение."""
-        return self._call("sendMessage", {
+    def send_message(self, chat_id: Any, text: str,
+                     reply_markup: Optional[dict] = None) -> bool:
+        """Отправляет текст в чат; True — Telegram принял сообщение.
+
+        `reply_markup` — inline-клавиатура (кнопки предложения задач); без него
+        — обычное текстовое сообщение.
+        """
+        params: dict[str, Any] = {
             "chat_id": chat_id,
             "text": text,
             "disable_web_page_preview": "true",
-        }) is not None
+        }
+        if reply_markup is not None:
+            params["reply_markup"] = json.dumps(reply_markup,
+                                                ensure_ascii=False)
+        return self._call("sendMessage", params) is not None
+
+    def answer_callback(self, callback_id: Any, text: str = "") -> bool:
+        """Снимает «часики» нажатия кнопки; True — Telegram принял ответ.
+
+        Без ответа на callback_query кнопка висит «задумчивой» у пользователя.
+        Без id (сбой разбора обновления) — ничего не делаем.
+        """
+        if not callback_id:
+            return False
+        params: dict[str, Any] = {"callback_query_id": callback_id}
+        if text:
+            params["text"] = text
+        return self._call("answerCallbackQuery", params) is not None
 
 
 __all__ = ["TelegramApi", "API_BASE"]

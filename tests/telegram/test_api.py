@@ -6,6 +6,8 @@
 (цикл polling'а по этому различает сбой и тишину).
 """
 
+import json
+
 import pytest
 
 from lib.telegram.api import TelegramApi
@@ -34,7 +36,7 @@ class TestGetUpdates:
         assert url.endswith("/botTOKEN/getUpdates")
         assert params["offset"] == 6
         assert params["timeout"] == 20
-        assert params["allowed_updates"] == '["message"]'
+        assert params["allowed_updates"] == '["message", "callback_query"]'
 
     def test_drops_non_dict_items(self, mocker, requests_mock):
         requests_mock.post.return_value = _ok(mocker, [{"update_id": 1}, "мусор"])
@@ -91,6 +93,35 @@ class TestSendMessage:
         response.json.return_value = {"ok": False, "description": "400: chat not found"}
         requests_mock.post.return_value = response
         assert TelegramApi("TOKEN").send_message("1", "текст") is False
+
+    def test_reply_markup_is_json(self, mocker, requests_mock):
+        """Inline-клавиатура уходит параметром reply_markup (JSON-строкой)."""
+        requests_mock.post.return_value = _ok(mocker, {"message_id": 1})
+        markup = {"inline_keyboard": [[{"text": "Уборка", "callback_data": "t1"}]]}
+        assert TelegramApi("TOKEN").send_message(
+            "777", "вопрос", reply_markup=markup) is True
+        params = requests_mock.post.call_args.kwargs["params"]
+        assert json.loads(params["reply_markup"]) == markup
+
+    def test_no_reply_markup_omits_param(self, mocker, requests_mock):
+        requests_mock.post.return_value = _ok(mocker, {"message_id": 1})
+        TelegramApi("TOKEN").send_message("777", "текст")
+        assert "reply_markup" not in requests_mock.post.call_args.kwargs["params"]
+
+
+class TestAnswerCallback:
+    def test_sends_callback_id(self, mocker, requests_mock):
+        requests_mock.post.return_value = _ok(mocker, True)
+        assert TelegramApi("TOKEN").answer_callback("abc", "готово") is True
+        url = requests_mock.post.call_args.args[0]
+        params = requests_mock.post.call_args.kwargs["params"]
+        assert url.endswith("/botTOKEN/answerCallbackQuery")
+        assert params["callback_query_id"] == "abc"
+        assert params["text"] == "готово"
+
+    def test_empty_id_is_noop(self, mocker, requests_mock):
+        assert TelegramApi("TOKEN").answer_callback("") is False
+        requests_mock.post.assert_not_called()
 
 
 class TestGetMe:

@@ -13,20 +13,22 @@ daemon-потоке (как version_checker): cron-подпроцесс не м�
 """
 
 import threading
+from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
 from lib.core.overtime import OvertimeNotifier
-from lib.core.tuning import (FUN_LOOKBACK_DAYS, FUN_MIN_GAP_MIN,
-                             TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S,
-                             TASK_OVERTIME_MULTIPLIER)
+from lib.core.rest_watch import RestWatch
+from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
 from lib.task_start import TaskStartHandler
-from lib.taskflow.fun_fill import make_fun_fill
 from lib.taskflow.real_life_sheet import RealLifeSheet
-from lib.taskflow.task_check import SheetCheck, evaluate
+from lib.taskflow.task_check import evaluate
+from lib.taskflow.task_schedule import idle_offer
 
 # Вопрос, когда не запущено ничего (ответ — название задачи из таблицы).
 QUESTION_IDLE = "Чем ты сейчас занимаешься?"
+# К предложению незапущенной задачи в том же вопросе (см. suggest_idle_task).
+PROPOSE_PREFIX = "Предлагаю задачу:"
 # Ответ на него не похож ни на одну задачу: произносим и живём дальше.
 ANSWER_UNKNOWN = "Такой задачи в списке нет"
 
@@ -40,7 +42,12 @@ class TaskMonitor:
                  interval_s: float = TASK_MONITOR_INTERVAL_S,
                  answer_timeout_s: float = TASK_ANSWER_TIMEOUT_S,
                  fun: Optional[Callable[[], None]] = None,
-                 overtime: Optional[OvertimeNotifier] = None) -> None:
+                 overtime: Optional[OvertimeNotifier] = None,
+                 title_fn: Optional[Callable[[], str]] = None,
+                 classify_fn: Optional[Callable[[str], Any]] = None,
+                 notify: Optional[Callable[[str], None]] = None,
+                 gcal: Any = None,
+                 offer: Optional[Callable[[str, list], None]] = None) -> None:
         self._ask = ask
         self._say = say
         self._output = output
@@ -51,6 +58,10 @@ class TaskMonitor:
         self._answer_timeout_s = answer_timeout_s
         self._fun = fun
         self._overtime = overtime
+        self._rest = RestWatch(title_fn, classify_fn, output)
+        self._notify = notify
+        self._gcal = gcal
+        self._offer = offer
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -85,31 +96,55 @@ class TaskMonitor:
         """Читает таблицу; если запущено ничего нет — спрашивает вслух."""
         if self._fun is not None:
             self._fun()             # дыры календаря молча закрываются каждый цикл
-        check = self._check()
-        if check is None:
+        snapshot = self._snapshot()
+        if snapshot is None:
             return "skip"
+        check, rows = snapshot
         if self._overtime is not None:
             self._overtime.check(check)   # и при занятой задаче, не только idle
         if check.idle:
-            return self._ask_or_defer(
-                QUESTION_IDLE, self._on_idle_answer, "task_idle", "idle")
+            self._rest.check_async()           # окно = отдых? проверить в фоне
+            return self._handle_idle(rows)
         return "busy"
 
-    def _ask_or_defer(self, question: str, on_answer: Callable[[str], None],
-                      label: str, verdict: str) -> str:
-        """Задаёт вопрос; False от оркестратора (уже ждём ответ) — пропуск."""
-        if self._ask(question, on_answer, label, self._answer_timeout_s):
-            return verdict
-        self._output.print_info(f"[TaskMonitor] «{label}» отложен")
-        return "deferred"
+    def _handle_idle(self, rows: list) -> str:
+        """Idle: голосовой вопрос с предложением + кнопка-оффер в Telegram."""
+        voice, titles = self._offer_of(rows)
+        question = (f"{QUESTION_IDLE} {PROPOSE_PREFIX} {voice}" if voice
+                    else QUESTION_IDLE)
+        if not self._ask(question, self._on_idle_answer, "task_idle",
+                         self._answer_timeout_s):
+            self._output.print_info("[TaskMonitor] «task_idle» отложен")
+            return "deferred"
+        if titles and self._offer is not None:
+            self._offer(QUESTION_IDLE, titles)  # 3 задачи кнопками в чат
+        elif self._notify is not None:
+            self._notify(question)              # тот же вопрос текстом в чат
+        return "idle"
 
-    def _check(self) -> Optional[SheetCheck]:
-        """Снимок таблицы (None — прочитать не удалось, молча пропускаем)."""
+    def _offer_of(self, rows: list) -> tuple:
+        """(предложение вслух, названия для кнопок) по календарю сегодня."""
+        return idle_offer(rows, self._today_events(), datetime.now().astimezone())
+
+    def _today_events(self) -> Optional[list]:
+        """Сегодняшние события календаря; None, если календарь не подключён."""
+        if self._gcal is None:
+            return None
+        now = datetime.now().astimezone()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            return self._gcal.list_events_between(
+                day_start, day_start + timedelta(days=1))
+        except Exception as error:                # нет токена/сети — откат к таблице
+            return swallowed("task_monitor.events", error, None)
+
+    def _snapshot(self):
+        """Снимок таблицы: (SheetCheck, сырые строки); None при сбое чтения."""
         try:
             rows = self._real_life_sheet().read_all_tasks()
         except Exception as error:                # нет токена/сети
             return swallowed("task_monitor.read", error, None)
-        return evaluate(rows)
+        return evaluate(rows), rows
 
     def _real_life_sheet(self) -> Any:
         """Лениво создаёт читалку real_life_* (тот же OAuth, что календарь)."""
@@ -155,46 +190,3 @@ class TaskMonitor:
             return None
         title = str(event.get("summary") or "").strip()
         return title or None
-
-
-def start_task_monitor(worker: Any, output: Any,
-                       notify: Optional[Callable[[str], None]] = None
-                       ) -> Optional[TaskMonitor]:
-    """Собирает и запускает монитор по секции `task_monitor` commands.json.
-
-    Ключи секции: enabled, interval_min, answer_timeout_s, overtime_enabled,
-    overtime_multiplier; чего нет — берём из lib.core.tuning. None — секция
-    выключена. Секция `fun_holes` (enabled, min_gap_min, lookback_days)
-    добавляет к циклу дыры календаря; `notify` — дубль оповещения о
-    переработке (Telegram).
-    """
-    config = worker._matcher.get_task_monitor_config()
-    if not config.get("enabled"):
-        return None
-    interval_s = float(config.get("interval_min",
-                                  TASK_MONITOR_INTERVAL_S / 60.0)) * 60.0
-    fun = None
-    fun_config = worker._matcher.get_fun_holes_config()
-    if fun_config.get("enabled"):
-        fun = make_fun_fill(
-            output,
-            min_gap=float(fun_config.get("min_gap_min", FUN_MIN_GAP_MIN)),
-            lookback=int(fun_config.get("lookback_days", FUN_LOOKBACK_DAYS)))
-    overtime = None
-    if config.get("overtime_enabled", True):
-        overtime = OvertimeNotifier(
-            say=worker._orchestrator.say, output=output, notify=notify,
-            multiplier=float(config.get('overtime_multiplier', TASK_OVERTIME_MULTIPLIER)))
-    output.print_info(
-        f"[TaskMonitor] Таблица задач: проверка каждые "
-        f"{interval_s / 60.0:.0f} мин"
-        + ("; дыры календаря → развлечения" if fun else "")
-        + ("; переработка → оповещение" if overtime else ""))
-    monitor = TaskMonitor(
-        ask=worker._orchestrator.ask, say=worker._orchestrator.say,
-        output=output, core=worker._matcher.core_phrase,
-        interval_s=interval_s, fun=fun, overtime=overtime,
-        answer_timeout_s=float(config.get("answer_timeout_s",
-                                          TASK_ANSWER_TIMEOUT_S)))
-    monitor.start()
-    return monitor

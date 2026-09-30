@@ -2,9 +2,9 @@
 
 from unittest.mock import MagicMock
 
-from lib.core import task_monitor as task_monitor_module
-from lib.core.task_monitor import (ANSWER_UNKNOWN, QUESTION_IDLE, TaskMonitor,
-                                   start_task_monitor)
+from lib.core import task_monitor_launch as launch_module
+from lib.core.task_monitor import ANSWER_UNKNOWN, PROPOSE_PREFIX, QUESTION_IDLE, TaskMonitor
+from lib.core.task_monitor_launch import start_task_monitor
 
 
 class _Asker:
@@ -54,7 +54,8 @@ class TestIdleQuestion:
     def test_tick_asks_idle_question(self, mocker):
         monitor, ask = _monitor(mocker, [_row(start=0)])
         assert monitor.tick() == "idle"
-        assert ask.questions == [(QUESTION_IDLE, "task_idle")]
+        assert ask.questions == [
+            (f"{QUESTION_IDLE} {PROPOSE_PREFIX} Уборка", "task_idle")]
         assert ask.timeout_s == 90.0
 
     def test_answer_starts_matching_task(self, mocker):
@@ -165,7 +166,7 @@ class TestStartFromConfig:
         worker._matcher.get_fun_holes_config.return_value = {
             "enabled": True, "min_gap_min": 5, "lookback_days": 3}
         built = []
-        mocker.patch.object(task_monitor_module, "make_fun_fill",
+        mocker.patch.object(launch_module, "make_fun_fill",
                             side_effect=lambda *a, **k: built.append(k) or
                             (lambda: None))
         monitor = start_task_monitor(worker, mocker.MagicMock())

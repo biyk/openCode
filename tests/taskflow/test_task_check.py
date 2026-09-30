@@ -1,6 +1,6 @@
 """Тесты оценки таблицы задач: запущенные строки и переработка (task_check)."""
 
-from lib.taskflow.task_check import evaluate, find_overtime
+from lib.taskflow.task_check import evaluate, find_overtime, suggest_idle_task
 
 
 def _row(title="Уборка", start=0, uuid="u-1"):
@@ -88,3 +88,24 @@ class TestOvertime:
     def test_idle_check_has_no_overtime(self):
         """Ничего не запущено — переработки нет."""
         assert find_overtime(self._check(start=0), self.START) == []
+
+
+class TestSuggestIdleTask:
+    """Предложение задачи на idle: первая незапущенная с заголовком."""
+
+    def test_first_not_started_row(self):
+        rows = [_row(title="Уборка", start=0), _row(title="Мытьё", start=0)]
+        assert suggest_idle_task(rows) == "Уборка"
+
+    def test_skips_started_rows(self):
+        rows = [_row(title="Зарядка", start=1_700_000_000_000),
+                _row(title="Уборка", start=0)]
+        assert suggest_idle_task(rows) == "Уборка"
+
+    def test_blank_title_is_skipped(self):
+        rows = [_row(title="   ", start=0), _row(title="Дело", start=0)]
+        assert suggest_idle_task(rows) == "Дело"
+
+    def test_empty_or_all_started_is_none(self):
+        assert suggest_idle_task([]) is None
+        assert suggest_idle_task([_row(start=1_700_000_000_000)]) is None
