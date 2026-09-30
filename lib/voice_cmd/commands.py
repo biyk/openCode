@@ -4,6 +4,7 @@ import platform
 import subprocess
 from typing import Optional
 
+from lib.voice_cmd.command_stats import CommandStats, stats_path_for
 from lib.voice_cmd.commands_config import CommandConfigMixin
 from lib.voice_cmd.commands_match import CommandMatchMixin
 from lib.runtime.status import StatusStore
@@ -37,6 +38,7 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         self._data = self._load()
         self._tts = TextToSpeech()
         self._status_store = status_store
+        self._stats = CommandStats(stats_path_for(commands_file))
 
     def _load(self) -> dict:
         try:
@@ -121,12 +123,20 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
 
     def execute_by_id(self, cmd_id: str,
                       settings: tuple[str, ...] = ()) -> bool:
-        """Выполняет команду по id (или составную sequence по шагам)."""
+        """Выполняет команду по id (или составную sequence по шагам).
+
+        Успешный запуск помечается в статистику использования (CommandStats);
+        сама статистика fail-open — сбой записи не влияет на результат.
+        """
         self.reload()
         seq = self.sequences().get(cmd_id)
         if seq is not None:
-            return self._execute_sequence(cmd_id, seq, settings)
-        return self._execute_step(cmd_id, settings)
+            ok = self._execute_sequence(cmd_id, seq, settings)
+        else:
+            ok = self._execute_step(cmd_id, settings)
+        if ok:
+            self._stats.bump(cmd_id)
+        return ok
 
     def _execute_step(self, cmd_id: str,
                       settings: tuple[str, ...] = ()) -> bool:

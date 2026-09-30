@@ -150,6 +150,7 @@ voice
 │   │   └── version_gate.py  # Файл lib/versioning/version_gate.py отвечает за проверку соответствия версии приложения и версии проекта, считывает номер версии из файла VERSION и при несовпадении завершает работу.
 │   ├── voice_cmd/  # Первый уровень команд: матчер commands.json, база знаний, intent, конфиг устройств.
 │   │   ├── __init__.py  # Инициализация пакета voice_cmd — Первый уровень команд: матчер commands.json, база знаний, intent, конфиг устройств.
+│   │   ├── command_stats.py  # Статистика использования команд: CommandStats прибавляет счётчик по cmd_id (count/first_seen/last_seen) в targets/<host>/command_stats.json рядом с commands.json; потокобезопасно и fail-open (swallowed). Отчёт python -m lib.voice_cmd.command_stats сводит id commands+sequences со счётчиком по возрастанию частоты
 │   │   ├── commands.py  # Матчер команд: выполнение shell, requires/provides.
 │   │   ├── commands_config.py  # Миксин матчера: доступ к секциям конфига commands.json.
 │   │   ├── commands_match.py  # Миксин матчера: core_phrase, find_command, find_literal_id.
@@ -351,6 +352,7 @@ voice
 │   │   ├── test_bot_factory.py  # Тесты фабрики start_telegram: выключенная секция, старт без токена или без whitelist отвергнут, готовый конфиг поднимает поток, текст чата уходит в submit_manual_text с reply, прокси доходит до API и не светит пароль в логе
 │   │   └── test_config.py  # Тесты конфига Telegram: токен по имени token_env, id чатов из JSON и TELEGRAM_CHAT_IDS, proxy из секции или TELEGRAM_PROXY, значения по умолчанию из tuning, whitelist сравнивает по строкам, read_token с явным env не трогает .env
 │   ├── voice_cmd/  # Автотесты первого уровня команд: матчер, база знаний, intent, конфиг.
+│   │   ├── test_command_stats.py  # Тесты статистики использования: bump счётчика и first/last_seen, пустой/битый файл fail-open, сбой записи проглочен, отчёт сортируется и показывает никогда не служившие, хук execute_by_id (успех пишет, неудача нет, sequence — по составному id)
 │   │   ├── test_commands.py  # Тесты CommandMatcher: дословные совпадения и выполнение.
 │   │   ├── test_commands_exec.py  # Тесты CommandMatcher: reload, get_command, конфиги.
 │   │   ├── test_commands_find.py  # Тесты CommandMatcher: ключ и команда в одной строке, find_command.

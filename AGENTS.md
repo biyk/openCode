@@ -115,6 +115,14 @@ python main.py
 - **Прокси обязателен на этом ПК**: прямого маршрута до `api.telegram.org:443` нет (TCP-таймаут), есть SOCKS5 `192.168.1.107:1080` — тот же адрес, что у статуса `proxy` (`lib/runtime/status_checkers.py`). Ключ `proxy` (`socks5h://host:port` — DNS тоже через прокси) или `TELEGRAM_PROXY` в `.env`; PySocks уже в окружении. В лог прокси пишется без логина/пароля (`launch.py::proxy_label`), токен вырезается из текста ошибок requests.
 - Тесты: `tests/telegram/test_api.py`, `test_config.py`, `test_bot.py`, `test_bot_factory.py` (мок requests/Api), `tests/core/test_orchestrator_chat.py` (роутинг ответа), `tests/stt/test_text_inputs.py` (проброс reply).
 
+### 4.8 Статистика использования команд (`command_stats`)
+- Зачем: видно, какие команды реально запускаются, какие редко/никогда — чтобы удалять мёртвый функционал.
+- Единственная точка учёта — `CommandMatcher.execute_by_id` (`lib/voice_cmd/commands.py`): через неё проходят все исполняемые пути (commands.json, база знаний, Laya, legacy intent). Считается **успешный** запуск (`ok=True`); неудача/блокировка по requires не прибавляет. Составная команда засчитывается по id sequence (шаги не дублируются).
+- Хранение — `lib/voice_cmd/command_stats.py::CommandStats`, JSON рядом с commands.json устройства: `targets/<host>/command_stats.json` вида `{"cmd_id": {"count", "first_seen", "last_seen"}}`. Путь задаёт `stats_path_for(commands_file)`. Файл **в .gitignore** (runtime-данные, не должны шуметь в коммитах).
+- Потокобезопасно (замок) и **fail-open**: сбой чтения/записи логируется `swallowed()` и НЕ валит выполнение команды — статистика не ценой команды.
+- Отчёт: `python -m lib.voice_cmd.command_stats [--commands PATH]` сводит известные id (`commands` + `sequences`) со счётчиком, по возрастанию использования (никогда не служившие — сверху), подтягивает `descriptions`. stdout переключается в UTF-8 (описания с юникодом иначе падают на cp1251).
+- Тесты: `tests/voice_cmd/test_command_stats.py` (счётчик, first/last_seen, corrupt/write-fail fail-open, сортировка отчёта, хук `execute_by_id`: успех пишет, неудача — нет, sequence пишет по составному id).
+
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.
 - `lib/reminders.py` — парсинг детерминированный; если время не указано → **+60 минут**.

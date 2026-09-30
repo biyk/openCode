@@ -20,3 +20,7 @@ htmlcov/
 bin/*
 !bin/tts_sapi.ps1
 !bin/media_state.ps1
+
+# Статистика использования команд (runtime-данные устройства, не в git)
+command_stats.json
+command_stats.json.tmp
