@@ -24,6 +24,10 @@ DEV_MODE_EXIT_PHRASE = "будильник"
 # Порог нечёткого совпадения фразы включения (difflib ratio).
 DEV_MODE_FUZZY_RATIO = 0.8
 
+# Озвучка принятых действий: исполнитель пишет лишь в консоль, а голос
+# молчал. taskdone тут нет — lib/task_complete.py хвалит сам («Вы умничка»).
+ACK_TEXTS = {"taskstart": "Хорошо"}
+
 
 def _is_dev_enable_phrase(low: str) -> bool:
     """Совпадает ли текст с фразой включения dev-режима.
@@ -39,6 +43,18 @@ def _is_dev_enable_phrase(low: str) -> bool:
 
 class OrchestratorSpeechMixin:
     """Миксин Orchestrator: dev-режим, maybe_abort, stop."""
+
+    def _ack(self, cmd_id: str) -> None:
+        """Озвучивает принятое действие, если для него есть короткая фраза.
+
+        Чату подтверждение уже принёс _chat_done — второе сообщение сверху
+        было бы шумом, поэтому озвучка только голосовому источнику.
+        """
+        if self._chat_active():
+            return
+        text = ACK_TEXTS.get(cmd_id)
+        if text:
+            self._say(text)
 
     def _handle_dev_mode_controls(self, text: str) -> bool:
         """Управляющие фразы режима разработки.

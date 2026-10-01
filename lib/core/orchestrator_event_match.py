@@ -155,6 +155,7 @@ class OrchestratorEventMatchMixin:
             ok = self._matcher.execute_by_id(cmd_id)
         if ok:
             self._chat_done(cmd_id)
+            self._ack(cmd_id)         # старт вслух коротко подтверждён
         return ok
 
     def _detect_event_action(self, core: str) -> Optional[str]:

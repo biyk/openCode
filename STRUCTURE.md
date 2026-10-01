@@ -270,6 +270,7 @@ voice
 │   │   ├── test_task_monitor_overtime.py  # Тесты связки task_monitor и переработки: каждый такт дёргает OvertimeNotifier.check на снимке таблицы (и в busy), фабрика собирает нотифайер по секции, overtime_enabled=false → None, проброс notify и множителя
 │   │   ├── test_task_monitor_rest.py  # Тесты idle-ветки task_monitor: на idle монитор делегирует проверку окна фоновому RestWatch (check_async до вопроса, не блокируя цикл), на busy не запускает, без примитивов (дефолт) сеть и печать не трогаются
 │   │   ├── test_task_pick.py  # Тесты make_task_picker: ok → «▶️ … запущена» с вызовом start_task по названию, ошибка → «❌ …», исключениеstart_task проглочено и возвращён текст «Не удалось»
+│   │   ├── test_task_start_ack.py  # Тесты озвучки принятого старта задачи: event-match start → вслух «Хорошо», complete молчит (хвалит task_complete), неудача не подтверждается, дословный taskstart — ровно одно «Хорошо», чату озвучка не дублируется; таблицу ACK_TEXTS проверяет на отсутствие taskdone
 │   │   └── test_tuning.py  # Тесты центра настройки: decision-порог ≥ 0.9 (не «почти угадала»), все модули берут значения из tuning, дефолт LayaDecision и приоритет оверрайда commands.json, порог живого девайса ≥ 0.9, озвучка завершения разработки (текст + вызов из post-commit)
 │   ├── diagnostics/  # Автотесты диагностики: промпт, CLI, супервизор.
 │   │   ├── test_diagnose.py  # Тесты диагностики: промпт, git, lock, откат.

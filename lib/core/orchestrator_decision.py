@@ -30,6 +30,7 @@ class OrchestratorDecisionMixin:
             ok = self._matcher.execute_by_id(cmd_id)
         if ok:
             self._chat_done(cmd_id)   # чату видно результат (голос — озвучкой)
+            self._ack(cmd_id)         # голосу — короткое «Хорошо» где нужно
             self._maybe_flavor(cmd_id, text)
         return ok
 
@@ -62,6 +63,7 @@ class OrchestratorDecisionMixin:
                        if settings else ""))
                 if self._execute_with_settings(cmd_id, settings):
                     self._chat_done(cmd_id)
+                    self._ack(cmd_id)
                     self._maybe_flavor(cmd_id, text)
                 else:
                     self._chat_reply(f"Команда «{cmd_id}» не выполнена")
@@ -154,6 +156,7 @@ class OrchestratorDecisionMixin:
                 if self._matcher.execute_by_id(detected):
                     self._output.print_text(detected)
                     self._chat_done(detected)
+                    self._ack(detected)
                     self._maybe_flavor(detected, text)
                     self._remember_candidate(text, detected, literal_id)
                     return
