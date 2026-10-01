@@ -38,6 +38,13 @@ class TestPageSyntax:
                        "S.commands.slice().sort()"):
             assert needle in PAGE
 
+    def test_stats_tab_present(self):
+        # Вкладка «Статистика» — read-only таблица из command_stats.json,
+        # приходит снапшотом /api/board (отдельный JS-запрос не нужен).
+        for needle in ('data-t="stats"', 'id="t-stats"',
+                       'S.stats||""'):
+            assert needle in PAGE, needle
+
     def test_task_commands_show_sheet_tasks(self):
         # Под списком задач real_life_tasks (тянем их отдельно, по клику);
         # подсказка привязана к командам taskstart/taskdone (само-отчёт).

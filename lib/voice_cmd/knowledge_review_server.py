@@ -2,9 +2,9 @@
 """HTTP-сервер доски «проверка знаний» (stdlib http.server).
 
 API (JSON, всё на 127.0.0.1):
-  GET  /              — HTML-страница с четырьмя вкладками
+  GET  /              — HTML-страница с пятью вкладками
   GET  /api/ping      — {"ok": true} (проверка «сервер уже жив»)
-  GET  /api/board     — корзины + список команд + настройки
+  GET  /api/board     — корзины + список команд + настройки + статистика
   GET  /api/tasks     — названия задач real_life_tasks (подсказка task-complete)
   POST /api/act       — confirm/demote/forget/update/purge записи базы знаний
                         (purge чистит фразу и из knowledge.json, и из match
@@ -38,6 +38,7 @@ from lib.voice_cmd.knowledge_review_recognize import (
 )
 from lib.voice_cmd.knowledge_review_scan import start as scan_start
 from lib.voice_cmd.knowledge_review_scan import status as scan_status
+from lib.voice_cmd.knowledge_review_stats import stats_html
 from lib.voice_cmd.knowledge_review_ui import PAGE
 
 
@@ -75,6 +76,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             assert self.store is not None
             snap = board_snapshot(self.store, self.commands_file, self.review)
             snap["laya"] = laya_status(self.commands_file)
+            snap["stats"] = stats_html(self.commands_file)
             self._json(200, snap)
         elif self.path == "/api/tasks":
             # Отдельно от /api/board: чтение Sheets дорогое и может

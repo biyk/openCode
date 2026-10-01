@@ -1,8 +1,7 @@
 # lib/voice_cmd/knowledge_review_ui.py
-"""HTML-страница доски «проверка знаний»: 4 вкладки, данные через JSON-API.
+"""HTML-страница доски «проверка знаний»: 5 вкладок, данные через JSON-API.
 ✕ в «Подтверждено» чистит фразу из commands.json и базы; на «Лайе» снимает
-догадку ИИ. Колонка «команда» — select; у free-text-команд (кроме
-taskstart/taskdone) — select «ключ»: накопительные префиксы фразы."""
+догадку ИИ. Команда — select, у free-text (кроме taskstart/taskdone) — «ключ»."""
 
 PAGE = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -27,14 +26,14 @@ PAGE = """<!doctype html>
  <button data-t="confirmed">Подтверждено</button>
  <button data-t="laya">Лайя</button>
  <button data-t="undefined">Не распознано</button>
- <button data-t="settings">Сервер</button>
+ <button data-t="stats">Статистика</button> <button data-t="settings">Сервер</button>
  <button id=scan title="logs/*.log → «Не распознано»">🔍 сканировать\
  логи</button>
  <span id=scanst class=note></span>
 </div>
 <div><section id="t-confirmed"></section><section id="t-laya"></section>
 <section id="t-undefined"></section><section id="t-settings"></section>
-</div>
+</div><section id="t-stats"></section>
 <script>
 let S=null,T=null;  // T — задачи real_life_tasks (null = не запрашивались)
 async function api(p,b){const o=b?{method:"POST",headers:{
@@ -135,6 +134,7 @@ function render(){
  document.getElementById("t-undefined").innerHTML=table("undefined",\
 "Не распознано","Кнопка «распознать все» прогонит весь список по очереди: "
 +"Лайя, затем LLM; распознанные фразы переедут во вкладку «Лайя».");
+ document.getElementById("t-stats").innerHTML=S.stats||"";
  document.getElementById("t-settings").innerHTML=settings()
  if(document.querySelector(".tasks")&&!T)ensureTasks()}
 function pick(tr){return {text:tr.dataset.text,kind:tr.dataset.kind||"command",\
