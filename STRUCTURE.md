@@ -386,6 +386,7 @@ voice
 │   │   ├── test_commands_requires.py  # Тесты CommandMatcher: статусы, блокировки, sequences.
 │   │   ├── test_commands_templates.py  # Тесты CommandMatcher: подстановки, напоминания, задачи.
 │   │   ├── test_config_loader.py  # Это файл тестов, проверяющий функцию get_device_commands_path из модуля config_loader, обеспечивая корректную работу с путями файлов команд устройств.
+│   │   ├── test_fun_holes_config.py  # Сторожевые тесты конфига дыр календаря: аксессоры get_fun_holes_config/get_task_monitor_config (секция как есть, без секции — пусто) и живой commands.json устройства — fun_holes/task_monitor включены и не рассинхронизированы (иначе «Отдых» глохнет молча, а тесты зелёные)
 │   │   ├── test_intent.py  # Тесты классификатора: detect.
 │   │   ├── test_intent_prompt.py  # Тесты классификатора: промпт и контекст.
 │   │   ├── test_knowledge.py  # Юнит-тесты KnowledgeStore: path, resolve/resolve_event (решают только confirmed), record с приоритетом корзин (confirmed не понижается), confirm/demote/forget/bump/entries, запись на диск и hot-reload
