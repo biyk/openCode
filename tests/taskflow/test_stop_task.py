@@ -1,7 +1,9 @@
 """Юнит-тесты ⏹-завершения запущенной задачи (lib/taskflow/stop_task.py).
 
-Отличия ⏹ от ✅ (done.md §2 / stop.md §10): длительность по факту, колонка
-B усредняется, журнал и награда по факту; O на выходе = 0.
+Отличия ⏹ от ✅ (done.md §2 / stop.md §10): длительность по факту,
+колонка B — накопительное время за день (сумма журнала + текущий
+отрезок, а не усреднение плана), журнал и награда — только текущий
+отрезок; O на выходе = 0.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -33,10 +35,11 @@ def task_row(**changes) -> list:
 class FakeApi:
     """Заглушка RealLifeSheet: помнит записи, отдаёт подготовленную строку."""
 
-    def __init__(self, row=None, event=None, was_new=True) -> None:
+    def __init__(self, row=None, event=None, was_new=True, journal=None):
         self.row = row if row is not None else task_row()
         self.event = event
         self.was_new = was_new
+        self.journal = journal or []           # строки task_executions A..G
         self.rows_written = []
         self.executions = []
         self.hero_delta = 0.0
@@ -57,7 +60,7 @@ class FakeApi:
         return self.was_new
 
     def execution_rows(self):
-        return []
+        return list(self.journal)
 
     def write_task_row(self, row_idx, values):
         self.rows_written.append((row_idx, values))
@@ -78,13 +81,47 @@ def column(api, name):
     return api.rows_written[0][1][COLS[name]]
 
 
-def test_elapsed_and_averaged_task_time():
+def today_journal_entry(minutes: int, uuid: str = UUID) -> list:
+    """Готовая строка журнала task_executions за сегодня (позиции A..G)."""
+    return ["exec-id", str(NOW_MS - 3 * 3_600_000), str(minutes),
+            "10", "Починить велосипед", uuid, "26.09.2026"]
+
+
+def test_elapsed_and_cumulative_task_time():
+    """Пустой журнал за сегодня: B = 0 + факт отрезка (без усреднения)."""
     api = FakeApi()
     result = stopped(api)
     assert result["ok"] is True and result["elapsed_minutes"] == 20
-    assert column(api, "task_time") == 25          # ceil((30 + 20) / 2)
+    assert column(api, "task_time") == 20           # 0 + 20, не ceil((30+20)/2)
     assert column(api, "start_date") == 0
     assert column(api, "task_finish_date") == 0    # стоп, не пауза
+
+
+def test_task_time_is_cumulative_for_today():
+    """Накопительное время: B = уже засчитанные сегодня + текущий отрезок."""
+    api = FakeApi(journal=[["h1", "h2", "h3", "h4", "h5", "h6", "h7"],
+                           today_journal_entry(15),
+                           today_journal_entry(10)])
+    stopped(api)
+    assert column(api, "task_time") == 45          # 15 + 10 + 20
+
+
+def test_journal_of_other_days_and_tasks_ignored():
+    """Вчерашние отрезки и чужие задачи в сумму за сегодня не входят."""
+    yesterday = today_journal_entry(60)
+    yesterday[1] = str(NOW_MS - MS_PER_DAY)       # вчера
+    api = FakeApi(journal=[today_journal_entry(15, uuid="другой-uuid"),
+                           yesterday, today_journal_entry(4)])
+    stopped(api)
+    assert column(api, "task_time") == 24          # 4 + 20
+
+
+def test_reward_and_journal_cover_only_current_segment():
+    """Награда и строка журнала — по текущему отрезку, не по сумме дня."""
+    api = FakeApi(journal=[today_journal_entry(15)])
+    stopped(api)
+    assert api.executions[0][2] == "20"
+    assert api.hero_delta == pytest.approx(10.0)    # 20·1/2, не (35··)/2
 
 
 def test_counters_and_reward_by_elapsed():
@@ -154,6 +191,7 @@ def test_paused_task_finalizes_from_accumulated_duration():
     result = stopped(api)
     assert result["ok"] is True and result["elapsed_minutes"] == 25
     assert column(api, "task_finish_date") == 0   # закрыто, накопленное обнулено
+    assert column(api, "task_time") == 25          # 0 накопленного журнала + 25
 
 
 def test_missing_row_is_error():

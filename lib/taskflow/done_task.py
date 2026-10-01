@@ -2,7 +2,10 @@
 
 Цикл тот же, что у ⏹ (done.md §1), но задача не запущена: длительность
 берётся из плана (колонка B), и сама колонка B остаётся прежней (§2).
-Нужен команде «я проснулся» для задачи «Пробуждение».
+Исключение — завершение из паузы (G=0, накоплен O≠0): её отрезки уже в
+журнале, тогда B = суммарное время за день и награда не начисляется
+повторно (аналог JS skipReward). Нужен команде «я проснулся» для
+задачи «Пробуждение».
 
 CLI: `python -m lib.taskflow.done_task <task_uuid>`. Коды выхода: 0 —
 засчитано (или уже было засчитано сегодня), 1 — задача не найдена или
@@ -23,14 +26,19 @@ from lib.taskflow.done_calc import (
     money_reward,
     next_task_date,
     repeat_real,
+    sum_executed_minutes_today,
 )
 from lib.taskflow.real_life_sheet import COLS, RealLifeSheet
 
 
 def _done_row(row: list[Any], ri_new: float, task_date: int, money: float,
-              now_ms: int, event_was_new: bool) -> list[Any]:
-    """Строка A:T после ✅: колонки B (план) и G (start_date) не меняем (§4)."""
+              now_ms: int, event_was_new: bool,
+              new_time: Optional[int] = None) -> list[Any]:
+    """Строка A:T после ✅: по умолчанию B (план) и G (start_date) не меняются
+    (§4); new_time задаёт только ветвь из паузы — накопленное время за день."""
     out = list(row)
+    if new_time is not None:
+        out[COLS["task_time"]] = new_time
     out[COLS["task_date"]] = task_date
     out[COLS["repeat_index"]] = ri_new
     out[COLS["money_reward"]] = money
@@ -74,8 +82,21 @@ def mark_task_done(task_uuid: str, api: Optional[Any] = None,
         return {"ok": True, "skipped": True, "title": title,
                 "reason": "уже засчитано сегодня"}
 
-    # ✅: длительность по плану, колонку B не трогаем (§2, §8)
+    # ✅: длительность по плану, колонку B не трогаем (§2, §8). Исключение —
+    # завершение из паузы (G=0, O≠0): отрезки уже засчитаны в журнал (⏸,
+    # пауза пишет его с наградой), поэтому B = суммарное время за день,
+    # а награда и новая строка журнала не начисляются (аналог skipReward).
+    # Пустой журнал (сентинел O=1 без отрезков) — остаёмся на плане.
     time_spent = as_int(row[COLS["task_time"]])
+    new_time: Optional[int] = None
+    skip_reward = False
+    if as_int(row[COLS["task_finish_date"]]) != 0:
+        total_today = sum_executed_minutes_today(api.execution_rows(),
+                                                 task_uuid, now)
+        if total_today > 0:
+            time_spent = total_today
+            new_time = total_today
+            skip_reward = True
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(
         (event or {}).get("summary") or title, task_uuid, time_spent, now,
@@ -92,14 +113,15 @@ def mark_task_done(task_uuid: str, api: Optional[Any] = None,
                          as_float(row[COLS["date_mode"]], float("nan")))
 
     api.write_task_row(row_idx, _done_row(row, ri_new, task_date, money,
-                                          now_ms, was_new))
-    if mode != ONCE_MODE:
+                                          now_ms, was_new, new_time))
+    if mode != ONCE_MODE and not skip_reward:
         api.append_execution(
             _execution_row(task_uuid, row, now, now_ms, time_spent, money))
         api.add_hero_money(money)
     return {"ok": True, "title": title, "uuid": task_uuid, "row": row_idx,
             "time_spent": time_spent, "money": money,
-            "task_date_ms": task_date, "event_was_new": was_new}
+            "task_date_ms": task_date, "event_was_new": was_new,
+            "skip_reward": skip_reward}
 
 
 def _main(argv: Optional[list[str]] = None) -> int:

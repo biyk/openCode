@@ -116,8 +116,45 @@ def elapsed_minutes(start_ms: int, now_ms: int) -> int:
 
 
 def average_task_time(old_time: int, elapsed_min: int) -> int:
-    """Новый план после ⏹: среднее старого плана и факта, вверх (§4.1)."""
+    """Усреднение плана с фактом (⏸ пауза — старый алгоритм). Больше не
+    применяется при ⏹: колонка B = сумма времени за день (см. ниже)."""
     return math.ceil((old_time + elapsed_min) / 2)
+
+
+def day_start_ms(now: datetime) -> int:
+    """Начало локального дня now в мс (граница «за сегодня» для журнала)."""
+    midnight = datetime.combine(now.date(), dtime(0), tzinfo=now.tzinfo)
+    return int(midnight.timestamp() * 1000)
+
+
+# Позиции в строке журнала task_executions (A..G), как пишет JS-клиент и
+# stop_task._execution_row: [1] execution_date мс, [2] execution_time мин,
+# [5] task_id uuid. Шапка rows[0] не совпадает ни с одним uuid — отсекается
+# сама собой, как parseInt/фильтра по id в JS sumExecutedMinutesToday.
+EXEC_DATE_COL = 1
+EXEC_TIME_COL = 2
+EXEC_TASK_ID_COL = 5
+
+
+def sum_executed_minutes_today(rows: list[list[Any]], task_uuid: str,
+                               now: datetime) -> int:
+    """Сумма execution_time по журналу задачи за сегодня (суммарное время).
+
+    Аналог JS sumExecutedMinutesToday: строки task_executions с task_id ==
+    uuid и execution_date >= начала дня. Это база накопительного времени:
+    ⏹ пишет в B «сумма за день + текущий отрезок», ✅-из-паузы — «сумма».
+    """
+    start_ms = day_start_ms(now)
+    total = 0
+    for row in rows:
+        if len(row) <= EXEC_TASK_ID_COL:
+            continue
+        if str(row[EXEC_TASK_ID_COL]).strip() != task_uuid:
+            continue
+        if as_int(row[EXEC_DATE_COL]) < start_ms:
+            continue
+        total += as_int(row[EXEC_TIME_COL])
+    return total
 
 
 def is_same_local_day(ms: int, now: datetime) -> bool:

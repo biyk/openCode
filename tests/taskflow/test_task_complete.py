@@ -1,7 +1,8 @@
 """Юнит-тесты голосовой команды «завершил задачу …» (lib.task_complete).
 
-Ветвь ⏹/✅ выбирается по состоянию строки (start_date и/или накопленный
-task_finish_date); поиск по названию — через переиспользуемый
+Ветвь ⏹/✅ выбирается по состоянию строки: запущена (start≠0) → ⏹,
+пауза (накопленный task_finish_date) и не начатая → ✅ (из паузы — по
+суммарному времени за день); поиск по названию — через переиспользуемый
 TaskStartHandler (календарь сегодня, затем задачи таблицы).
 """
 
@@ -63,7 +64,7 @@ def ok_stop(uuid, api=None, now=None):
 
 
 def ok_done(uuid, api=None, now=None):
-    return {"ok": True, "time_spent": 3, "money": 1.5}
+    return {"ok": True, "time_spent": 3, "money": 1.5, "skip_reward": False}
 
 
 def test_named_running_task_goes_stop(monkeypatch):
@@ -90,20 +91,21 @@ def test_named_not_running_task_goes_done(monkeypatch):
     assert calls["done"] == UUID
 
 
-def test_named_paused_task_goes_stop_not_done(monkeypatch):
-    """Пауза (start=0, накоплен task_finish_date≠0) — закрываем ⏹, не ✅.
+def test_named_paused_task_goes_done_not_stop(monkeypatch):
+    """Пауза (start=0, накоплен task_finish_date≠0) — закрываем ✅ из паузы.
 
-    Регресс: раньше уходила в ✅ и получала «уже засчитана сегодня»,
-    хотя мероприятие не завершено, а стоит на паузе.
+    Новый алгоритм (как JS-клиент): отрезки паузы уже в журнале с наградой,
+    ✅ считает накопительное время за день и не начисляет награду повторно;
+    ⏹ же требует запущенного отрезка (G≠0).
     """
     calls = {}
+    monkeypatch.setattr("lib.task_complete.stop_task", ok_stop)
     monkeypatch.setattr(
-        "lib.task_complete.stop_task",
-        lambda u, api=None, now=None: calls.update(stop=u) or ok_stop(u))
-    monkeypatch.setattr("lib.task_complete.mark_task_done", ok_done)
+        "lib.task_complete.mark_task_done",
+        lambda u, api=None, now=None: calls.update(done=u) or ok_done(u))
     h = handler([event("Нет грязной посуды")], start_date=0, finish=60_000)
     result = h.complete_task("нет грязной посуды")
-    assert result["branch"] == "⏹" and calls.get("stop") == UUID
+    assert result["branch"] == "✅" and calls.get("done") == UUID
 
 
 def test_empty_name_completes_running_task(monkeypatch):

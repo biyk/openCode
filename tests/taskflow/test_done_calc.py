@@ -11,10 +11,12 @@ import pytest
 from lib.taskflow.done_calc import (
     MS_PER_DAY,
     average_discipline,
+    day_start_ms,
     is_same_local_day,
     money_reward,
     next_task_date,
     repeat_real,
+    sum_executed_minutes_today,
 )
 
 TZ = timezone(timedelta(hours=3))
@@ -123,3 +125,35 @@ def test_is_same_local_day():
     assert is_same_local_day(ms(NOW.replace(hour=1)), NOW) is True
     assert is_same_local_day(ms(NOW - timedelta(days=1)), NOW) is False
     assert is_same_local_day(0, NOW) is False
+
+
+def test_day_start_ms_is_midnight_of_local_day():
+    """Граница «за сегодня» — полночь локального дня now."""
+    assert day_start_ms(NOW) == ms(datetime(2026, 9, 26, 0, 0, tzinfo=TZ))
+
+
+def jrow(moment_ms: int, minutes: int, uuid: str) -> list:
+    """Строка журнала task_executions: [uuid, date_ms, min, gold, t, id, dt]."""
+    return ["exec-1", str(moment_ms), str(minutes), "5", "Задача", uuid,
+            "26.09.2026"]
+
+
+def test_sum_executed_minutes_today_filters_by_task_and_day():
+    """Суммируются только свои сегодняшние отрезки (аналог JS-фильтра)."""
+    today_ms = ms(datetime(2026, 9, 26, 6, 0, tzinfo=TZ))
+    yesterday_ms = ms(datetime(2026, 9, 25, 23, 59, tzinfo=TZ))
+    rows = [["execution_id", "execution_date", "execution_time", "gained_gold",
+             "task_title", "task_id", "date"],
+            jrow(today_ms, 15, "своя"),
+            jrow(today_ms + 60_000, 10, "своя"),
+            jrow(today_ms, 99, "чужая"),          # другая задача
+            jrow(yesterday_ms, 60, "своя")]        # вчера — не «за сегодня»
+    assert sum_executed_minutes_today(rows, "своя", NOW) == 25
+
+
+def test_sum_executed_minutes_today_tolerates_junk():
+    """Короткие/пустые строки и мусорные мс — не падают, в сумму не входят."""
+    rows = [["короткая"], [""], jrow(0, 5, "своя"),
+            jrow(ms(NOW), 7, "своя")]
+    assert sum_executed_minutes_today(rows, "своя", NOW) == 7
+    assert sum_executed_minutes_today([], "своя", NOW) == 0

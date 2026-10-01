@@ -1,8 +1,10 @@
 """Эквивалент клика ⏹ («остановить и засчитать») из Python (stop.md).
 
 В отличие от ✅ (done_task.py) задача запущена: считаем фактическую
-длительность от start_date (колонка G), усредняем план с фактом в
-колонке B, награда и журнал — по факту. Колонка O на выходе = 0
+длительность от start_date (колонка G). Колонка B — накопительное
+время за день: сумма уже засчитанных сегодня отрезков по журналу
+task_executions + текущий отрезок (аналог JS sumExecutedMinutesToday);
+награда и журнал — только по текущему отрезку. Колонка O на выходе = 0
 (в отличие от ⏸). Цикл операций идентичен done_task.py.
 
 CLI: `python -m lib.taskflow.stop_task <task_uuid>`. Коды выхода: 0 —
@@ -19,11 +21,11 @@ from lib.taskflow.done_calc import (
     MS_PER_DAY,
     ONCE_MODE,
     average_discipline,
-    average_task_time,
     elapsed_minutes,
     money_reward,
     next_task_date,
     repeat_real,
+    sum_executed_minutes_today,
 )
 from lib.taskflow.real_life_sheet import COLS, RealLifeSheet
 
@@ -77,11 +79,16 @@ def stop_task(task_uuid: str, api: Optional[Any] = None,
         raise RuntimeError("задача не запущена — ожидается ✅, а не ⏹")
     now_ms = int(now.timestamp() * 1000)
 
-    # ⏹: длительность по факту, план усредняется с фактом (§4.1). Запущена
-    # (G≠0) — от start_date; на паузе (G=0, накоплен O=task_finish_date) —
-    # по накопленной длительности: старт эквивалентен now − O.
+    # ⏹: длительность текущего отрезка по факту. Запущена (G≠0) — от
+    # start_date; на паузе (G=0, накоплен O=task_finish_date) — по
+    # накопленной длительности: старт эквивалентен now − O.
     elapsed = elapsed_minutes(start_ms or (now_ms - finish_ms), now_ms)
-    new_time = average_task_time(as_int(row[COLS["task_time"]]), elapsed)
+    # Накопительное время (новый алгоритм JS): B = сумма отрезков, уже
+    # засчитанных сегодня по журналу, + текущий отрезок; усреднение плана
+    # больше не применяется — оно теряло уже проработанное время.
+    prior_today = sum_executed_minutes_today(api.execution_rows(), task_uuid,
+                                             now)
+    new_time = prior_today + elapsed
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(
         (event or {}).get("summary") or title, task_uuid, elapsed, now,
