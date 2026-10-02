@@ -7,10 +7,11 @@
 (colorId = 7, уже засчитанное выполнение) не предлагаются. Сеть не трогаем:
 события, строки и `now` инжектят вызывающий код и тесты.
 
-Две ручки: `current_or_next` — идущая сейчас задача (а если ничего не идёт,
+Ручки: `current_or_next` — идущая сейчас задача (а если ничего не идёт,
 ближайшая следующая) для голосового вопроса; `upcoming_titles` — до трёх
 задач, которые можно начать от текущего момента до «СОН», для кнопок в
-Telegram. Сборкой занимается `lib/core/task_monitor.py`.
+Telegram; `sleep_now` — идёт ли сейчас «СОН», по которому монитор решает
+вообще не задавать вопросов. Сборкой занимается `lib/core/task_monitor.py`.
 """
 
 import re
@@ -93,6 +94,25 @@ def sleep_edge(events: list[dict], now: datetime) -> Optional[datetime]:
     return best
 
 
+def sleep_now(events: Optional[list], now: datetime) -> bool:
+    """Сейчас идёт «СОН»: событие, начавшееся до `now` и ещё не закончившееся.
+
+    Спрашивать спящего «чем ты сейчас занимаешься?» смысла нет — окно сна
+    заканчивается событием `end` (Google отдаёт события, перекрывающие окно
+    запроса, поэтому «СОН», начатый вчера вечером, сюда тоже попадает).
+    """
+    for ev in events or []:
+        if not is_sleep_event(ev.get("summary")):
+            continue
+        start = event_datetime(ev.get("start"))
+        if start is None or start > now:
+            continue
+        end = event_datetime(ev.get("end"))
+        if end is None or now < end:
+            return True
+    return False
+
+
 def upcoming_titles(rows: list[dict], events: list[dict], now: datetime,
                     until: Optional[datetime] = None,
                     limit: int = OFFER_LIMIT) -> list[str]:
@@ -142,5 +162,5 @@ def idle_offer(rows: list[dict], events: Optional[list[dict]],
     return voice, titles
 
 
-__all__ = ["OFFER_LIMIT", "sleep_edge", "upcoming_titles", "current_or_next",
-           "idle_offer"]
+__all__ = ["OFFER_LIMIT", "sleep_edge", "sleep_now", "upcoming_titles",
+           "current_or_next", "idle_offer"]

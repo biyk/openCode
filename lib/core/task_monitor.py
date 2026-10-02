@@ -4,6 +4,7 @@
 Ни одной запущенной задачи (start_date = 0 у всех строк) — вслух вопрос
 «чем ты сейчас занимаешься?»; следующая строка — ответ: название ищется
 среди задач таблицы и найденная задача запускается (как `taskstart`).
+Вопроса нет, пока идёт событие «СОН»: спящего не о чем расспрашивать.
 
 Вопрос и сбор ответа — через оркестратор (`ask` из orchestrator_ask), чтобы
 реплика пользователя не ушла в пайплайн команд. Живёт проверка в собственном
@@ -24,7 +25,7 @@ from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
 from lib.task_start import TaskStartHandler
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.task_check import evaluate
-from lib.taskflow.task_schedule import idle_offer
+from lib.taskflow.task_schedule import idle_offer, sleep_now
 
 # Вопрос, когда не запущено ничего (ответ — название задачи из таблицы).
 QUESTION_IDLE = "Чем ты сейчас занимаешься?"
@@ -106,13 +107,17 @@ class TaskMonitor:
         if self._overtime is not None:
             self._overtime.check(check)   # и при занятой задаче, не только idle
         if check.idle:
-            self._rest.check_async()           # окно = отдых? проверить в фоне
             return self._handle_idle(rows)
         return "busy"
 
     def _handle_idle(self, rows: list) -> str:
-        """Idle: голосовой вопрос с предложением + кнопка-оффер в Telegram."""
-        voice, titles = self._offer_of(rows)
+        """Idle: вопрос вслух (+кнопки в Telegram); во время «СОН» — молчим."""
+        events, now = self._today_events(), datetime.now().astimezone()
+        if sleep_now(events, now):
+            self._output.print_info("[TaskMonitor] Идёт «СОН» — вопрос снят")
+            return "sleep"
+        self._rest.check_async()           # окно = отдых? проверить в фоне
+        voice, titles = idle_offer(rows, events, now)
         question = (f"{QUESTION_IDLE} {PROPOSE_PREFIX} {voice}" if voice
                     else QUESTION_IDLE)
         if not self._ask(question, self._on_idle_answer, "task_idle",
@@ -124,10 +129,6 @@ class TaskMonitor:
         elif self._notify is not None:
             self._notify(question)              # тот же вопрос текстом в чат
         return "idle"
-
-    def _offer_of(self, rows: list) -> tuple:
-        """(предложение вслух, названия для кнопок) по календарю сегодня."""
-        return idle_offer(rows, self._today_events(), datetime.now().astimezone())
 
     def _today_events(self) -> Optional[list]:
         """Сегодняшние события календаря; None, если календарь не подключён."""

@@ -7,8 +7,8 @@
 
 from datetime import datetime, timedelta
 
-from lib.taskflow.task_schedule import (current_or_next, idle_offer,
-                                        sleep_edge, upcoming_titles)
+from lib.taskflow.task_schedule import (current_or_next, idle_offer, sleep_edge,
+                                        sleep_now, upcoming_titles)
 
 BASE = datetime.now().astimezone()
 UA = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -83,6 +83,36 @@ class TestSleepEdge:
 
     def test_no_sleep_returns_none(self):
         assert sleep_edge([_event(UA, 10, 20)], BASE) is None
+
+
+class TestSleepNow:
+    """Идёт ли сейчас «СОН» — по этому монитор снимает вопрос."""
+
+    def test_running_sleep_is_true(self):
+        events = [_event(UA, -10, 20), _event("s", -120, 240, summary="СОН")]
+        assert sleep_now(events, BASE) is True
+
+    def test_ended_sleep_is_false(self):
+        events = [_event("s", -600, -30, summary="СОН")]
+        assert sleep_now(events, BASE) is False
+
+    def test_future_sleep_is_false(self):
+        """Вечерний «СОН» ещё не начался — спрашивать можно."""
+        events = [_event("s", 120, 480, summary="СОН")]
+        assert sleep_now(events, BASE) is False
+
+    def test_other_event_is_false(self):
+        events = [_event(UA, -120, 240, summary="Уборка")]
+        assert sleep_now(events, BASE) is False
+
+    def test_no_events_is_false(self):
+        assert sleep_now(None, BASE) is False
+        assert sleep_now([], BASE) is False
+
+    def test_all_day_sleep_is_false(self):
+        """«Весь день» (дата без времени) не глушит вопрос на весь день."""
+        events = [{"summary": "СОН", "start": "2026-10-01", "end": "2026-10-02"}]
+        assert sleep_now(events, BASE) is False
 
 
 class TestIdleOffer:

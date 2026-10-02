@@ -2,7 +2,7 @@
     "jobs": [
         {
             "id": "wake_video_and_volume",
-            "schedule": "36 8 * * *",
+            "schedule": "41 6 * * *",
             "script": "wake_video_and_volume.ps1",
             "timeout": 180,
             "announce": false

@@ -7,7 +7,7 @@
         },
         "паузы": {
             "kind": "command",
-            "hits": 10,
+            "hits": 11,
             "command": "playpause"
         },
         "в добавь задачу убраться на балконе": {
@@ -46,7 +46,7 @@
         },
         "паузу": {
             "kind": "command",
-            "hits": 1,
+            "hits": 3,
             "command": "playpause"
         },
         "плэй": {
@@ -101,7 +101,7 @@
         },
         "я почистил зубы": {
             "kind": "command",
-            "hits": 0,
+            "hits": 1,
             "command": "taskdone",
             "event": "Почистить зубы утро"
         },
@@ -130,7 +130,7 @@
         },
         "я застелить кровать": {
             "kind": "command",
-            "hits": 0,
+            "hits": 1,
             "command": "taskdone",
             "event": "Застелил кровать"
         },
@@ -142,7 +142,7 @@
         },
         "начал торговать на бирже": {
             "kind": "command",
-            "hits": 0,
+            "hits": 1,
             "command": "taskstart",
             "event": "Торговать на бирже"
         },
@@ -202,14 +202,217 @@
             "hits": 0,
             "command": "taskstart",
             "event": "Пройти шесть к шагов (6к шагов )"
-        }
-    },
-    "laya": {
+        },
+        "закончил обед": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Обед"
+        },
+        "закончил торговать на бирже": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Торговать на бирже"
+        },
+        "начал глобальная задача": {
+            "kind": "command",
+            "hits": 2,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "я поужинал": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Ужин"
+        },
+        "в начинаю глобальная задача": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "закончил глобальные задачи": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskdone",
+            "event": "Глобальные задачи"
+        },
+        "закончил завтрак": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskdone",
+            "event": "Завтрак. Принять витамины"
+        },
+        "и о проснулся": {
+            "kind": "command",
+            "hits": 0,
+            "command": "wakefix"
+        },
+        "начал глобальные задачи": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "начал ужин": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskstart",
+            "event": "Ужин"
+        },
         "начал шесть ка шагов": {
             "kind": "command",
             "hits": 0,
-            "command": "taskstart"
+            "command": "taskstart",
+            "event": "Пройти шесть к шагов (6к шагов )"
+        },
+        "приступил глобальные задачи": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "приступил к глобальная задача": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "побрился": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Побриться. уход за лицом"
+        },
+        "почистил зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Почистил зубы утром"
+        },
+        "закончил гимнастика ты плеча": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Гимнастика для плеча"
+        },
+        "застелил кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Застелил кровать"
+        },
+        "застилаю кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Застелил кровать"
+        },
+        "начал глобальной задачу": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Глобальные задачи"
+        },
+        "продолжай": {
+            "kind": "command",
+            "hits": 0,
+            "command": "playpause"
+        },
+        "поехал в магазин": {
+            "kind": "command",
+            "hits": 1,
+            "command": "taskstart",
+            "event": "Съездить в магазин за покупками"
+        },
+        "закончил гимнастику для плеча": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Гимнастика для плеча"
+        },
+        "закончим нет грязную посуду": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Нет грязной посуды"
+        },
+        "я поехал в магазин": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Съездить в магазин за покупками"
+        },
+        "закончил застилать кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Застелил кровать"
+        },
+        "начал ожил": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Ужин"
+        },
+        "закончил чистить зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Почистил зубы утром"
+        },
+        "начал чистить зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Почистил зубы утром"
+        },
+        "закончил ужин": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Ужин"
+        },
+        "начал читать книгу": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Прочитать книгу"
+        },
+        "утро начал чистить зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Почистил зубы утром"
+        },
+        "я застаю кровать": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskstart",
+            "event": "Застелил кровать"
+        },
+        "утро закончен чистить зубы": {
+            "kind": "command",
+            "hits": 0,
+            "command": "taskdone",
+            "event": "Почистил зубы утром"
         }
     },
-    "undefined": {}
+    "laya": {},
+    "undefined": {
+        "надо": {
+            "kind": "command",
+            "hits": 0
+        },
+        "посмотри": {
+            "kind": "command",
+            "hits": 0
+        },
+        "заткнись хочешь ругаться подойди к ставшая ругайся вместе с ним": {
+            "kind": "command",
+            "hits": 0
+        }
+    }
 }

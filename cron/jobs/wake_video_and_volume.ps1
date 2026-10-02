@@ -49,6 +49,6 @@ if ($state -ne "playing") {
 }
 
 Write-Output "[step 4] громкость -> 30"
-$vol = powershell -NoProfile -ExecutionPolicy Bypass -File bin/get_volume.ps1 -Set 30
+$vol = powershell -NoProfile -ExecutionPolicy Bypass -File bin/get_volume.ps1 -Set 40
 Write-Output "[step 4] громкость теперь: $vol"
 Write-Output "[done] все шаги выполнены"
