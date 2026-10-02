@@ -2,7 +2,7 @@ import base64
 import re
 import sys
 import threading
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from lib.core.logger import Logger
 from lib.synth import tts_cache
@@ -35,6 +35,11 @@ class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
         self._piper_lock = threading.Lock()
         self._piper_voice: Optional[Any] = None
         self._piper_error = False
+        # Счётчик играющих блоков и слушатель переключений (шлюз захвата,
+        # §4.6) — их ведёт миксин TtsPlaybackMixin.
+        self._play_lock = threading.Lock()
+        self._play_depth = 0
+        self._voice_listener: Optional[Callable[[bool], None]] = None
 
     def _split_sentences(self, text: str) -> list[str]:
         """Разбивает текст на блоки, сохраняя их порядок."""

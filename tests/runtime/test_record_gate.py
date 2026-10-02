@@ -1,5 +1,6 @@
-"""Шлюз захвата микрофона: правило «не наушники + играет медиа → не пишем»."""
-from lib.core.tuning import RECORD_GATE_ALLOWED_DEVICE, RECORD_GATE_POLL_S
+"""Шлюз захвата микрофона: правило «не наушники + есть звук → не пишем»."""
+from lib.core.tuning import (RECORD_GATE_ALLOWED_DEVICE, RECORD_GATE_POLL_S,
+                             RECORD_GATE_VOICE_TAIL_S)
 from lib.runtime.record_gate import (RecordGate, build_record_gate,
                                      media_is_playing)
 
@@ -100,11 +101,17 @@ class TestRecordGateTransitions:
 class TestMediaProbe:
     """Кто считается медиа, а кто — собственным звуком ассистента."""
 
-    def test_own_tts_player_is_not_media(self, mocker):
-        """powershell (озвучка TTS) не должен глушить микрофон."""
+    def test_own_tts_player_is_media(self, mocker):
+        """Озвучка TTS (mpg123) глушит микрофон: слушать себя — фантомные команды."""
+        mocker.patch("lib.runtime.record_gate.active_session_processes",
+                     return_value=["mpg123.exe"])
+        assert media_is_playing(()) is True
+
+    def test_ignored_process_is_not_media(self, mocker):
+        """Скидка работает, если её явно вернуть в конфиг."""
         mocker.patch("lib.runtime.record_gate.active_session_processes",
                      return_value=["powershell.exe"])
-        assert media_is_playing(("powershell.exe", "python.exe")) is False
+        assert media_is_playing(("powershell.exe",)) is False
 
     def test_foreign_player_is_media(self, mocker):
         """Браузер с роликом — это медиа, шлюз закрывается."""
@@ -166,12 +173,11 @@ class TestBuildRecordGate:
         gate = build_record_gate(
             FakeMatcher({"enabled": True, "min_peak": 0.2}), FakeOutput())
         gate._media_playing()
-        playing.assert_called_once_with(
-            ("powershell.exe", "python.exe", "pythonw.exe", "mpg123.exe",
-             "ffplay.exe"), 0.2)
+        playing.assert_called_once_with((), 0.2)
 
     def test_defaults_from_tuning_when_keys_absent(self):
         """Без ключов секции — дефолты из lib.core.tuning."""
         gate = build_record_gate(FakeMatcher({"enabled": True}), FakeOutput())
         assert gate.allowed == RECORD_GATE_ALLOWED_DEVICE.casefold()
         assert gate._poll_s == RECORD_GATE_POLL_S
+        assert gate._tail_s == RECORD_GATE_VOICE_TAIL_S

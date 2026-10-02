@@ -96,8 +96,10 @@ class TranscriptionWorker:
             )
             self._orchestrator._opencode = self._opencode
 
-        # Шлюз захвата: с колонок играет медиа → глушим микрофон целиком (§4.6).
-        self._gate = build_record_gate(self._matcher, self._output)
+        # Шлюз захвата: с колонок играет медиа — и наша озвучка тоже, иначе
+        # ассистент слышит сам себя (§4.6); TTS докладывает шлюзу сам, без лага.
+        self._gate = build_record_gate(self._matcher, self._output,
+                                       voice=self._tts)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Пишет аудио в очередь (шлюз записи может глушить захват)."""

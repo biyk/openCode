@@ -59,8 +59,9 @@ class CommandConfigMixin:
 
         Ключи: enabled, allowed_device (подстрока имени «тихого» устройства,
         в наушниках медиа не течёт в микрофон), poll_s (как часто опрашивать
-        Core Audio), ignored_processes (чей звук не считать медиа);
-        значения по умолчанию — в lib.core.tuning.
+        Core Audio), min_peak, voice_tail_s (хвост после своей озвучки),
+        ignored_processes (чей звук не считать медиа; по умолчанию пусто —
+        своя озвучка тоже медиа); значения по умолчанию — в lib.core.tuning.
         """
         return self._data.get("record_gate", {})
 

@@ -5,7 +5,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 _BASE_DIR = Path(__file__).resolve().parents[2]
 _SAPI_SCRIPT = _BASE_DIR / "bin" / "tts_sapi.ps1"
@@ -13,6 +13,37 @@ _SAPI_SCRIPT = _BASE_DIR / "bin" / "tts_sapi.ps1"
 
 class TtsPlaybackMixin:
     """Миксин TextToSpeech: SAPI, плееры, воспроизведение файлов."""
+
+    # ---------- Кто сейчас играет (шлюз захвата микрофона, §4.6) ----------
+
+    def set_voice_listener(self,
+                           listener: Optional[Callable[[bool], None]]) -> None:
+        """Кому докладывать о начале/конце воспроизведения (RecordGate).
+
+        Наш голос с колонок — такой же звук, как чужое медиа: без этого
+        ассистент распознаёт сам себя. Пуш точнее опроса по таймеру — шлюз
+        закрывается в момент, когда плеер реально заиграл.
+        """
+        self._voice_listener = listener
+
+    def _voice_event(self, active: bool) -> None:
+        """Меняет глубину играющих блоков; слушатель зовётся на 0↔1.
+
+        Вложенные воспроизведения (несколько озвучек в потоках) дают один
+        переход, иначе шлюз щёлкал бы на каждом вложенном блоке. Сбой
+        слушателя не должен ронять озвучку.
+        """
+        with self._play_lock:
+            self._play_depth = max(0, self._play_depth + (1 if active else -1))
+            # Докладываем только на переходах 0↔1: вложенные блоки — не новые.
+            changed = self._play_depth == (1 if active else 0)
+        listener = self._voice_listener
+        if listener is None or not changed:
+            return
+        try:
+            listener(active)
+        except Exception as e:
+            print(f"[TTS] Слушатель озвучки: {e}")
 
     def _speak_sapi(self, text: str) -> Optional[str]:
         """Синтез через системный голос Windows (System.Speech) в WAV."""
@@ -46,12 +77,14 @@ class TtsPlaybackMixin:
 
     def _play_file(self, audio_path: str, abort_event: Optional[threading.Event] = None) -> None:
         """Воспроизводит аудиофайл по расширению и удаляет его."""
+        self._voice_event(True)
         try:
             if audio_path.lower().endswith(".wav"):
                 self._play_wav(audio_path, abort_event)
             else:
                 self._play_mp3(audio_path, abort_event)
         finally:
+            self._voice_event(False)
             # Плеер может быть ещё живым после abort и держать файл —
             # WinError 32 (файл занят) не должен ронять поток озвучки.
             try:
