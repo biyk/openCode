@@ -176,6 +176,7 @@
   "scripts/check_types.py": "Неблокирующий запуск mypy по строгим зонам из mypy.ini (lib/voice_cmd, lib/core); --fail для будущей блокировки.",
   "mypy.ini": "Поэтапная типизация mypy: external-либы без стабов глушатся, строгость включается зонами (voice_cmd — typed defs, core — проверка без attr-defined).",
   "tests/core/test_errors.py": "Тесты swallowed(): возврат default, уровень лога, подсказка reauth для RefreshError/401.",
+  "tests/core/test_task_monitor_start_time.py": "Регресс бага «зубы 630 мин»: старт задачи из TaskMonitor обязан брать свежее now на каждый ответ (в проде handler не кэшируется), иначе застывший start_date раздувает длительность и награду.",
   "tests/test_check_blind_except.py": "Тесты проверки слепых except: детект блоков, доказательства, метка # blind-ok, режим --git.",
   "lib/core/orchestrator_opencode.py": "Миксин оркестратора: фоновая очередь и воркер console opencode.",
   "lib/core/orchestrator_speech.py": "Миксин оркестратора: dev-режим, стоп-слова maybe_abort, остановка; ACK_TEXTS/_ack — короткое голосовое подтверждение принятого действия (taskstart → «Хорошо», чат его не получает — там уже «Выполнено»)",

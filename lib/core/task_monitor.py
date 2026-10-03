@@ -157,10 +157,11 @@ class TaskMonitor:
         return self._sheet
 
     def _task_handler(self) -> Any:
-        """Лениво создаёт матчер+исполнитель названий задач (task_start)."""
-        if self._handler is None:
-            self._handler = TaskStartHandler()
-        return self._handler
+        """Новый handler на каждый ответ: TaskStartHandler фиксирует now в
+        __init__, а монитор живёт весь процесс — кэш ставил бы устаревший
+        start_date (зубы: 5 мин → 630). Тестовый handler переиспользуем.
+        """
+        return self._handler or TaskStartHandler()
 
     # ---------- Ответ на вопрос ----------
 
