@@ -4,6 +4,40 @@ from pathlib import Path
 from typing import Optional
 
 
+class TimestampedStream:
+    """Обёртка stdout/stderr: каждая новая строка печатается с меткой
+    времени [ЧЧ:ММ:СС]. Ставится в main.py на весь поток, поэтому ловит
+    и print_info, и сотни прямых print() с тегами ([TTS]/[Status]/...) —
+    без правок в каждом месте. В лог-файл время пишется отдельно (_log).
+    """
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+        self._line_start = True
+
+    def write(self, data):
+        """Пишет data, предваряя каждую строку меткой времени."""
+        if not isinstance(data, str) or not data:
+            return self._stream.write(data)
+        stamp = datetime.now().strftime("[%H:%M:%S] ")
+        out = []
+        for ch in data:
+            if self._line_start and ch != "\n":
+                out.append(stamp)
+                self._line_start = False
+            out.append(ch)
+            if ch == "\n":
+                self._line_start = True
+        return self._stream.write("".join(out))
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        # encoding/fileno/isatty и прочее — проксируем внутреннему потоку.
+        return getattr(self._stream, name)
+
+
 class TranscriptionOutput:
     """Вывод информации в консоль (кратко) и лог-файл (подробно).
 

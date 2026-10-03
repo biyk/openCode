@@ -1,4 +1,4 @@
-"""Тесты сканера логов доски знаний: фразы, архив, /api/scan."""
+"""Тесты сканера логов доски знаний: фразы, архив, хвост живого, /api/scan."""
 
 import json
 import os
@@ -77,12 +77,36 @@ class TestRunScan:
         with zipfile.ZipFile(logs / "zip" / "20260920.zip") as z:
             assert z.namelist() == ["202609201000.log"]
 
-    def test_skips_active_log(self, tmp_path, logs):
+    def test_active_log_scanned_but_not_archived(self, tmp_path, logs):
+        # Авто-скан при открытии доски: живой лог (пишется сейчас) тоже
+        # читается, но остаётся на месте — архивить его нельзя.
         _log(logs, "202609271351.log", ["алиса хз"], age_s=10)
         store = KnowledgeStore(str(tmp_path / "k.json"))
         sm = ks.run_scan(store, "x", logs_dir=str(logs), checker=_Checker())
-        assert sm["total"] == 0 and sm["archived"] == 0
+        assert sm["total"] == 1 and sm["archived"] == 0
         assert (logs / "202609271351.log").exists()
+        assert not (logs / "zip").exists()
+        assert "хз" in store.entries(UNDEFINED)
+
+    def test_active_log_scans_only_tail(self, tmp_path, logs, monkeypatch):
+        monkeypatch.setattr(ks, "ACTIVE_TAIL_LINES", 2)
+        _log(logs, "202609271351.log",
+             ["алиса старое", "алиса среднее", "алиса свежее"], age_s=10)
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        sm = ks.run_scan(store, "x", logs_dir=str(logs), checker=_Checker())
+        # хвост = «алиса свежее» + служебная строка: ранние фразы не смотрим
+        assert sm["phrases"] == 1
+        assert "свежее" in store.entries(UNDEFINED)
+        assert "старое" not in store.entries(UNDEFINED)
+
+    def test_finished_and_live_logs_both_scanned(self, tmp_path, logs):
+        _log(logs, "202609201000.log", ["алиса готовое"])
+        _log(logs, "202609271351.log", ["алиса живое"], age_s=10)
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        sm = ks.run_scan(store, "x", logs_dir=str(logs), checker=_Checker())
+        assert sm["total"] == 2 and sm["archived"] == 1
+        assert (logs / "202609271351.log").exists()
+        assert set(store.entries(UNDEFINED)) == {"готовое", "живое"}
 
     def test_known_phrases_untouched(self, tmp_path, logs):
         _log(logs, "202609211200.log", ["алиса открой ю туб"])

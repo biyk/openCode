@@ -1,6 +1,8 @@
 # tests/core/test_orchestrator_llm.py
 """LLM-детект команды после промаха Лайи: id + параметр вторым запросом."""
 
+import threading
+import time
 from unittest.mock import MagicMock
 
 from lib.core.orchestrator import Orchestrator
@@ -10,13 +12,16 @@ from lib.voice_cmd.knowledge import LAYA, UNDEFINED, KnowledgeStore
 class _StubLLM:
     """classify: детект-промпт → id; промпт про параметр → подстрока фразы."""
 
-    def __init__(self, detect, param=None):
+    def __init__(self, detect, param=None, gate=None):
         self.detect = detect
         self.param = param
+        self.gate = gate
         self.prompts = []
 
     def classify(self, prompt):
         self.prompts.append(prompt)
+        if self.gate is not None:
+            self.gate.wait(5)
         if "значением параметра" in prompt:
             return self.param
         return self.detect
@@ -91,13 +96,14 @@ class TestRunLlmFallback:
 
 class TestPipelineWiring:
     def test_llm_fallback_runs_after_laya_miss(self, tmp_path):
-        # Лайя None → в шаг промаха встроен LLM-детект (раньше заглушка)
+        # Лайя None → в шаг промаха встроен LLM-детект (в фоне, ждём воркер)
         llm = _StubLLM(detect="task-add", param="сделать хлеб")
         orch, matcher, k = _build(tmp_path, llm)
         decision = MagicMock()
         decision.detect.return_value = None
         orch._decision = decision
         orch.process_text("алиса же поставь задачу сделать хлеб")
+        orch._llm_queue.join()
         matcher.execute_by_id.assert_called_once_with(
             "task-add", ("сделать хлеб",))
 
@@ -111,3 +117,59 @@ class TestPipelineWiring:
         orch.process_text("алиса абракадабра")
         matcher.execute_by_id.assert_not_called()
         assert "абракадабра" in k.entries(UNDEFINED)
+
+
+class TestLlmFallbackIsBackground:
+    """Регресс бага 2026-10-02: минута гонки глушила цикл распознавания."""
+
+    def _laya_miss(self, orch):
+        decision = MagicMock()
+        decision.detect.return_value = None
+        orch._decision = decision
+
+    def test_process_text_returns_while_race_is_slow(self, tmp_path):
+        """Пока classify висит, process_text свободен — worker слышит дальше."""
+        gate = threading.Event()
+        llm = _StubLLM(detect="task-add", param="сделать хлеб", gate=gate)
+        orch, matcher, k = _build(tmp_path, llm)
+        self._laya_miss(orch)
+        started = time.monotonic()
+        orch.process_text("алиса поставь задачу сделать хлеб")
+        elapsed = time.monotonic() - started
+        gate.set()
+        orch._llm_queue.join()
+        assert elapsed < 1.0, f"ввод заблокирован на {elapsed:.1f}с"
+        matcher.execute_by_id.assert_called_once_with(
+            "task-add", ("сделать хлеб",))
+
+    def test_stop_word_cancels_slow_fallback(self, tmp_path):
+        """Стоп-слово во время гонки: запоздалая команда не исполнится."""
+        gate = threading.Event()
+        llm = _StubLLM(detect="task-add", param="x", gate=gate)
+        orch, matcher, k = _build(tmp_path, llm)
+        self._laya_miss(orch)
+        orch.process_text("алиса поставь задачу x")
+        for _ in range(100):
+            if orch._llm_active:
+                break
+            time.sleep(0.02)
+        assert orch._llm_pending()
+        orch.process_text("стоп")
+        gate.set()
+        orch._llm_queue.join()
+        matcher.execute_by_id.assert_not_called()
+
+    def test_new_command_works_while_fallback_pending(self, tmp_path):
+        """Детект в фоне не мешает обычной команде из commands.json."""
+        gate = threading.Event()
+        llm = _StubLLM(detect=None, gate=gate)
+        orch, matcher, k = _build(tmp_path, llm)
+        self._laya_miss(orch)
+        orch.process_text("алиса поставь задачу x")
+        matcher.find_command.return_value = ("playpause", [])
+        matcher.missing_requires.return_value = []
+        matcher.execute_by_id.return_value = True
+        orch.process_text("алиса пауза")
+        matcher.execute_by_id.assert_called_once_with("playpause")
+        gate.set()
+        orch._llm_queue.join()

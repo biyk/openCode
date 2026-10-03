@@ -12,6 +12,7 @@ import subprocess
 import pytest
 
 from lib.voice_cmd.knowledge_review_ui import PAGE
+from lib.voice_cmd.knowledge_review_ui_log import page
 
 
 def _script() -> str:
@@ -20,9 +21,14 @@ def _script() -> str:
     return m.group(1)
 
 
+def _all_scripts() -> str:
+    """Все блоки <script> итоговой страницы (основной + попап журнала)."""
+    return "\n".join(re.findall(r"<script>(.*?)</script>", page(), re.S))
+
+
 class TestPageSyntax:
     def test_no_backslash_inside_js_string_literals(self):
-        for line in _script().splitlines():
+        for line in _all_scripts().splitlines():
             # перенос допустим между токенами, но не внутри '...' / "..."
             assert not re.search(r"['\"]\\$", line), f"битый перенос: {line}"
 
@@ -37,6 +43,15 @@ class TestPageSyntax:
                        "pollRec()", "pollScan()",
                        "S.commands.slice().sort()"):
             assert needle in PAGE
+
+    def test_logs_scanned_on_page_open(self):
+        # Открытие/F5 гонят скан сами — тем же путём, что кнопка 🔍
+        # (единая точка изменения), а не отдельным запросом.
+        assert 'load().then(()=>document.getElementById("scan").click())' \
+            in PAGE
+        # Перезагрузка доски после скана — только когда что-то добавилось:
+        # иначе авто-скан на каждой F5 тёр бы несохранённые правки.
+        assert "else if(s.added)load()" in PAGE
 
     def test_stats_tab_present(self):
         # Вкладка «Статистика» — read-only таблица из command_stats.json,
@@ -89,12 +104,28 @@ class TestPageSyntax:
             pytest.skip("node недоступен")
         # верхний уровень ловит «await is only valid in async function»,
         # поэтому оборачиваем скрипт в async-функцию
-        src = wrapper % _script()
+        src = wrapper % _all_scripts()
         path = tmp_path / "board.js"
         path.write_text(src, encoding="utf-8")
         proc = subprocess.run([node, "--check", str(path)],
                               capture_output=True)
         assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+
+    def test_logs_popup_link_and_overlay(self):
+        # Ссылка «логи» на вкладке «Сервер» открывает попап со следом
+        # последнего прогона; текст — <pre>, чтобы колонки не разъезжались.
+        html = page()
+        for needle in ("id=logb", "showLog(", "#logm", "pre id=logt",
+                       "/api/recognize_log", "прогонов ещё не было"):
+            assert needle in html, needle
+        # POPUP живёт отдельным модулем (ui.py в потолке 200 строк) и
+        # вставляется перед </body> — тело страницы остаётся одним куском.
+        assert html.count("</body>") == 1
+        assert html.startswith(PAGE.split("</body>")[0])
+
+    def test_popup_does_not_leak_into_ui_module(self):
+        # ui.py не должен был разрастись: попап — отдельный модуль
+        assert "logm" not in PAGE
 
     def test_http_server_serves_valid_page(self, tmp_path):
         """Живой GET / отдаёт тот же валидный HTML (сервер не ломает JS)."""
@@ -113,7 +144,8 @@ class TestPageSyntax:
             with urllib.request.urlopen(
                     f"http://127.0.0.1:{port}/", timeout=5) as r:
                 html = r.read().decode("utf-8")
-            assert html == PAGE
+            assert html == page()
+            assert "showLog(" in html       # сервер отдаёт страницу с попапом
             with urllib.request.urlopen(
                     f"http://127.0.0.1:{port}/api/ping", timeout=5) as r:
                 assert json.loads(r.read().decode()) == {"ok": True}

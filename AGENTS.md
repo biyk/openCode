@@ -40,10 +40,11 @@ python main.py
 
 ## 4. Архитектура (wiring)
 - Цепочка: `main.py` → `lib/stt/transcription_worker.py` (цикл: Vosk → `_fix_encoding` → обработка) → `Orchestrator.process_text` в `lib/core/orchestrator.py`.
-- `Orchestrator` — набор миксинов в `lib/core/`: `orchestrator.py` (детерминированное ядро), `orchestrator_decision.py` (уровень Laya), `orchestrator_memory.py` (laya/undefined-кандидаты базы знаний), `orchestrator_opencode.py` (фолбэк), `orchestrator_speech.py` (стоп-слова, dev-режим).
+- `Orchestrator` — набор миксинов в `lib/core/`: `orchestrator.py` (детерминированное ядро), `orchestrator_decision.py` (уровень Laya), `orchestrator_memory.py` (laya/undefined-кандидаты базы знаний), `orchestrator_llm.py` (LLM-детект id команды + параметр), `orchestrator_llm_bg.py` (фоновая очередь этого детекта), `orchestrator_opencode.py` (фолбэк), `orchestrator_speech.py` (стоп-слова, dev-режим).
 - Уровни обработки текста (по порядку):
   1. `commands.json` — детерминированный матч (ключ и команда в одной строке, §10);
   2. decision-слой Laya — распознанные Laya команды, `lib/core/laya_decision.py`, §4.2;
+     2.1. внутри промаха Laya: EventMatch (нераспознанное мероприятие) → LLM-детект команды **в фоне** (§4.9);
   3. legacy mini-intent — `lib/voice_cmd/intent.py` (фабрика `build_intent`);
   4. фолбэк — console opencode (`lib/opencode/opencode_cli.py`).
 - Конфиг команд устройства — `targets/<hostname>/commands.json` (путь определяет `lib/voice_cmd/config_loader.py::get_device_commands_path`). В `requires` команды перечислены статусы (`proxy`, `browser_youtube`, …) — **статусы-требованиЯ блокируют команду** (частая причина «не работает включи ютуб»). VPN-статус заменён на `proxy` в `lib/runtime/status_checkers.py`.
@@ -124,6 +125,14 @@ python main.py
 - Потокобезопасно (замок) и **fail-open**: сбой чтения/записи логируется `swallowed()` и НЕ валит выполнение команды — статистика не ценой команды.
 - Отчёт: `python -m lib.voice_cmd.command_stats [--commands PATH]` сводит известные id (`commands` + `sequences`) со счётчиком, по возрастанию использования (никогда не служившие — сверху), подтягивает `descriptions`. stdout переключается в UTF-8 (описания с юникодом иначе падают на cp1251).
 - Тесты: `tests/voice_cmd/test_command_stats.py` (счётчик, first/last_seen, corrupt/write-fail fail-open, сортировка отчёта, хук `execute_by_id`: успех пишет, неудача — нет, sequence пишет по составному id).
+
+### 4.9 Фоновый LLM-детект команды (`orchestrator_llm_bg`)
+- Баг 2026-10-02: «алиса оставь задача сделать короб под ванной» — промах по commands.json/Laya/EventMatch уводил в **синхронный** LLM-детект, а гонка (omni + lmstudio на localhost:1234 при выключенном сервере — ретраи) отвечала ~55 с. Всё это время `process_text` держал `_input_lock`, и цикл распознавания глох: следующие фразы не доходили ни до одного уровня (а после успеха стартовал **второй** такой же детект — вторая минута молчания).
+- Решение: детект уходит в собственную очередь с daemon-воркером — точь-в-точь как console opencode (`orchestrator_opencode.py`). `orchestrator_decision.py` при промахе вызывает `self._enqueue_llm_fallback(text)` и **сразу return**, `_llm_pending()` поднимает тот же флаг, что `_opencode_active`.
+- Классификация в воркере идёт ВНЕ лока, применение (`_apply_llm_command`) — в локе, с подменой `self._reply` на канал заявителя: фоновый ответ уходит в чат того, кто заказал, а не того, чей запрос активен в момент готовности (`orchestrator_chat`).
+- Отмена — по **поколению** `_llm_gen`: стоп-слово (`maybe_abort`) и `stop()` зовут `_cancel_llm_fallback()` — чистит очередь и поднимает номер, а сидящий в `classify` воркер перед исполнением проверяет `cancelled=lambda: gen != self._llm_gen` и не исполняет снятую фразу (поэтому `_run_llm_fallback` принимает `reply`/`cancelled`; прямой синхронный вызов остался возможен — им пользуются тесты).
+- Фоновый промах (`_llm_fallback_miss`) — тоже в воркере: undefined-корзина и «не распознано» в чат, но в локе и с восстановлением `_reply`.
+- Тесты: `tests/core/test_orchestrator_llm.py::TestLlmFallbackIsBackground` (process_text возвращается за <1 с при зависшей гонке; «стоп» не даёт исполнить; новая команда в это время проходит уровни), `tests/core/test_orchestrator_opencode.py` — образец неблокирующего воркера.
 
 ## 5. Google Calendar + Tasks + Таблица
 - `lib/google_calendar.py` — «напомни …» это **события Calendar** (не Tasks). OAuth: `credentials.json` + `token.json` (в .gitignore). Scope проверяется по `token.json`; при нехватке — интерактивный consent.

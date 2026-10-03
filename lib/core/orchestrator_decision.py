@@ -116,15 +116,12 @@ class OrchestratorDecisionMixin:
                 if self._try_event_match(text):
                     return
                 # Затем LLM-детект команды (OmniRouter/LM Studio) по примеру
-                # распознавания на доске; нашёл — исполнит и ляжет в laya.
-                if self._llm is not None and self._run_llm_fallback(text):
+                # распознавания на доске; гонка отвечает до минуты — уходит в
+                # фон, иначе цикл распознавания глохнет на одной фразе.
+                if self._llm is not None:
+                    self._enqueue_llm_fallback(text)
                     return
-                self._record_undefined(text)
-                self._output.print_info(
-                    "[Decision] Лайя и LLM: команда не распознана — "
-                    "фраза в undefined, запрос в opencode не идёт"
-                )
-                self._chat_not_recognized()
+                self._llm_fallback_miss(text)
                 return
             resolved, confidence, elapsed = detected
             self._output.print_info(

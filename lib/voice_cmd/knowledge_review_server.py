@@ -9,9 +9,10 @@ API (JSON, всё на 127.0.0.1):
   POST /api/act       — confirm/demote/forget/update/purge записи базы знаний
                         (purge чистит фразу и из knowledge.json, и из match
                         в commands.json — удаление устаревшего confirmed)
-  POST /api/recognize — «попробовать распознать» (Laya → LLM)
-  POST /api/recognize_all — массовый прогон undefined-корзины (Laya → LLM)
+  POST /api/recognize — «попробовать распознать» (commands.json → Laya → LLM)
+  POST /api/recognize_all — массовый прогон undefined-корзины
   GET  /api/recognize_all — прогресс {running, done, total, recognized}
+  GET  /api/recognize_log — след последнего прогона {log, running, total, done}
   POST /api/scan      — запустить сканирование логов в базу знаний
   GET  /api/scan      — прогресс сканирования {running, done, total, added}
   POST /api/settings  — сохранить port/llm_url/llm_model в review.json
@@ -31,15 +32,15 @@ from lib.voice_cmd.knowledge_review_board import (
     apply_act, board_snapshot, delete_confirmed_phrase, laya_status,
     sheet_task_titles,
 )
+from lib.voice_cmd.knowledge_review_bulk import log_text as bulk_log
 from lib.voice_cmd.knowledge_review_bulk import start as bulk_start
 from lib.voice_cmd.knowledge_review_bulk import status as bulk_status
-from lib.voice_cmd.knowledge_review_recognize import (
-    load_review, save_review, try_recognize,
-)
+from lib.voice_cmd.knowledge_review_detect import try_recognize
+from lib.voice_cmd.knowledge_review_recognize import load_review, save_review
 from lib.voice_cmd.knowledge_review_scan import start as scan_start
 from lib.voice_cmd.knowledge_review_scan import status as scan_status
 from lib.voice_cmd.knowledge_review_stats import stats_html
-from lib.voice_cmd.knowledge_review_ui import PAGE
+from lib.voice_cmd.knowledge_review_ui_log import page
 
 
 class ReviewHandler(BaseHTTPRequestHandler):
@@ -69,7 +70,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/":
-            self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            html = page().encode("utf-8")
+            self._send(200, html, "text/html; charset=utf-8")
         elif self.path == "/api/ping":
             self._json(200, {"ok": True})
         elif self.path == "/api/board":
@@ -86,6 +88,15 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._json(200, scan_status())
         elif self.path == "/api/recognize_all":
             self._json(200, bulk_status())
+        elif self.path == "/api/recognize_log":
+            # След последнего прогона: он же показывает, что идёт сейчас.
+            # Статус читается защитно — попап не должен падать из-за того,
+            # что ключа в прогрессе нет.
+            st = bulk_status()
+            self._json(200, {"log": bulk_log(),
+                             "running": bool(st.get("running")),
+                             "total": int(st.get("total") or 0),
+                             "done": int(st.get("done") or 0)})
         else:
             self._json(404, {"error": "not found"})
 

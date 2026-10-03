@@ -1,13 +1,11 @@
 # lib/voice_cmd/knowledge_review_recognize.py
-"""Распознавание фразы для доски «проверка знаний»: Laya → LLM (LM Studio).
+"""Настройки доски «проверка знаний» и разбор ответов LLM (без сетевых ходов).
 
-try_recognize(text) сначала спрашивает Лайю (decision-секция commands.json),
-затем LLM с полным набором команд; ответ — dict вида
-{"via": "laya|llm|none", "kind": "command|start|finish|none",
- "command": id|"", "event": ""|заголовок}.
-
-Настройки GUI-сервера (порт, адрес/модель LLM) лежат в
-targets/<host>/review.json рядом с commands.json.
+Здесь только то, что не обращается к ИИ: review.json (порт, адрес/модель,
+таймаут), чтение commands.json (id команд, decision-критерии, match-шаблоны)
+и разбор JSON-ответа модели с валидацией. Вопросы уровням —
+knowledge_review_levels, порядок фаз и текстовый след прогона —
+knowledge_review_detect.
 """
 
 from __future__ import annotations
@@ -16,8 +14,6 @@ import json
 import os
 import re
 from typing import Optional
-
-import requests
 
 from lib.core.errors import swallowed
 
@@ -37,6 +33,13 @@ LLM_INSTRUCTIONS = (
     '"event":"<заголовок мероприятия для start/finish, иначе пустая строка>"}. '
     "kind=command — просьба выполнить команду; start/finish — пользователь "
     "сам начал/завершил мероприятие; none — не команда."
+)
+# Второй вопрос (фаза 2): команда уже известна, нужен только её параметр.
+PARAM_INSTRUCTIONS = (
+    "Фраза распознана с ошибками. Команда уже определена: {cmd}. "
+    "Назови ТОЛЬКО объект, к которому она относится (что именно пользователь "
+    "начал/закончил/включил и т.п.), парой слов в именительном падеже. "
+    "Если объекта во фразе нет — верни NONE."
 )
 
 
@@ -70,44 +73,36 @@ def save_review(commands_file: str, data: dict) -> bool:
         return False
 
 
-def _commands_meta(commands_file: str) -> tuple[list[str], dict]:
-    """(id всех команд/sequence, decision-критерии) из commands.json."""
+def commands_data(commands_file: str) -> dict:
+    """Сырой commands.json ({} при сбое — доска не падает из-за конфига)."""
     try:
         with open(commands_file, encoding="utf-8") as f:
-            data = json.load(f)
+            return json.load(f) or {}
     except Exception as e:
         swallowed("review.commands", e)
-        return [], {}
+        return {}
+
+
+def commands_meta(data: dict) -> tuple[list[str], dict]:
+    """(id всех команд/sequence, decision-критерии) из прочитанного конфига."""
     ids = list(data.get("commands", {}))
     ids += [i for i in data.get("sequences", {}) if i not in ids]
     criteria = dict((data.get("decision") or {}).get("criteria") or {})
     return ids, criteria
 
 
-def laya_guess(text: str, commands_file: str) -> Optional[str]:
-    """Ответ Лайи (id команды) либо None; сервер не автозапускаем."""
-    try:
-        with open(commands_file, encoding="utf-8") as f:
-            cfg = (json.load(f) or {}).get("decision") or {}
-    except Exception as e:
-        swallowed("review.decision_cfg", e)
-        return None
-    if not cfg.get("enabled") or not cfg.get("url"):
-        return None
-    from lib.core.laya_decision import LayaDecision
-    try:
-        decision = LayaDecision(cfg)
-    except ValueError:
-        return None
-    if not decision.available:
-        return None
-    hit = decision.detect(text)
-    if hit and hit[0] != "none":
-        return str(hit[0])
-    return None
+def free_text_ids(data: dict) -> list[str]:
+    """Id команд со свободным текстом ({{text}}) — у них параметр не задача."""
+    out = []
+    for cid, cmd in (data.get("commands") or {}).items():
+        blob = cmd if isinstance(cmd, str) else " ".join(
+            str(v) for v in cmd.values())
+        if "{{text}}" in blob:
+            out.append(cid)
+    return out
 
 
-def _llm_question(text: str, criteria: dict) -> str:
+def llm_question(text: str, criteria: dict) -> str:
     """Вопрос LLM: фраза + перечень команд (критерии Лайи, где есть)."""
     lines = [f"Фраза: {text}", "Команды (id — что делает):"]
     for cid, desc in criteria.items():
@@ -116,34 +111,16 @@ def _llm_question(text: str, criteria: dict) -> str:
     return "\n".join(lines)
 
 
-def llm_guess(text: str, commands_file: str, review: dict
-              ) -> Optional[dict]:
-    """Спросить LLM (LM Studio, OpenAI-совместимый) и разобрать JSON-ответ."""
-    ids, criteria = _commands_meta(commands_file)
-    url = str(review.get("llm_url", "")).rstrip("/")
-    if not url:
-        return None
-    payload = {
-        "model": review.get("llm_model"),
-        "messages": [
-            {"role": "system", "content": LLM_INSTRUCTIONS},
-            {"role": "user", "content": _llm_question(text, criteria)},
-        ],
-        "temperature": 0.0,
-    }
-    try:
-        r = requests.post(f"{url}/chat/completions", json=payload,
-                          timeout=float(review.get("llm_timeout", 300)))
-        r.raise_for_status()
-        answer = (r.json().get("choices") or [{}])[0].get(
-            "message", {}).get("content") or ""
-    except Exception as e:
-        swallowed("review.llm", e)
-        return None
-    return _parse_llm(answer, ids)
+def param_question(text: str, command: str, criteria: dict) -> str:
+    """Вопрос LLM про параметр уже известной команды (фаза 2)."""
+    what = criteria.get(command) or ""
+    return "\n".join([
+        PARAM_INSTRUCTIONS.format(cmd=f"{command} {what}".strip()),
+        f"Фраза: {text}",
+    ])
 
 
-def _parse_llm(answer: str, ids: list[str]) -> Optional[dict]:
+def parse_llm(answer: str, ids: list[str]) -> Optional[dict]:
     """Достаёт из ответа модели JSON и валидирует command/kind."""
     m = _JSON_RE.search(answer or "")
     if not m:
@@ -161,15 +138,3 @@ def _parse_llm(answer: str, ids: list[str]) -> Optional[dict]:
         return None
     return {"kind": kind, "command": command if kind == "command" else "",
             "event": str(data.get("event") or "")}
-
-
-def try_recognize(text: str, commands_file: str, review: dict) -> dict:
-    """Полная попытка распознавания: сначала Лайя, затем LLM."""
-    cid = laya_guess(text, commands_file)
-    if cid:
-        return {"via": "laya", "kind": "command", "command": cid,
-                "event": ""}
-    guess = llm_guess(text, commands_file, review)
-    if guess:
-        return {"via": "llm", **guess}
-    return {"via": "none", "kind": "none", "command": "", "event": ""}

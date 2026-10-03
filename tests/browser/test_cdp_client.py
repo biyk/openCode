@@ -110,6 +110,21 @@ class TestNewTabAndClose:
         assert cdc.close_tab({"id": "9"}) is False
         mock_open.assert_not_called()
 
+    def test_close_penultimate_tab_adds_lifeline(self, mocker):
+        """Регресс гонки: две реальные страницы — закрытие одной ставит
+        спасалку. Раньше её подставляли только при len(pages)==1, и два
+        CDP-клиента (ассистент + тесты), видя по ≥2, обнуляли набор и валили
+        браузер вместо закрытия вкладки; about:blank среди чужих не дублируется."""
+        mocker.patch("lib.browser.cdp_client._list_tabs", return_value=[
+            {"id": "u", "type": "page", "url": "https://youtu.be/x"},
+            {"id": "9", "type": "page", "url": "https://youtu.be/y"}])
+        open_ = mocker.patch("lib.browser.cdp_client.open_new_tab")
+        up = mocker.patch("lib.browser.cdp_client.urllib.request.urlopen")
+        up.return_value.__enter__.return_value = MagicMock()
+        assert cdc.close_tab({"id": "9"}) is True
+        open_.assert_called_once_with("about:blank", cdc.DEFAULT_PORT)
+        assert "json/close/9" in up.call_args[0][0]
+
 
 class TestIsRunning:
     """Тесты для is_running."""

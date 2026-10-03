@@ -10,7 +10,6 @@
     python -m lib.browser_control open-url "https://youtube.com"
     python -m lib.browser_control eval "https://youtube.com" "document.title"
     python -m lib.browser_control youtube-play "музыка для кодинга"
-    python -m lib.browser_control youtube-first
 """
 
 import json
@@ -62,9 +61,8 @@ def _find_browser_exe() -> Optional[str]:
 def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     """Проверяет/запускает браузер с remote-debugging-port.
 
-    Готовность — первый ответ CDP, а не пауза; страницу ждёт вызывающий код
-    событиями (`lib.browser.cdp_events`): браузер отвечает раньше, чем
-    успеет открыться вкладка.
+    Готовность — первый ответ CDP, а не пауза; вкладку ждёт вызывающий код
+    событиями (`lib.browser.cdp_events`) — браузер отвечает раньше вкладки.
     """
     if is_running(port):
         print(f"[Browser] Уже запущен на порту {port}")
@@ -76,11 +74,17 @@ def ensure_browser(port: int = DEFAULT_PORT) -> bool:
     profile = Path(__file__).resolve().parent.parent / f".voice-cdp-profile-{port}"
     profile.mkdir(exist_ok=True)
     print(f"[Browser] Запуск {exe} с debug-портом {port}")
-    subprocess.Popen(
-        [exe, f"--remote-debugging-port={port}", "--no-first-run",
-         "--no-default-browser-check", "--remote-allow-origins=*",
-         f"--user-data-dir={profile}"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    args = [f"--remote-debugging-port={port}", "--no-first-run",
+            "--no-default-browser-check", "--remote-allow-origins=*",
+            f"--user-data-dir={profile}"]
+    if sys.platform != "win32":  # POSIX: обычный detached-ребёнок
+        subprocess.Popen([exe] + args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:  # дитя WmiPrvSE — вне дерева запускатора, переживёт его гибель
+        cl = chr(34) + exe + chr(34) + ' ' + ' '.join(args)
+        ps = ('Invoke-CimMethod -ClassName Win32_Process -MethodName Create '
+              "-Arguments @{CommandLine='" + cl + "'} | Out-Null")
+        subprocess.run(['powershell', '-NoProfile', '-Command', ps],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not wait_until(lambda: is_running(port), BROWSER_START_S):
         print(f"[Browser] Браузер не ответил за {BROWSER_START_S:.0f} секунд")
         return False

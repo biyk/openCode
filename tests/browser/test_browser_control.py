@@ -16,7 +16,14 @@ class TestEnsureBrowser:
         mock_popen.assert_not_called()
 
     def test_start_and_wait(self, mocker):
-        """Запускает браузер с debug-портом и ждёт готовности."""
+        """Запускает браузер с debug-портом и ждёт готовности.
+
+        На win32 старт — через WMI (powershell Invoke-CimMethod), чтобы
+        браузер был ребёнком WmiPrvSE и переживал гибель запускатора
+        (resurrector глушит ассистента, тест выходит); на POSIX — Popen.
+        Проверяем, что debug-порт и профиль попали в командную строку тем
+        путём, который реально использован на этой платформе.
+        """
         ready = {"value": 0}
 
         def _fake_is_running(port=None):
@@ -26,16 +33,23 @@ class TestEnsureBrowser:
         mocker.patch(
             "lib.browser_control._find_browser_exe", return_value="C:/brave.exe"
         )
+        mock_run = mocker.patch("lib.browser_control.subprocess.run")
         mock_popen = mocker.patch("lib.browser_control.subprocess.Popen")
 
-        def _make_ready(*args, **kwargs):
+        def _make_ready(*a, **k):
             ready["value"] = 1
 
+        mock_run.side_effect = _make_ready
         mock_popen.side_effect = _make_ready
-        bc.ensure_browser()
-        mock_popen.assert_called_once()
-        args = mock_popen.call_args[0][0]
-        assert "--remote-debugging-port=9222" in args
+        assert bc.ensure_browser() is True
+        if bc.sys.platform == "win32":
+            mock_run.assert_called_once()
+            cmd = " ".join(mock_run.call_args[0][0])
+        else:
+            mock_popen.assert_called_once()
+            cmd = " ".join(mock_popen.call_args[0][0])
+        assert "--remote-debugging-port=9222" in cmd
+        assert ".voice-cdp-profile-9222" in cmd
 
     def test_no_browser(self, mocker):
         """Без найденного браузера — неуспех."""

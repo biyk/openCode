@@ -120,19 +120,26 @@ class OrchestratorSpeechMixin:
         self._speak_async(message)
 
     def maybe_abort(self, text: str) -> bool:
-        """Прерывает озвучку или ожидающий ответ opencode, если есть стоп-слово.
+        """Прерывает озвучку или фоновый ответ (opencode/LLM-детект), если есть
+        стоп-слово.
 
         Возвращает True, если процесс был прерван. Используется для
         финальных и частичных результатов распознавания.
         """
-        if not self._speaking and not self._opencode_active:
+        if (not self._speaking and not self._opencode_active
+                and not self._llm_pending()):
             return False
         tokens = text.lower().split()
         if not any(token in self._stop_words for token in tokens):
             return False
         self._abort_playback.set()
+        dropped_llm = self._llm_pending()
+        if dropped_llm:
+            self._cancel_llm_fallback()
         if self._speaking:
             self._output.print_info("[TTS] Озвучка прервана")
+        elif dropped_llm:
+            self._output.print_info("[LLM] Фоновый детект отменён")
         else:
             self._output.print_info("[OpenCode] Ожидаемый ответ отменён")
         return True
@@ -144,7 +151,8 @@ class OrchestratorSpeechMixin:
         self._clear_speech_buffer()
 
     def stop(self) -> None:
-        """Прерывает TTS, снимает ожидаемый вопрос и очищает очередь opencode."""
+        """Прерывает TTS, снимает ожидаемый вопрос и чистит фоновые очереди."""
         self._abort_playback.set()
         self.cancel_ask()
         self._drain_opencode_queue()
+        self._cancel_llm_fallback()

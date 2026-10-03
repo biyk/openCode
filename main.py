@@ -18,7 +18,7 @@ if sys.platform == "win32":
         pass
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
-from lib.core.output import TranscriptionOutput  # noqa: E402
+from lib.core.output import TranscriptionOutput, TimestampedStream  # noqa: E402
 from lib.core.task_monitor_launch import start_task_monitor  # noqa: E402
 from lib.core.task_pick import make_task_picker  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
@@ -88,4 +88,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Метка времени на каждой строке консоли — и для print_info, и для
+    # прямых print() с тегами по всему коду; ставим на весь поток в одном
+    # месте (в __main__, чтобы import main не подменял stdout чужому процессу).
+    sys.stdout = TimestampedStream(sys.stdout)
+    sys.stderr = TimestampedStream(sys.stderr)
     main()

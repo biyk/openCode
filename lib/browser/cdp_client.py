@@ -101,15 +101,17 @@ def open_new_tab(url: str, port: int = DEFAULT_PORT) -> Optional[dict]:
 
 
 def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
-    """Закрывает вкладку через /json/close/{id} (ответ — текст, не JSON).
+    """Закрывает вкладку через /json/close/{id}; держит браузер живым.
 
-    Закрывая ПОСЛЕДНЮЮ вкладку, Chromium завершил бы и браузер, поэтому
-    перед закрытием подставляем спасительную about:blank: у пользователя
-    закрывается вкладка, а окно браузера остаётся живым.
+    Закрыв ПОСЛЕДНЮЮ, Chromium завершает процесс — держим about:blank, пока
+    чужих ≤1 (не ==1: два клиента на :9222, видя ≥2, вместе обнуляют набор).
     """
+    blank = ("", "about:blank", "chrome://newtab/", "edge://newtab/")
     pages = [t for t in _list_tabs(port)
              if t.get("type", "page") in ("page", "")]
-    if len(pages) == 1:
+    others = [t for t in pages if t.get("id") != tab.get("id")]
+    if pages and len(others) <= 1 and not any(
+            (t.get("url") or "").strip().lower() in blank for t in others):
         open_new_tab("about:blank", port)
     try:
         with urllib.request.urlopen(
@@ -143,9 +145,7 @@ def wait_for_tab(url_part: str, port: int = DEFAULT_PORT, timeout: float = 15.0)
 
 def wait_until(ready: Callable[[], bool], timeout: float,
                step: float = CDP_POLL_S) -> bool:
-    """Опрос `ready` с маленьким шагом до `timeout` — только для состояний,
-    на которые нельзя подписаться (сокет порта, появление вкладки).
-    """
+    """Опрос ready до timeout — для состояний без события (порт, вкладка)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if ready():

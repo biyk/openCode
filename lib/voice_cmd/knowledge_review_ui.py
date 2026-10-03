@@ -1,7 +1,7 @@
 # lib/voice_cmd/knowledge_review_ui.py
-"""HTML-страница доски «проверка знаний»: 5 вкладок, данные через JSON-API.
-✕ в «Подтверждено» чистит фразу из commands.json и базы; на «Лайе» снимает
-догадку ИИ. Команда — select, у free-text (кроме taskstart/taskdone) — «ключ»."""
+"""HTML-страница доски «проверка знаний»: 5 вкладок, API — JSON-запросы.
+Открытие и F5 сами гонят скан логов; ✕ в «Подтверждено» чистит commands.json
+и базу; у free-text — «ключ»; попап «логи» — knowledge_review_ui_log."""
 
 PAGE = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -27,8 +27,8 @@ PAGE = """<!doctype html>
  <button data-t="laya">Лайя</button>
  <button data-t="undefined">Не распознано</button>
  <button data-t="stats">Статистика</button> <button data-t="settings">Сервер</button>
- <button id=scan title="logs/*.log → «Не распознано»">🔍 сканировать\
- логи</button>
+ <button id=scan title="logs/*.log → «Не распознано»; и само при \
+открытии">🔍 сканировать логи</button>
  <span id=scanst class=note></span>
 </div>
 <div><section id="t-confirmed"></section><section id="t-laya"></section>
@@ -121,7 +121,8 @@ function settings(){
 <p><label>LM Studio URL <input id=f-llmu size=30 value="${esc(s.llm_url)}">\
 </label></p><p><label>Модель <input id=f-llmm size=30 value="\
 ${esc(s.llm_model)}"></label></p>\
-<p><button id=savs>сохранить настройки</button></p>`}
+<p><button id=savs>сохранить настройки</button> <a href=# id=logb>📜 логи \
+распознавания</a> — след последнего прогона «распознать все»</p>`}
 async function load(){S=await api("/api/board");render()}
 function render(){
  document.getElementById("t-confirmed").innerHTML=table("confirmed",\
@@ -139,14 +140,13 @@ function render(){
  if(document.querySelector(".tasks")&&!T)ensureTasks()}
 function pick(tr){return {text:tr.dataset.text,kind:tr.dataset.kind||"command",\
 command:tr.querySelector(".cmd").value,event:tr.querySelector(".ev").value}}
-async function apply(tr){const p=pick(tr);
- await api("/api/act",{action:"update",...p});await load()}
+async function apply(tr){const p=pick(tr);await api("/api/act",{action:"update",...p});load()}
 async function pollScan(){const s=await api("/api/scan"),r=document\
 .querySelector("#scanst");
  r.textContent=s.running?`сканирование: ${s.done}/${s.total}, в базе \
 +${s.added}`:`готово: файлов ${s.archived}, фраз ${s.phrases}, в базе \
 +${s.added}`;
- if(s.running)setTimeout(pollScan,2000);else load()}
+ if(s.running)setTimeout(pollScan,2000);else if(s.added)load()}
 async function pollRec(){const s=await api("/api/recognize_all"),r=document\
 .querySelector("#recst");
  r.textContent=s.running?`прогон: ${s.done}/${s.total}, распознано \
@@ -195,6 +195,6 @@ document.addEventListener("change",async ev=>{
  if(!c.classList||!c.classList.contains("okc"))return;
  await api("/api/act",{action:c.checked?"confirm":"demote",\
 text:c.closest("tr").dataset.text});load()});
-load();
+load().then(()=>document.getElementById("scan").click());
 </script></body></html>
 """

@@ -23,6 +23,7 @@ from lib.core.orchestrator_decision import OrchestratorDecisionMixin
 from lib.core.orchestrator_event_match import OrchestratorEventMatchMixin
 from lib.core.orchestrator_flavor import OrchestratorFlavorMixin
 from lib.core.orchestrator_llm import OrchestratorLlmMixin
+from lib.core.orchestrator_llm_bg import OrchestratorLlmBgMixin
 from lib.core.orchestrator_memory import OrchestratorMemoryMixin
 from lib.core.orchestrator_opencode import OrchestratorOpencodeMixin
 from lib.core.orchestrator_speech import OrchestratorSpeechMixin
@@ -36,6 +37,7 @@ class Orchestrator(
     OrchestratorEventMatchMixin,
     OrchestratorFlavorMixin,
     OrchestratorLlmMixin,
+    OrchestratorLlmBgMixin,
     OrchestratorMemoryMixin,
     OrchestratorOpencodeMixin,
     OrchestratorSpeechMixin,
@@ -80,6 +82,14 @@ class Orchestrator(
             tuple[str, bool, Optional[Callable[[str], None]]]] = queue.Queue()
         self._opencode_worker: Optional[threading.Thread] = None
         self._opencode_active = False
+        # LLM-детект команды (шаг после промаха Лайи) гоняет race до минуты и,
+        # будучи синхронным, вешал весь ввод; живёт в своей фоновой очереди
+        # (миксин orchestrator_llm_bg).
+        self._llm_queue: queue.Queue[
+            tuple[str, Optional[Callable[[str], None]], int]] = queue.Queue()
+        self._llm_worker: Optional[threading.Thread] = None
+        self._llm_active = False
+        self._llm_gen = 0
         self._pending_ask = None
         self._reply = None
         # Строки микрофона и сообщения чата идут в один пайплайн: общее
@@ -125,8 +135,9 @@ class Orchestrator(
                 if self._speaking:
                     self.maybe_abort(text)
                     return
-            if self._opencode_active and self.maybe_abort(text):
-                # Пока opencode думает, стоп-слово только отменяет ожидаемый ответ
+            if ((self._opencode_active or self._llm_pending())
+                    and self.maybe_abort(text)):
+                # Пока фон думает, стоп-слово только отменяет ожидаемый ответ
                 return
             if self._handle_dev_mode_controls(text):
                 return
