@@ -1,6 +1,6 @@
 """тесты lib/core/task_pick.py — запуск задачи по нажатию кнопки Telegram."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from lib.core.task_pick import make_task_picker, TASKSTART_CMD_ID
 
@@ -49,3 +49,22 @@ class TestMakeTaskPicker:
         handler.start_task.return_value = {"ok": True, "title": "Т"}
         pick = make_task_picker(handler=handler)   # record=None по умолчанию
         assert "▶️" in pick("т")
+
+    def test_handler_is_recreated_per_click(self):
+        """Без инжекта prod-путь строит Новый handler на клик.
+
+        `TaskStartHandler` фиксирует `now` в `__init__`; кэш ставил бы
+        устаревший `start_date` (клик в 07:46 использовался бы для старта
+        «утренней зарядки» в 08:19 — та же ошибка, что ловили в monitor).
+        """
+        h1, h2 = MagicMock(), MagicMock()
+        h1.start_task.return_value = {"ok": True, "title": "Ч"}
+        h2.start_task.return_value = {"ok": True, "title": "З"}
+        with patch("lib.core.task_pick.TaskStartHandler",
+                   side_effect=[h1, h2]) as factory:
+            pick = make_task_picker()             # handler=None → прод-путь
+            pick("чистить зубы")
+            pick("утренняя зарядка")
+        assert factory.call_count == 2
+        h1.start_task.assert_called_once_with("чистить зубы")
+        h2.start_task.assert_called_once_with("утренняя зарядка")
