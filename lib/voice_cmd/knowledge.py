@@ -5,6 +5,8 @@ targets/<host>/knowledge.json: confirmed (решает в рантайме бе�
 laya (распознано Лайей, ждёт досмотра), undefined (не распознано).
 kind — «command» либо «start»/«finish» (мероприятие, поле event — заголовок).
 Досмотр и перевод laya/undefined → confirmed делает человек.
+Карта synonyms (рядом с корзинами): выученный с доски остаток фразы →
+канонический заголовок задачи. Точный lookup confirmed — в ResolveMixin.
 """
 
 import json
@@ -13,27 +15,22 @@ import threading
 from typing import Optional
 
 from lib.core.errors import swallowed
+from lib.voice_cmd.knowledge_common import (
+    BUCKETS, COMMAND, CONFIRMED, FINISH, LAYA, START, SYNONYMS, UNDEFINED, _RANK,
+    normalize_core)
+from lib.voice_cmd.knowledge_resolve import KnowledgeResolveMixin
 
-# Вид решения
-COMMAND, START, FINISH = "command", "start", "finish"
-# Статусы-корзины; подтверждённое решение не понижаем автозаписью,
-# laya сильнее undefined.
-CONFIRMED, LAYA, UNDEFINED = "confirmed", "laya", "undefined"
-BUCKETS = (CONFIRMED, LAYA, UNDEFINED)
-_RANK = {CONFIRMED: 3, LAYA: 2, UNDEFINED: 1}
-
-
-def normalize_core(text: str) -> str:
-    """Нормализация фразы: нижний регистр, ё→е, схлопывание пробелов."""
-    return " ".join(text.lower().replace("ё", "е").split())
+__all__ = ["BUCKETS", "COMMAND", "CONFIRMED", "FINISH", "LAYA", "START",
+           "UNDEFINED", "normalize_core", "KnowledgeStore"]
 
 
-class KnowledgeStore:
+class KnowledgeStore(KnowledgeResolveMixin):
     """Хранилище базы знаний с hot-reload (по mtime файла)."""
 
     def __init__(self, knowledge_file: Optional[str] = None) -> None:
         self._file = knowledge_file
         self._data: dict[str, dict] = {b: {} for b in BUCKETS}
+        self._syn: dict[str, str] = {}
         self._mtime = 0.0
         self._lock = threading.Lock()
         self._load()
@@ -50,6 +47,7 @@ class KnowledgeStore:
 
     def _load(self) -> None:
         self._data = {b: {} for b in BUCKETS}
+        self._syn = {}
         if not self._file:
             return
         try:
@@ -57,6 +55,7 @@ class KnowledgeStore:
                 raw = json.load(f)
             for b in BUCKETS:
                 self._data[b] = dict(raw.get(b) or {})
+            self._syn = dict(raw.get(SYNONYMS) or {})
             self._mtime = os.path.getmtime(self._file)
         except FileNotFoundError:
             pass  # файла ещё нет (первая запись создаст его) — это не ошибка
@@ -80,37 +79,13 @@ class KnowledgeStore:
         if not self._file:
             return
         try:
+            payload = {**self._data, SYNONYMS: self._syn}
             with open(self._file, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=4)
+                json.dump(payload, f, ensure_ascii=False, indent=4)
                 f.write("\n")
             self._mtime = os.path.getmtime(self._file)
         except Exception as e:
             swallowed("knowledge.save", e)
-
-    # ---- разрешение (в рантайме живёт только confirmed) ----
-    def resolve(self, text: str) -> Optional[str]:
-        """Confirmed-команда → id (точ lookup по нормализованному ядру)."""
-        return self.resolve_text(text)[0]
-
-    def resolve_text(self, text: str) -> tuple[Optional[str], Optional[str]]:
-        """Confirmed-команда → (id, event|None); (None, None) если не команда.
-
-        event — curated-текст с доски (параметр {{text}}): если задан,
-        рантайм подставляет его как есть, не перерезая фразу заново.
-        """
-        self.reload()
-        entry = self._data[CONFIRMED].get(normalize_core(text))
-        if entry and entry.get("kind", COMMAND) == COMMAND and entry.get("command"):
-            return str(entry["command"]), entry.get("event")
-        return None, None
-
-    def resolve_event(self, text: str) -> Optional[tuple[str, str]]:
-        """Confirmed-мероприятие → (action, event_title) либо None."""
-        self.reload()
-        entry = self._data[CONFIRMED].get(normalize_core(text))
-        if entry and entry.get("kind") in (START, FINISH) and entry.get("event"):
-            return entry["kind"], str(entry["event"])
-        return None
 
     # ---- автозапись из пайплайна ----
     def record(self, bucket: str, text: str, kind: str = COMMAND,
@@ -198,3 +173,28 @@ class KnowledgeStore:
         self.reload()
         with self._lock:
             return {k: dict(v) for k, v in self._data.get(bucket, {}).items()}
+
+    # ---- карта синонимов задач (выучивается с доски) ----
+    def add_synonym(self, fragment: str, title: str) -> bool:
+        """Кладёт «остаток фразы → канонический заголовок». True, если добавили."""
+        core = normalize_core(fragment)
+        if not core or not title or core == normalize_core(title):
+            return False
+        self.reload()
+        with self._lock:
+            if self._syn.get(core) == title:
+                return False
+            self._syn[core] = title
+            self._save()
+        return True
+
+    def resolve_synonym(self, text: str) -> Optional[str]:
+        """Задача-фрагмент → канонический заголовок (точ по norm-ядру)."""
+        self.reload()
+        return self._syn.get(normalize_core(text)) or None
+
+    def synonyms(self) -> dict[str, str]:
+        """Копия карты синонимов (для доски/отладки)."""
+        self.reload()
+        with self._lock:
+            return dict(self._syn)

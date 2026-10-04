@@ -1,15 +1,13 @@
 # lib/voice_cmd/knowledge_review_board.py
 """Операции доски знаний: снимок, движения корзин, статусы серверов.
 
-Снимок confirmed сливает источники: шаблоны "match" из commands.json
-(работают в рантайме, на доске — locked=true, read-only) + подтверждённые
-записи knowledge.json (редактируемые). laya/undefined — только knowledge.json.
+Confirmed сливает match из commands.json (locked) + knowledge.json.
+laya/undefined — только knowledge.json.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.request
 from typing import Optional
@@ -18,6 +16,8 @@ from lib.core.errors import swallowed
 from lib.voice_cmd.knowledge import (
     BUCKETS, CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
 )
+from lib.voice_cmd.knowledge_learn import (  # noqa: F401
+    atomic_dump_json, learn_from_confirm, register_key)
 
 
 def commands_lists(commands_file: str) -> tuple[list[str], dict]:
@@ -108,10 +108,7 @@ _tasks_cache: tuple[float, list[str]] = (0.0, [])
 
 
 def sheet_task_titles() -> list[str]:
-    """Названия задач real_life_tasks — подсказка для taskstart/taskdone.
-
-    Чтение Sheets дорогое, ответ кэшируется на _TASKS_TTL; пустой не кэшируется.
-    """
+    """Названия задач real_life_tasks (кэш _TASKS_TTL, пустой не кэшируется)."""
     global _tasks_cache
     now = time.time()
     if _tasks_cache[1] and now - _tasks_cache[0] < _TASKS_TTL:
@@ -139,19 +136,16 @@ def _bucket_of(store: KnowledgeStore, text: str) -> Optional[str]:
 
 def delete_confirmed_phrase(store: KnowledgeStore, commands_file: str,
                             text: str) -> dict:
-    """Чистит устаревшую confirmed-фразу из ОБОИХ хранилищ сразу.
-
-    knowledge.json — forget по всем корзинам; commands.json — убираем шаблон
-    из match[cid] (сверка по normalize_core), при опустошении снимаем cid.
-    """
+    """✕ на «Подтверждено»: если фраза в match → убрать оттуда (знание
+    остаётся); если match-записи нет → forget из базы."""
     core = normalize_core(text)
-    removed = store.forget(core)
     try:
         with open(commands_file, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         swallowed("review.delete_phrase.read", e)
-        return {"knowledge": removed, "match": 0}
+        store.reload()
+        return {"match": 0, "knowledge": store.forget(core)}
     match = data.get("match") or {}
     removed_match = 0
     for cid in list(match):
@@ -164,22 +158,21 @@ def delete_confirmed_phrase(store: KnowledgeStore, commands_file: str,
                 del match[cid]
     if removed_match:
         data["match"] = match
-        try:
-            tmp = commands_file + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-                f.write("\n")
-            os.replace(tmp, commands_file)
-        except Exception as e:
-            swallowed("review.delete_phrase.write", e)
-    return {"knowledge": removed, "match": removed_match}
+        atomic_dump_json(commands_file, data, "review.delete_phrase.write")
+        return {"match": removed_match, "knowledge": False}
+    # Нет match-шаблона — чистое знание; удаляем из базы.
+    store.reload()
+    return {"match": 0, "knowledge": store.forget(core)}
 
 
-def apply_act(store: KnowledgeStore, act: dict) -> bool:
+def apply_act(store: KnowledgeStore, act: dict, commands_file: str = "") -> bool:
     """Операция доски: confirm/demote/forget/update/reset. True = успех."""
     text, action = str(act.get("text") or ""), str(act.get("action") or "")
     if action == "confirm":
-        return store.confirm(text)
+        ok = store.confirm(text)
+        if ok and commands_file:
+            learn_from_confirm(store, commands_file, text, act.get("key"))
+        return ok
     if action == "demote":
         return store.demote(text)
     if action == "forget":
@@ -191,8 +184,14 @@ def apply_act(store: KnowledgeStore, act: dict) -> bool:
         return store.demote(text) and store.record(UNDEFINED, text)
     if action == "update":
         bucket = _bucket_of(store, text) or LAYA
-        return store.record(bucket, text,
-                            kind=str(act.get("kind") or "command"),
-                            command=act.get("command") or None,
-                            event=act.get("event") or None)
+        ok = store.record(bucket, text,
+                          kind=str(act.get("kind") or "command"),
+                          command=act.get("command") or None,
+                          event=act.get("event") or None)
+        key = str(act.get("key") or "")
+        if ok and bucket == CONFIRMED and key and commands_file:
+            cid = str(act.get("command") or "")
+            if cid:
+                register_key(commands_file, cid, key)
+        return ok
     return False

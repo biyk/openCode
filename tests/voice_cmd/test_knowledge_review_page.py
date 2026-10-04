@@ -75,8 +75,8 @@ class TestPageSyntax:
         assert "KINDS" not in PAGE
 
     def test_cross_actions_per_bucket(self):
-        # ✕ на «Подтверждено» — purge (commands.json + база знаний);
-        # на «Лайе» — reset (в undefined), в «Не распознано» — forget.
+        # ✕ на «Подтверждено» — purge (match из commands.json; если match нет
+        # → forget); на «Лайе» — reset (в undefined), в «Не распознано» — forget.
         assert 'action:"purge"' in PAGE
         assert 'tr.dataset.bucket=="laya"?"reset":"forget"' in PAGE
         assert 'bucket=="confirmed"' in PAGE

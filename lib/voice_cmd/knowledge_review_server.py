@@ -7,8 +7,8 @@ API (JSON, всё на 127.0.0.1):
   GET  /api/board     — корзины + список команд + настройки + статистика
   GET  /api/tasks     — названия задач real_life_tasks (подсказка task-complete)
   POST /api/act       — confirm/demote/forget/update/purge записи базы знаний
-                        (purge чистит фразу и из knowledge.json, и из match
-                        в commands.json — удаление устаревшего confirmed)
+                        (purge снимает confirmed-фразу из match в commands.json;
+                        если match-записи нет — forget из базы знаний)
   POST /api/recognize — «попробовать распознать» (commands.json → Laya → LLM)
   POST /api/recognize_all — массовый прогон undefined-корзины
   GET  /api/recognize_all — прогресс {running, done, total, recognized}
@@ -113,10 +113,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 res = delete_confirmed_phrase(
                     self.store, self.commands_file,
                     str(body.get("text") or ""))
-                self._json(200, {"ok": bool(res["knowledge"] or res["match"]),
+                self._json(200, {"ok": bool(res["match"] or res.get("knowledge")),
                                  **res})
             else:
-                self._json(200, {"ok": apply_act(self.store, body)})
+                self._json(200, {"ok": apply_act(
+                    self.store, body, self.commands_file)})
         elif self.path == "/api/recognize":
             res = try_recognize(str(body.get("text") or ""),
                                 self.commands_file, self.review)

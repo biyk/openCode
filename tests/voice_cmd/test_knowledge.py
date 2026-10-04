@@ -149,3 +149,40 @@ class TestBoardOps:
         assert "Swallowed" not in capsys.readouterr().out
         store.record_undefined("дзынь дзынь")   # первая запись создаёт файл
         assert path.exists()
+
+
+class TestSynonyms:
+    def test_synonyms_survive_bucket_rewrite(self, tmp_path):
+        # _save пишет synonyms рядом с корзинами: иначе record/confirm стёр бы их.
+        path = str(tmp_path / "k.json")
+        store = KnowledgeStore(path)
+        assert store.add_synonym("пальцами гимнастику", "Пальцевая гимнастика")
+        store.record_laya("тише", "volumedown")
+        store.confirm("тише")
+        assert store.resolve_synonym("Пальцами   Гимнастику") == \
+            "Пальцевая гимнастика"
+
+    def test_add_synonym_rejects_title_equals_fragment(self, tmp_path):
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        assert store.add_synonym("Прогулка", "Прогулка") is False
+        assert store.synonyms() == {}
+
+    def test_add_synonym_idempotent(self, tmp_path):
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        assert store.add_synonym("зарядку", "Зарядка") is True
+        assert store.add_synonym("зарядку", "Зарядка") is False
+
+    def test_resolve_synonym_miss_is_none(self, tmp_path):
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        assert store.resolve_synonym("нету такой") is None
+
+    def test_synonyms_persist_across_reload(self, tmp_path):
+        path = str(tmp_path / "k.json")
+        assert KnowledgeStore(path).add_synonym("фраг", "Заголовок") is True
+        assert KnowledgeStore(path).synonyms() == {"фраг": "Заголовок"}
+
+    def test_fail_open_on_broken_json(self, tmp_path):
+        path = tmp_path / "k.json"
+        path.write_text("{битый", encoding="utf-8")
+        store = KnowledgeStore(str(path))
+        assert store.resolve_synonym("что угодно") is None

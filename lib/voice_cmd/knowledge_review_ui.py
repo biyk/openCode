@@ -1,7 +1,7 @@
 # lib/voice_cmd/knowledge_review_ui.py
 """HTML-страница доски «проверка знаний»: 5 вкладок, API — JSON-запросы.
-Открытие и F5 сами гонят скан логов; ✕ в «Подтверждено» чистит commands.json
-и базу; у free-text — «ключ»; попап «логи» — knowledge_review_ui_log."""
+Открытие и F5 сами гонят скан логов; ✕ в «Подтверждено» снимает match-ключ
+(или forget знание); у free-text — «ключ»; попап логи — ui_log."""
 
 PAGE = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -60,7 +60,7 @@ function keySel(t,chosen){const w=nk(t).split(" ");if(w.length<2)return "";
   `<option${p==chosen?" selected":""}>${esc(p)}</option>`).join("")+"</select>"}
 function cmdCell(cmd,text,ev){const t=nk(text),e=nk(ev||""),
  k=e&&t.length>e.length&&t.endsWith(e)?t.slice(0,-e.length).trim():"";
- return cmdSel(cmd)+(isFree(cmd)?keySel(text,k):"")+cmdNote(cmd)}
+ return cmdSel(cmd)+(isFree(cmd)||cmd=="taskstart"||cmd=="taskdone"?keySel(text,k):"")+cmdNote(cmd)}
 function taskList(){return (T&&T.length)?T.map(t=>
  `<div class=ti title="подставить в параметр">${esc(trunc(t,60))}</div>`
  ).join(""):'<span class=note>задачи из таблицы не найдены</span>'}
@@ -90,10 +90,10 @@ function row(text,e,bucket){
    ?'<label><input type=checkbox class=okc checked> подтверждено</label>'
    :"<button class=conf>✓ подтвердить</button>");
  const btns=e.locked?"":' <button class=app>сохранить</button>';
- // ✕: в «Подтверждено» чистит фразу из commands.json И базы (purge);
- // на «Лайе» снимает догадку ИИ (reset); в «Не распознано» удаляет (forget).
+ // ✕: в «Подтверждено» purge (снимает match из commands.json; если match нет
+ // → forget из базы); на «Лайе» reset (в undefined); в «Не распознано» forget.
  const del=bucket=="confirmed"
-  ?'<button class=del title="удалить из commands.json и базы знаний">✕</button>'
+  ?'<button class=del title="снять с доски (commands.json/база)">✕</button>'
   :(e.locked?"":'<button class=del>✕</button>');
  const task=e.command=="taskstart"||e.command=="taskdone";
  const extra=!e.locked&&task?tasksBox():"";
@@ -126,9 +126,8 @@ ${esc(s.llm_model)}"></label></p>\
 async function load(){S=await api("/api/board");render()}
 function render(){
  document.getElementById("t-confirmed").innerHTML=table("confirmed",\
-"Подтверждено","Работают в рантайме: шаблоны commands.json — только "
-+"чтение; записи доски (галочка) снимаются в «Не распознано». ✕ удаляет "
-+"устаревшую фразу из commands.json и базы знаний.");
+"Подтверждено","Шаблоны commands.json — read-only. ✕ снимает match-ключ; "
++"при отсутствии match — forget из базы знаний.");
  document.getElementById("t-laya").innerHTML=table("laya","Лайя",\
 "Распознано Лайей или LLM, ждёт досмотра. «✓ подтвердить» сохранит "
 +"правку и перенесёт в «Подтверждено».");
@@ -139,7 +138,8 @@ function render(){
  document.getElementById("t-settings").innerHTML=settings()
  if(document.querySelector(".tasks")&&!T)ensureTasks()}
 function pick(tr){return {text:tr.dataset.text,kind:tr.dataset.kind||"command",\
-command:tr.querySelector(".cmd").value,event:tr.querySelector(".ev").value}}
+command:tr.querySelector(".cmd").value,event:tr.querySelector(".ev").value,\
+key:(tr.querySelector(".key")||{}).value||""}}
 async function apply(tr){const p=pick(tr);await api("/api/act",{action:"update",...p});load()}
 async function pollScan(){const s=await api("/api/scan"),r=document\
 .querySelector("#scanst");
@@ -153,8 +153,7 @@ async function pollRec(){const s=await api("/api/recognize_all"),r=document\
 ${s.recognized} · ${esc(s.current)}`:`готово: распознано ${s.recognized} \
 из ${s.total}`;
  if(s.running)setTimeout(pollRec,2000);else load()}
-document.addEventListener("click",async ev=>{
- const b=ev.target;
+document.addEventListener("click",async ev=>{const b=ev.target;
  if(b.dataset&&b.dataset.t){document.querySelectorAll(".tabs button")\
 .forEach(x=>x.classList.toggle("on",x==b));document.querySelectorAll(\
 "section").forEach(x=>x.classList.toggle("on",x.id=="t-"+b.dataset.t));\
@@ -173,25 +172,23 @@ await api("/api/recognize_all",{});pollRec();return}
   b.textContent.trim();return}
  if(b.classList.contains("app")){await apply(tr);return}
  if(b.classList.contains("conf")){const p=pick(tr);await api("/api/act",
-  {action:"update",...p});await api("/api/act",{action:"confirm",text});
+  {action:"update",...p});await api("/api/act",{action:"confirm",text,key:p.key});
   load();return}
  if(b.classList.contains("del")){
   if(tr.dataset.bucket=="confirmed"){
-   if(!confirm("Удалить фразу «"+text+"» из commands.json и базы знаний?"))
-    return;
+   if(!confirm("Удалить «"+text+"» с доски?"))return;
    await api("/api/act",{action:"purge",text});
   }else{await api("/api/act",
    {action:tr.dataset.bucket=="laya"?"reset":"forget",text});}
   load();return}});
-document.addEventListener("input",ev=>{
- const c=ev.target;
+document.addEventListener("input",ev=>{const c=ev.target;
  if(c.classList&&c.classList.contains("tf"))filterTasks(c)});
 document.addEventListener("change",async ev=>{
  const c=ev.target;
- if(c.classList&&c.classList.contains("cmd")&&c.closest("tr"))
-  syncRow(c.closest("tr"));
+ if(c.classList&&c.classList.contains("cmd")&&c.closest("tr"))syncRow(c.closest("tr"));
  if(c.classList&&c.classList.contains("key")){const tr=c.closest("tr");
-  tr.querySelector(".ev").value=afterKey(tr.dataset.text,c.value);return}
+  if(isFree(tr.querySelector(".cmd").value))tr.querySelector(".ev").value=afterKey(\
+tr.dataset.text,c.value);return}
  if(!c.classList||!c.classList.contains("okc"))return;
  await api("/api/act",{action:c.checked?"confirm":"demote",\
 text:c.closest("tr").dataset.text});load()});

@@ -119,13 +119,13 @@ class TestBoardAndActs:
         assert laya_status(cfile) == {"enabled": False, "url": "",
                                       "up": False}
 
-    def test_purge_removes_from_both_stores(self, cfile, tmp_path):
-        # confirmed-мусор чистится и из commands.json.match, и из знаний.
+    def test_purge_clears_commands_keeps_knowledge(self, cfile, tmp_path):
+        # ✕ на «Подтверждено»: снимает только commands.json.match, знания нетронуты.
         store = _store(tmp_path)
         store.record(CONFIRMED, "стоп музыка", command="stop")
         assert delete_confirmed_phrase(store, cfile, "стоп музыка") == {
-            "knowledge": True, "match": 1}
-        assert "стоп музыка" not in store.entries(CONFIRMED)
+            "match": 1, "knowledge": False}
+        assert "стоп музыка" in store.entries(CONFIRMED)   # осталась в базе
         data = json.loads(open(cfile, encoding="utf-8").read())
         assert "stop" not in data["match"]          # список опустел → cid снят
         assert data["commands"]["stop"] == "cmd"     # команда не тронута
@@ -139,7 +139,7 @@ class TestBoardAndActs:
                       f, ensure_ascii=False)
         store = _store(tmp_path)
         assert delete_confirmed_phrase(store, cfile, "Громче") == {
-            "knowledge": False, "match": 1}
+            "match": 1, "knowledge": False}
         data = json.loads(open(cfile, encoding="utf-8").read())
         assert data["match"]["volumeup"] == ["сделай громче"]
 

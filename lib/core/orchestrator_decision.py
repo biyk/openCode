@@ -5,6 +5,10 @@
 
 from typing import Optional
 
+# Команды само-отчёта по задачам: параметр — название задачи, его уточняем
+# выученной с доски картой синонимов (сильнее нечёткого матча).
+_TASK_CMDS = ("taskstart", "taskdone")
+
 
 class OrchestratorDecisionMixin:
     """Шаг 1..3: commands.json, алиасы, decision-слой Laya, legacy fallback."""
@@ -24,6 +28,11 @@ class OrchestratorDecisionMixin:
                 settings = (forced_text,)
             else:
                 settings = self._decision_text(cmd_id, text)
+        if settings and self._knowledge is not None \
+                and cmd_id in _TASK_CMDS:
+            canon = self._knowledge.resolve_synonym(settings[0])
+            if canon:
+                settings = (canon,)
         if settings:
             ok = self._matcher.execute_by_id(cmd_id, settings)
         else:
