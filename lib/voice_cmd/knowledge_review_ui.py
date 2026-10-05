@@ -58,8 +58,8 @@ function keySel(t,chosen){const w=nk(t).split(" ");if(w.length<2)return "";
  const ps=w.slice(0,-1).map((_,i)=>w.slice(0,i+1).join(" "));
  return '<br><select class=key><option value="">ключ…</option>'+ps.map(p=>
   `<option${p==chosen?" selected":""}>${esc(p)}</option>`).join("")+"</select>"}
-function cmdCell(cmd,text,ev){const t=nk(text),e=nk(ev||""),
- k=e&&t.length>e.length&&t.endsWith(e)?t.slice(0,-e.length).trim():"";
+function cmdCell(cmd,text,ev,key){const t=nk(text),e=nk(ev||""),
+ ck=nk(key||""),k=ck||(e&&t.length>e.length&&t.endsWith(e)?t.slice(0,-e.length).trim():"");
  return cmdSel(cmd)+(isFree(cmd)||cmd=="taskstart"||cmd=="taskdone"?keySel(text,k):"")+cmdNote(cmd)}
 function taskList(){return (T&&T.length)?T.map(t=>
  `<div class=ti title="подставить в параметр">${esc(trunc(t,60))}</div>`
@@ -78,7 +78,7 @@ async function ensureTasks(){if(T)return;try{T=(await api("/api/tasks")).tasks||
 function syncRow(tr){const box=tr.querySelector(".tasks"),
  cmd=tr.querySelector(".cmd").value,
  task=cmd=="taskstart"||cmd=="taskdone";
- tr.querySelector(".cc").innerHTML=cmdCell(cmd,tr.dataset.text,tr.querySelector(".ev").value);
+ tr.querySelector(".cc").innerHTML=cmdCell(cmd,tr.dataset.text,tr.querySelector(".ev").value,(tr.querySelector(".key")||{}).value||"");
  if(task){if(!box&&tr.querySelector(".app")){tr
   .querySelectorAll("td")[3].insertAdjacentHTML("beforeend",tasksBox());
   ensureTasks()}}
@@ -99,7 +99,7 @@ function row(text,e,bucket){
  const extra=!e.locked&&task?tasksBox():"";
  return `<tr data-text="${esc(text)}" data-bucket="${bucket}" data-kind=\
 "${e.kind||"command"}"><td>${del}</td><td>${esc(text)}</td>\
-<td class=cc>${cmdCell(e.command,text,e.event)}</td>\
+<td class=cc>${cmdCell(e.command,text,e.event,e.key)}</td>\
 <td><input class=ev size=22 value="${esc(e.event)}">${extra}</td>\
 <td class=hit>${e.hits||0}</td><td>${cell}${btns}</td></tr>`}
 function table(bucket,title,note){

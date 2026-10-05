@@ -17,7 +17,7 @@ from lib.voice_cmd.knowledge import (
     BUCKETS, CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
 )
 from lib.voice_cmd.knowledge_learn import (  # noqa: F401
-    atomic_dump_json, learn_from_confirm, register_key)
+    atomic_dump_json, learn, learn_from_confirm, register_key)
 
 
 def commands_lists(commands_file: str) -> tuple[list[str], dict]:
@@ -184,14 +184,17 @@ def apply_act(store: KnowledgeStore, act: dict, commands_file: str = "") -> bool
         return store.demote(text) and store.record(UNDEFINED, text)
     if action == "update":
         bucket = _bucket_of(store, text) or LAYA
-        ok = store.record(bucket, text,
-                          kind=str(act.get("kind") or "command"),
-                          command=act.get("command") or None,
-                          event=act.get("event") or None)
+        kind = str(act.get("kind") or "command")
+        cid = str(act.get("command") or "")
+        event = act.get("event") or None
         key = str(act.get("key") or "")
-        if ok and bucket == CONFIRMED and key and commands_file:
-            cid = str(act.get("command") or "")
-            if cid:
-                register_key(commands_file, cid, key)
+        ok = store.record(bucket, text, kind=kind, command=cid or None,
+                          event=event, key=key or None)
+        # Confirmed-строку учим целиком: ключ команды И синоним задачи.
+        # Только register_key терял синоним (ветка confirm ниже ловит лишь
+        # переход laya/undefined→confirmed, а не «сохранить» на confirmed).
+        if ok and bucket == CONFIRMED and commands_file:
+            learn(store, commands_file, text=text, command=cid or None,
+                  kind=kind, event=event, key=key)
         return ok
     return False

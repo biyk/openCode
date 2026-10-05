@@ -90,8 +90,8 @@ class KnowledgeStore(KnowledgeResolveMixin):
     # ---- автозапись из пайплайна ----
     def record(self, bucket: str, text: str, kind: str = COMMAND,
                command: Optional[str] = None, event: Optional[str] = None,
-               ) -> bool:
-        """Кладёт фразу в корзину, не понижая статус сильнее текущего."""
+               key: Optional[str] = None) -> bool:
+        """Кладёт фразу в корзину; key — выбранный на доске триггер."""
         core = normalize_core(text)
         if not core or bucket not in _RANK:
             return False
@@ -101,11 +101,9 @@ class KnowledgeStore(KnowledgeResolveMixin):
                 return False
             hits = int((self._data.get(current or bucket, {})
                         .get(core, {}) or {}).get("hits", 0))
-            entry: dict = {"kind": kind, "hits": hits}
-            if command:
-                entry["command"] = command
-            if event:
-                entry["event"] = event
+            raw: dict = {"kind": kind, "hits": hits,
+                         "command": command, "event": event, "key": key}
+            entry: dict = {k: v for k, v in raw.items() if v is not None}
             for b in BUCKETS:
                 self._data[b].pop(core, None)
             self._data[bucket][core] = entry

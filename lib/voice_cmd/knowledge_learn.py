@@ -125,8 +125,11 @@ def learn(store, commands_file: str, *, text: str, command: Optional[str],
 
 def learn_from_confirm(store, commands_file: str, text: str,
                        key: Optional[str]) -> bool:
-    """Точка входа доски: берёт решение из confirmed-записи и учит по нему."""
+    """Точка входа доски: берёт решение из confirmed-записи и учит по нему.
+
+    Ключ: явный (из акта) иначе сохранённый на записи — тогда подтверждение
+    галочкой не теряет ранее выбранный на доске ключ."""
     entry = store.entries(CONFIRMED).get(normalize_core(text), {})
     return learn(store, commands_file, text=text,
                  command=entry.get("command"), kind=entry.get("kind", COMMAND),
-                 event=entry.get("event"), key=key)
+                 event=entry.get("event"), key=key or entry.get("key"))

@@ -104,6 +104,26 @@ class TestUpdateRegistersKey:
         data = json.loads(open(cfile, encoding="utf-8").read())
         assert "openbd" not in data.get("match", {})
 
+    def test_update_confirmed_learns_synonym_when_key_exists(self, tmp_path):
+        """«сохранить» на confirmed: ключ уже в match (дедуп) — синоним всё
+        равно обязан выучиться, иначе «приступил к <задача>» не резолвится.
+        Баг: update звал лишь register_key и терял синоним задачи."""
+        cfile = self._cfile(tmp_path, {"taskstart": ["приступил к"]})
+        store = KnowledgeStore(str(tmp_path / "k.json"))
+        store.record(CONFIRMED, "приступил к глобальная задача",
+                     command="taskstart", event="Глобальные задачи")
+        assert store.resolve_synonym("глобальная задача") is None
+        ok = apply_act(store, {
+            "action": "update", "text": "приступил к глобальная задача",
+            "kind": "command", "command": "taskstart",
+            "event": "Глобальные задачи", "key": "приступил к"}, cfile)
+        assert ok is True
+        # Синоним остатка → канонический заголовок сохранён.
+        assert store.resolve_synonym("глобальная задача") == "Глобальные задачи"
+        # Ключ выбран и сохранён на записи — UI подсветит селект после load().
+        entry = store.entries(CONFIRMED)["приступил к глобальная задача"]
+        assert entry["key"] == "приступил к"
+
 
 class TestPurgeKnowledgeOnly:
     def test_purge_knowledge_only_forgets(self, tmp_path):
