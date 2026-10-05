@@ -3,6 +3,9 @@
 
 Confirmed сливает match из commands.json (locked) + knowledge.json.
 laya/undefined — только knowledge.json.
+
+Правило удаления: ✕ на «Лайе» и «Подтверждено» только меняет статус (фраза
+уезжает в «Не распознано»); настоящее удаление — единственное на этой странице.
 """
 
 from __future__ import annotations
@@ -10,14 +13,15 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
-from typing import Optional
 
 from lib.core.errors import swallowed
 from lib.voice_cmd.knowledge import (
-    BUCKETS, CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
+    CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
 )
 from lib.voice_cmd.knowledge_learn import (  # noqa: F401
     atomic_dump_json, learn, learn_from_confirm, register_key)
+from lib.voice_cmd.knowledge_review_unconfirm import (  # noqa: F401
+    bucket_of, unconfirm_phrase)
 
 
 def commands_lists(commands_file: str) -> tuple[list[str], dict]:
@@ -127,46 +131,12 @@ def sheet_task_titles() -> list[str]:
     return titles
 
 
-def _bucket_of(store: KnowledgeStore, text: str) -> Optional[str]:
-    for b in BUCKETS:
-        if text in store.entries(b):
-            return b
-    return None
-
-
-def delete_confirmed_phrase(store: KnowledgeStore, commands_file: str,
-                            text: str) -> dict:
-    """✕ на «Подтверждено»: если фраза в match → убрать оттуда (знание
-    остаётся); если match-записи нет → forget из базы."""
-    core = normalize_core(text)
-    try:
-        with open(commands_file, encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        swallowed("review.delete_phrase.read", e)
-        store.reload()
-        return {"match": 0, "knowledge": store.forget(core)}
-    match = data.get("match") or {}
-    removed_match = 0
-    for cid in list(match):
-        kept = [t for t in match[cid] if normalize_core(t) != core]
-        if len(kept) != len(match[cid]):
-            removed_match += len(match[cid]) - len(kept)
-            if kept:
-                match[cid] = kept
-            else:
-                del match[cid]
-    if removed_match:
-        data["match"] = match
-        atomic_dump_json(commands_file, data, "review.delete_phrase.write")
-        return {"match": removed_match, "knowledge": False}
-    # Нет match-шаблона — чистое знание; удаляем из базы.
-    store.reload()
-    return {"match": 0, "knowledge": store.forget(core)}
-
-
 def apply_act(store: KnowledgeStore, act: dict, commands_file: str = "") -> bool:
-    """Операция доски: confirm/demote/forget/update/reset. True = успех."""
+    """Операция доски: confirm/demote/forget/update/reset. True = успех.
+
+    purge (✕ на «Подтверждено») не здесь: он отвечает серверу число снятых
+    match-шаблонов, поэтому идёт мимо этой функции — unconfirm_phrase.
+    """
     text, action = str(act.get("text") or ""), str(act.get("action") or "")
     if action == "confirm":
         ok = store.confirm(text)
@@ -176,14 +146,19 @@ def apply_act(store: KnowledgeStore, act: dict, commands_file: str = "") -> bool
     if action == "demote":
         return store.demote(text)
     if action == "forget":
-        return store.forget(text)
+        # Настоящее удаление живёт только на «Не распознано». Сверху ✕ меняет
+        # статус: confirmed/laya → undefined, а не стирает запись.
+        bucket = bucket_of(store, text)
+        if bucket is None:
+            return False
+        return store.forget(text) if bucket == UNDEFINED else store.demote(text)
     if action == "reset":
         # ✕ на «Лайе»: снять догадку ИИ, вернуть в undefined (не удалять).
-        if _bucket_of(store, text) != LAYA:
+        if bucket_of(store, text) != LAYA:
             return False
         return store.demote(text) and store.record(UNDEFINED, text)
     if action == "update":
-        bucket = _bucket_of(store, text) or LAYA
+        bucket = bucket_of(store, text) or LAYA
         kind = str(act.get("kind") or "command")
         cid = str(act.get("command") or "")
         event = act.get("event") or None

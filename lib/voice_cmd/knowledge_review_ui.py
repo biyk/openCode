@@ -90,10 +90,11 @@ function row(text,e,bucket){
    ?'<label><input type=checkbox class=okc checked> подтверждено</label>'
    :"<button class=conf>✓ подтвердить</button>");
  const btns=e.locked?"":' <button class=app>сохранить</button>';
- // ✕: в «Подтверждено» purge (снимает match из commands.json; если match нет
- // → forget из базы); на «Лайе» reset (в undefined); в «Не распознано» forget.
+ // ✕: в «Подтверждено» purge (снимает match и переносит фразу в «Не
+ // распознано»); на «Лайе» reset (тоже в undefined); в «Не распознано» —
+ // единственное настоящее удаление (forget).
  const del=bucket=="confirmed"
-  ?'<button class=del title="снять с доски (commands.json/база)">✕</button>'
+  ?'<button class=del title="перенести в «Не распознано»">✕</button>'
   :(e.locked?"":'<button class=del>✕</button>');
  const task=e.command=="taskstart"||e.command=="taskdone";
  const extra=!e.locked&&task?tasksBox():"";
@@ -126,14 +127,15 @@ ${esc(s.llm_model)}"></label></p>\
 async function load(){S=await api("/api/board");render()}
 function render(){
  document.getElementById("t-confirmed").innerHTML=table("confirmed",\
-"Подтверждено","Шаблоны commands.json — read-only. ✕ снимает match-ключ; "
-+"при отсутствии match — forget из базы знаний.");
+"Подтверждено","Шаблоны commands.json — match-ключ. ✕ снимает его и "
++"переносит фразу в «Не распознано»; удаление — только там.");
  document.getElementById("t-laya").innerHTML=table("laya","Лайя",\
 "Распознано Лайей или LLM, ждёт досмотра. «✓ подтвердить» сохранит "
 +"правку и перенесёт в «Подтверждено».");
  document.getElementById("t-undefined").innerHTML=table("undefined",\
 "Не распознано","Кнопка «распознать все» прогонит весь список по очереди: "
-+"Лайя, затем LLM; распознанные фразы переедут во вкладку «Лайя».");
++"Лайя, затем LLM; распознанные фразы переедут во вкладку «Лайя». "
++"✕ здесь удаляет фразу из базы навсегда.");
  document.getElementById("t-stats").innerHTML=S.stats||"";
  document.getElementById("t-settings").innerHTML=settings()
  if(document.querySelector(".tasks")&&!T)ensureTasks()}
@@ -176,7 +178,7 @@ await api("/api/recognize_all",{});pollRec();return}
   load();return}
  if(b.classList.contains("del")){
   if(tr.dataset.bucket=="confirmed"){
-   if(!confirm("Удалить «"+text+"» с доски?"))return;
+   if(!confirm("Перенести «"+text+"» в «Не распознано»?"))return;
    await api("/api/act",{action:"purge",text});
   }else{await api("/api/act",
    {action:tr.dataset.bucket=="laya"?"reset":"forget",text});}

@@ -1,15 +1,14 @@
 """Тесты обучения при «✓ подтвердить» на доске (apply_act confirm → learn).
 
 Разнесено с test_knowledge_review.py (потолок 200 строк): здесь только ветки
-обучения — ключ в commands.json.match и synonym в базе знаний.
+обучения — ключ в commands.json.match и synonym в базе знаний. То, как ✕
+снимает статус (unconfirm), — в test_knowledge_review_unconfirm.py.
 """
 
 import json
 
 from lib.voice_cmd.knowledge import CONFIRMED, KnowledgeStore
-from lib.voice_cmd.knowledge_review_board import (
-    apply_act, delete_confirmed_phrase,
-)
+from lib.voice_cmd.knowledge_review_board import apply_act
 
 
 def _store(tmp_path, seed_laya=None):
@@ -123,18 +122,3 @@ class TestUpdateRegistersKey:
         # Ключ выбран и сохранён на записи — UI подсветит селект после load().
         entry = store.entries(CONFIRMED)["приступил к глобальная задача"]
         assert entry["key"] == "приступил к"
-
-
-class TestPurgeKnowledgeOnly:
-    def test_purge_knowledge_only_forgets(self, tmp_path):
-        """✕ на confirmed для чисто knowledge-фразы (нет match) → forget."""
-        cfile = str(tmp_path / "commands.json")
-        with open(cfile, "w", encoding="utf-8") as f:
-            json.dump({"match": {}, "decision": {"enabled": False}},
-                      f, ensure_ascii=False)
-        store = KnowledgeStore(str(tmp_path / "k.json"))
-        store.record(CONFIRMED, "страна фри оку", command="taskdone",
-                     event="Струна Фуриоку")
-        res = delete_confirmed_phrase(store, cfile, "страна фри оку")
-        assert res == {"match": 0, "knowledge": True}
-        assert "страна фри оку" not in store.entries(CONFIRMED)

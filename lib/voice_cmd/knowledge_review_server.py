@@ -7,8 +7,9 @@ API (JSON, всё на 127.0.0.1):
   GET  /api/board     — корзины + список команд + настройки + статистика
   GET  /api/tasks     — названия задач real_life_tasks (подсказка task-complete)
   POST /api/act       — confirm/demote/forget/update/purge записи базы знаний
-                        (purge снимает confirmed-фразу из match в commands.json;
-                        если match-записи нет — forget из базы знаний)
+                        (purge — ✕ на «Подтверждено»: снимает match из
+                        commands.json и переносит фразу в «Не распознано»;
+                        forget удаляет по-настоящему только undefined)
   POST /api/recognize — «попробовать распознать» (commands.json → Laya → LLM)
   POST /api/recognize_all — массовый прогон undefined-корзины
   GET  /api/recognize_all — прогресс {running, done, total, recognized}
@@ -29,9 +30,9 @@ from typing import Optional
 
 from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.knowledge_review_board import (
-    apply_act, board_snapshot, delete_confirmed_phrase, laya_status,
-    sheet_task_titles,
+    apply_act, board_snapshot, laya_status, sheet_task_titles,
 )
+from lib.voice_cmd.knowledge_review_unconfirm import unconfirm_phrase
 from lib.voice_cmd.knowledge_review_bulk import log_text as bulk_log
 from lib.voice_cmd.knowledge_review_bulk import start as bulk_start
 from lib.voice_cmd.knowledge_review_bulk import status as bulk_status
@@ -110,10 +111,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
         assert self.store is not None
         if self.path == "/api/act":
             if str(body.get("action") or "") == "purge":
-                res = delete_confirmed_phrase(
+                res = unconfirm_phrase(
                     self.store, self.commands_file,
                     str(body.get("text") or ""))
-                self._json(200, {"ok": bool(res["match"] or res.get("knowledge")),
+                self._json(200, {"ok": bool(res["match"] or res["moved"]),
                                  **res})
             else:
                 self._json(200, {"ok": apply_act(

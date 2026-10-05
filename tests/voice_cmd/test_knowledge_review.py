@@ -2,7 +2,8 @@
 
 Распознавание фразы — в test_knowledge_review_recognize.py,
 подсказка task-complete (задачи real_life_tasks) — в
-test_knowledge_review_tasks.py.
+test_knowledge_review_tasks.py, а то, как ✕ снимает статус (unconfirm), —
+в test_knowledge_review_unconfirm.py.
 """
 
 import json
@@ -14,7 +15,7 @@ import pytest
 from lib.voice_cmd.knowledge import CONFIRMED, LAYA, UNDEFINED, KnowledgeStore
 from lib.voice_cmd.knowledge_review_recognize import load_review, save_review
 from lib.voice_cmd.knowledge_review_board import (
-    apply_act, board_snapshot, delete_confirmed_phrase, laya_status,
+    apply_act, board_snapshot, laya_status,
 )
 from lib.voice_cmd.knowledge_review_server import make_server
 
@@ -119,30 +120,6 @@ class TestBoardAndActs:
         assert laya_status(cfile) == {"enabled": False, "url": "",
                                       "up": False}
 
-    def test_purge_clears_commands_keeps_knowledge(self, cfile, tmp_path):
-        # ✕ на «Подтверждено»: снимает только commands.json.match, знания нетронуты.
-        store = _store(tmp_path)
-        store.record(CONFIRMED, "стоп музыка", command="stop")
-        assert delete_confirmed_phrase(store, cfile, "стоп музыка") == {
-            "match": 1, "knowledge": False}
-        assert "стоп музыка" in store.entries(CONFIRMED)   # осталась в базе
-        data = json.loads(open(cfile, encoding="utf-8").read())
-        assert "stop" not in data["match"]          # список опустел → cid снят
-        assert data["commands"]["stop"] == "cmd"     # команда не тронута
-        assert data["decision"] == {"enabled": False}
-
-    def test_purge_removes_only_matching_template(self, tmp_path):
-        cfile = str(tmp_path / "commands.json")
-        with open(cfile, "w", encoding="utf-8") as f:
-            json.dump({"match": {"volumeup": ["громче", "сделай громче"]},
-                       "decision": {"enabled": False}},
-                      f, ensure_ascii=False)
-        store = _store(tmp_path)
-        assert delete_confirmed_phrase(store, cfile, "Громче") == {
-            "match": 1, "knowledge": False}
-        data = json.loads(open(cfile, encoding="utf-8").read())
-        assert data["match"]["volumeup"] == ["сделай громче"]
-
 
 class TestHttpApi:
     def test_ping_board_act(self, cfile, tmp_path):
@@ -172,9 +149,10 @@ class TestHttpApi:
             assert "стоп музыка" in conf          # locked-строка есть
             r = _http(port, "/api/act",
                       {"action": "purge", "text": "стоп музыка"})
-            assert r["ok"] is True and r["match"] == 1
-            conf = _http(port, "/api/board")["boards"][CONFIRMED]
-            assert "стоп музыка" not in conf      # исчезла со снимка
+            assert r["ok"] is True and r["match"] == 1 and r["moved"] is True
+            boards = _http(port, "/api/board")["boards"]
+            assert "стоп музыка" not in boards[CONFIRMED]   # ушла с confirmed
+            assert "стоп музыка" in boards[UNDEFINED]       # в «Не распознано»
         finally:
             httpd.shutdown()
             httpd.server_close()

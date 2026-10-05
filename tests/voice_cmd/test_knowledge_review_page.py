@@ -75,13 +75,21 @@ class TestPageSyntax:
         assert "KINDS" not in PAGE
 
     def test_cross_actions_per_bucket(self):
-        # ✕ на «Подтверждено» — purge (match из commands.json; если match нет
-        # → forget); на «Лайе» — reset (в undefined), в «Не распознано» — forget.
+        # ✕ на «Подтверждено» — purge (снимает match и переносит в undefined);
+        # на «Лайе» — reset, в «Не распознано» — forget (единственное удаление).
         assert 'action:"purge"' in PAGE
         assert 'tr.dataset.bucket=="laya"?"reset":"forget"' in PAGE
         assert 'bucket=="confirmed"' in PAGE
         # в «Подтверждено» ✕ ставим и на locked-строках (т.к. чистим конфиг).
         assert "(e.locked||bucket==\"confirmed\")?\"\"" not in PAGE
+
+    def test_confirmed_cross_worded_as_move_not_delete(self):
+        # Регресс пользователя: ✕ на «Подтверждено» вёл себя как удаление.
+        # Диалог и подпись кнопки обязаны обещать перенос в «Не распознано».
+        assert 'confirm("Перенести «"' in PAGE
+        assert "перенести в «Не распознано»" in PAGE
+        assert 'Удалить «"' not in PAGE
+        assert "✕ здесь удаляет фразу из базы навсегда" in PAGE
 
     def test_free_text_key_select(self):
         # Для free-text-команд под «командой» — селект «ключ»: накопительные
