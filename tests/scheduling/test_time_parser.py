@@ -91,6 +91,18 @@ class TestTimeParser:
         spec = self._parse("завтра в 3 часа 15 минут")
         assert spec.when == datetime(2026, 9, 16, 3, 15)
 
+    def test_tomorrow_hour_as_word(self):
+        """«завтра в двенадцать часов …» → 12:00 (баг был: 09:00)."""
+        spec = self._parse("завтра в двенадцать часов померить температуру")
+        assert spec.when == datetime(2026, 9, 16, 12, 0)
+        assert spec.text == "померить температуру"
+
+    def test_tomorrow_hour_and_minutes_as_words(self):
+        """«завтра в пять часов тридцать минут» → 05:30 словами."""
+        spec = self._parse("завтра в пять часов тридцать минут позвонить")
+        assert spec.when == datetime(2026, 9, 16, 5, 30)
+        assert spec.text == "позвонить"
+
     # ---------- время «в HH:MM» ----------
 
     def test_in_hm_future_same_day(self):
@@ -120,6 +132,12 @@ class TestTimeParser:
         """Обычное время в будущем — сегодня."""
         spec = self._parse("в 2 часа дня")
         assert spec.text == "дня"
+
+    def test_in_hour_word_as_text_number(self):
+        """«в семь часов ужин» (07<10:00) → завтра 07:00, слово вместо цифры."""
+        spec = self._parse("в семь часов ужин")
+        assert spec.when == datetime(2026, 9, 16, 7, 0)
+        assert spec.text == "ужин"
 
     # ---------- др ----------
 

@@ -4,27 +4,13 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.scheduling.time_parser_clock import (
+    _WORD_NUM, _WORD_NUM_RE, _extract_clock,
+)
+
 _DOW_RE = re.compile(
     r"(понедельник|вторник|сред[ау]|четверг|пятниц[ау]|суббот[ау]|"
     r"воскресень[ае]|пн|вт|ср|чт|пт|сб|вс)", re.IGNORECASE)
-
-# Слова-числительные: «через десять минут», «через два часа».
-_WORD_NUM = {
-    "одну": 1, "один": 1, "одного": 1, "час": 1,
-    "два": 2, "полтора": 2,
-    "три": 3, "четыре": 4, "пять": 5, "шесть": 6,
-    "семь": 7, "восемь": 8, "девять": 9,
-    "десять": 10, "одиннадцать": 11, "двенадцать": 12,
-    "пятнадцать": 15, "двадцать": 20, "двадцать один": 21,
-    "двадцать пять": 25, "тридцать": 30, "сорок": 40,
-    "сорок пять": 45, "пятьдесят": 50,
-}
-
-_WORD_NUM_RE = re.compile(
-    r"\b(одну|один|одного|час|два|полтора|три|четыре|пять|шесть|семь|"
-    r"восемь|девять|десять|одиннадцать|двенадцать|пятнадцать|"
-    r"двадцать пять|двадцать один|двадцать|тридцать|сорок пять|сорок|"
-    r"пятьдесят)\b")
 
 
 class TimeParserStrategiesMixin:
@@ -95,28 +81,15 @@ class TimeParserStrategiesMixin:
         day_word, rest = m.group(1), (m.group(2) or "").strip()
         delta = {"сегодня": 0, "завтра": 1, "послезавтра": 2}[day_word]
         when = self._now + timedelta(days=delta)
-
-        if rest:
-            hm = re.search(r"(\d{1,2})[.:]\s?(\d{2})", rest)
-            if hm:
-                hh, mm = int(hm.group(1)), int(hm.group(2))
-                when = when.replace(hour=hh, minute=mm, second=0, microsecond=0)
-                rest = rest.replace(hm.group(0), "", 1).strip()
-                rest = re.sub(r"^\s*в\s+", "", rest)
-            else:
-                hmm = re.match(
-                    r"(?:в\s+)?(\d{1,2})\s+часа?\s+(\d{1,2})\s+минут\b(.*)",
-                    rest)
-                if hmm:
-                    hh, mm = int(hmm.group(1)), int(hmm.group(2))
-                    when = when.replace(hour=hh, minute=mm, second=0,
-                                        microsecond=0)
-                    rest = hmm.group(3).strip()
-                else:
-                    when = when.replace(hour=9, minute=0, second=0,
-                                        microsecond=0)
+        # Час/минуты — цифрой ИЛИ словом («двенадцать часов»); времени нет —
+        # дефолт 09:00. Раньше слово не распознавалось и падало в 9 утра.
+        clock = _extract_clock(rest) if rest else None
+        if clock:
+            hh, mm, rest = clock
+            when = when.replace(hour=hh, minute=mm, second=0, microsecond=0)
         else:
             when = when.replace(hour=9, minute=0, second=0, microsecond=0)
+        rest = re.sub(r"^\s*в\s+", "", rest).strip()
         return when, rest
 
     def _parse_hm(self, phrase: str) -> Optional[tuple[datetime, str]]:
@@ -136,27 +109,18 @@ class TimeParserStrategiesMixin:
 
     def _parse_hour_word(self,
                          phrase: str) -> Optional[tuple[datetime, str]]:
-        """«в N часа|часов» или «в N минут» — ближайшее время с округлением."""
-        m = re.match(
-            r"в\s+(\d{1,2})\s+час(?:а|ов|ах)?(?:.*)$", phrase)
-        if m:
-            hh = int(m.group(1))
-            if hh > 24:
-                return None
-            when = self._now.replace(hour=hh, minute=0, second=0,
-                                     microsecond=0)
-            if when <= self._now:
-                when += timedelta(days=1)
-            rest = re.sub(r"^в\s+\d{1,2}\s+час(?:а|ов|ах)?", "", phrase)
-            return when, rest.strip()
-        m = re.match(r"в\s+(\d{1,2})\s+минут", phrase)
-        if m:
-            mm = int(m.group(1))
-            when = self._now.replace(minute=(self._now.minute + mm) % 60,
-                                     second=0, microsecond=0)
-            rest = re.sub(r"^в\s+\d{1,2}\s+минут", "", phrase)
-            return when, rest.strip()
-        return None
+        """«в N часа|часов» — ближайшее такое время; N — цифра или слово."""
+        if not phrase.startswith("в "):
+            return None
+        clock = _extract_clock(phrase)
+        if not clock:
+            return None
+        hh, mm, rest = clock
+        when = self._now.replace(hour=hh, minute=mm, second=0,
+                                 microsecond=0)
+        if when <= self._now:
+            when += timedelta(days=1)
+        return when, rest.strip()
 
     def _parse_dow(self, phrase: str) -> Optional[tuple[datetime, str]]:
         m = _DOW_RE.search(phrase)

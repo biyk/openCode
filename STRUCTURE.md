@@ -111,6 +111,7 @@ voice
 │   │   ├── cron_jobs.py  # Выполнение заданий планировщика cron: JobRunner запускает script (.ps1 через powershell, остальное через shell) и инлайн shell с таймаутом, логирует хвост stderr при неудаче, озвучивает итог при announce=true, пишет вывод скрипта (stdout) в лог всегда
 │   │   ├── cron_parse.py  # Детерминированный парсер 5-полевых cron-выражений без внешних зависимостей: *, */n, диапазоны, имена; matches() и next_after()
 │   │   ├── time_parser.py  # Парсер времени напоминаний: TimeParser и ReminderSpec.
+│   │   ├── time_parser_clock.py  # Разбор часа/минут из речи числом ИЛИ словом (_extract_clock/_read_num): «12:30», «N часов», «N часов M минут»; общий для «завтра/сегодня» и «в N часов».
 │   │   ├── time_parser_strategies.py  # Миксин парсера времени: через/завтра/часы/дни недели.
 │   │   └── wake_alarm.py  # Разовая задача-будильник WakeToRun в Планировщике Windows (пробуждение из S0/гибернации): schedule_wake_alarm через powershell Register-ScheduledTask, отказ — текст, не исключение; ставится командой «я спать» на now+7ч20
 │   ├── skills/  # Скиллы: реестр и исполнение шагов.
