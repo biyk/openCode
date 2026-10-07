@@ -1,9 +1,9 @@
-"""тесты offer-ветки idle в task_monitor: время-зависимое предложение + кнопки."""
+"""тесты offer-ветки idle в task_monitor: кнопки в Telegram + откат к notify."""
 
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-from lib.core.task_monitor import PROPOSE_PREFIX, QUESTION_IDLE, TaskMonitor
+from lib.core.task_monitor import QUESTION_IDLE, TaskMonitor
 
 UA = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 UB = "11111111-2222-3333-4444-555555555555"
@@ -44,26 +44,25 @@ def _monitor(mocker, events=None, offer=None, notify=None, accepted=True):
 
 class TestIdleOfferPath:
     def test_running_task_voiced_and_buttons_offered(self, mocker):
-        """Идущая сейчас «А» в голосовом вопросе; «А»/«Б» — кнопками в чат."""
+        """Голосом — сам вопрос; «А»/«Б» — кнопками в чат (без озвучки названий)."""
         offer = mocker.MagicMock()
         notify = mocker.MagicMock()
         events = [_event(UA, -5, 25), _event(UB, 40, 60)]
         monitor, ask = _monitor(mocker, events, offer=offer, notify=notify)
         assert monitor.tick() == "idle"
-        question = ask.call_args.args[0]
-        assert f"{PROPOSE_PREFIX} А" in question
+        assert ask.call_args.args[0] == QUESTION_IDLE
         offer.assert_called_once_with(QUESTION_IDLE, ["А", "Б"])
         notify.assert_not_called()
 
     def test_no_events_falls_back_to_plain_notify(self, mocker):
-        """Без календаря (gcal=None) — откат: вопрос по таблице, текста в чат."""
+        """Без календаря (gcal=None) — откат: вопрос + текст в чат, без кнопок."""
         offer = mocker.MagicMock()
         notify = mocker.MagicMock()
         monitor, ask = _monitor(mocker, None, offer=offer, notify=notify)
         assert monitor.tick() == "idle"
-        assert f"{PROPOSE_PREFIX} А" in ask.call_args.args[0]
+        assert ask.call_args.args[0] == QUESTION_IDLE
         offer.assert_not_called()
-        notify.assert_called_once()
+        notify.assert_called_once_with(QUESTION_IDLE)
 
     def test_events_read_error_degrades_to_fallback(self, mocker):
         """Сбой чтения календаря не роняет цикл — тот же откат к таблице."""

@@ -19,6 +19,7 @@ if sys.platform == "win32":
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
 from lib.core.output import TranscriptionOutput, TimestampedStream  # noqa: E402
+from lib.core.task_finish import make_task_finisher  # noqa: E402
 from lib.core.task_monitor_launch import start_task_monitor  # noqa: E402
 from lib.core.task_pick import make_task_picker  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
@@ -61,10 +62,12 @@ def main():
     # Telegram-бот (секция telegram): те же команды текстом из мессенджера,
     # ответы — в чат, без озвучки. Поднимаем до монитора: оповещение о
     # переработке дублируется в чат через bot.broadcast, а нажатие кнопки
-    # предложения задачи запускает её через make_task_picker.
-    telegram = start_telegram(worker, output,
-                              on_pick=make_task_picker(
-                                  record=worker._matcher.record_use))
+    # предложения задачи запускает её через make_task_picker; кнопка
+    # «Завершить» (лепится к ответу старта) зовёт make_task_finisher.
+    telegram = start_telegram(
+        worker, output,
+        on_pick=make_task_picker(record=worker._matcher.record_use),
+        on_finish=make_task_finisher(record=worker._matcher.record_use))
 
     # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
     # вопросы вслух, старт задачи по ответу и оповещение о переработке.

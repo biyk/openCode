@@ -1,13 +1,14 @@
-"""тесты idle-вопроса task_monitor: предложение задачи + дубль в Telegram.
+"""тесты idle-вопроса task_monitor: только вопрос вслух + дубль в Telegram.
 
 Вынесено из test_task_monitor.py (тот упирается в лимит 200 строк): здесь
-только то, что вопрос на idle содержит предложение незапущенной задачи и
-уходит в Telegram через notify — и чего notify не трогает, когда вопроса нет.
+только то, что голосом звучит ровно «Чем ты сейчас занимаешься?» (без озвучки
+предлагаемой задачи — решение пользователя) и что этот же вопрос уходит в
+Telegram через notify — и чего notify не трогает, когда вопроса нет.
 """
 
 from unittest.mock import MagicMock
 
-from lib.core.task_monitor import PROPOSE_PREFIX, QUESTION_IDLE, TaskMonitor
+from lib.core.task_monitor import QUESTION_IDLE, TaskMonitor
 from lib.core.task_pick import TASKSTART_CMD_ID
 
 
@@ -45,13 +46,14 @@ def _sheet(rows):
     return sheet
 
 
-class TestIdleQuestionProposal:
-    def test_proposes_first_not_started_task(self, mocker):
+class TestIdleQuestionPlain:
+    """Голосом — только сам вопрос: без «Предлагаю задачу: …»."""
+
+    def test_no_proposal_even_with_rows(self, mocker):
         monitor, ask, _ = _monitor(
             mocker, _rows(("Уборка", 0), ("Мытьё", 0)))
         assert monitor.tick() == "idle"
-        question = ask.questions[0][0]
-        assert question == f"{QUESTION_IDLE} {PROPOSE_PREFIX} Уборка"
+        assert ask.questions[0][0] == QUESTION_IDLE
 
     def test_no_proposal_when_no_titled_row(self, mocker):
         monitor, ask, _ = _monitor(mocker, _rows(("   ", 0)))

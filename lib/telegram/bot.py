@@ -32,7 +32,8 @@ class TelegramBot:
     def __init__(self, api: Any, config: TelegramConfig,
                  on_text: Callable[[str, Callable[[str], None]], None],
                  output: Any = None,
-                 on_pick: Optional[Callable[[str], str]] = None) -> None:
+                 on_pick: Optional[Callable[[str], Any]] = None,
+                 on_finish: Optional[Callable[[str], str]] = None) -> None:
         self._api = api
         self._config = config
         self._on_text = on_text
@@ -43,6 +44,7 @@ class TelegramBot:
         self._chat_id: Optional[str] = None
         self._unknown: set[str] = set()
         self._offers = TaskOffers(api, config, on_pick=on_pick,
+                                  on_finish=on_finish,
                                   reply=self.reply, set_chat=self._remember)
 
     # ---------- Поток ----------
@@ -139,22 +141,21 @@ class TelegramBot:
         """Инициативный вопрос с кнопками выбора задачи во все чаты whitelist."""
         self._offers.offer(text, titles)
 
-    def reply(self, text: str) -> None:
-        """Отправляет ответ в чат, откуда пришла команда (длинное — частями)."""
+    def reply(self, text: str,
+              reply_markup: Optional[dict] = None) -> None:
+        """Ответ в чат команды; при разбиении на части markup — на последней части."""
         if self._chat_id is None:
             self._print("[Telegram] Отвечать некуда: чат ещё не писал боту")
             return
-        for chunk in self.chunks(text):
-            if not self._api.send_message(self._chat_id, chunk):
+        parts = self.chunks(text)
+        for idx, chunk in enumerate(parts):
+            markup = reply_markup if idx == len(parts) - 1 else None
+            if not self._api.send_message(self._chat_id, chunk,
+                                          reply_markup=markup):
                 self._print("[Telegram] Ответ не отправлен (ошибка в логе)")
 
     def broadcast(self, text: str) -> None:
-        """Инициативное уведомление во все чаты whitelist (не в ответ).
-
-        Оповещение о переработке (`task_monitor` → `overtime`) уходит сюда:
-        ждать, пока пользователь сам напишет боту, нельзя. Пустой whitelist —
-        ничего не делаем (бот без разрешённых чатов не поднимается).
-        """
+        """Инициативное уведомление во все чаты whitelist (оповещение о переработке)."""
         for chat_id in sorted(self._config.chat_ids):
             for chunk in self.chunks(text):
                 if not self._api.send_message(chat_id, chunk):

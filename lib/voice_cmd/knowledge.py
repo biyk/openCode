@@ -16,15 +16,17 @@ from typing import Optional
 
 from lib.core.errors import swallowed
 from lib.voice_cmd.knowledge_common import (
-    BUCKETS, COMMAND, CONFIRMED, FINISH, LAYA, START, SYNONYMS, UNDEFINED, _RANK,
-    normalize_core)
+    ADDED, BUCKETS, COMMAND, CONFIRMED, FINISH, LAYA, START, SYNONYMS,
+    UNDEFINED, _RANK, normalize_core, today_str)
 from lib.voice_cmd.knowledge_resolve import KnowledgeResolveMixin
+from lib.voice_cmd.knowledge_synonyms import KnowledgeSynonymsMixin
 
-__all__ = ["BUCKETS", "COMMAND", "CONFIRMED", "FINISH", "LAYA", "START",
-           "UNDEFINED", "normalize_core", "KnowledgeStore"]
+__all__ = ["ADDED", "BUCKETS", "COMMAND", "CONFIRMED", "FINISH", "LAYA",
+           "START", "SYNONYMS", "UNDEFINED", "normalize_core", "today_str",
+           "KnowledgeStore"]
 
 
-class KnowledgeStore(KnowledgeResolveMixin):
+class KnowledgeStore(KnowledgeResolveMixin, KnowledgeSynonymsMixin):
     """Хранилище базы знаний с hot-reload (по mtime файла)."""
 
     def __init__(self, knowledge_file: Optional[str] = None) -> None:
@@ -34,6 +36,10 @@ class KnowledgeStore(KnowledgeResolveMixin):
         self._mtime = 0.0
         self._lock = threading.Lock()
         self._load()
+        # Апгрейд: ставим сегодняшнюю дату всем, у кого поля `added` ещё нет.
+        with self._lock:
+            if self._migrate_added():
+                self._save()
 
     @staticmethod
     def path_for_commands_file(commands_file: str) -> str:
@@ -74,6 +80,20 @@ class KnowledgeStore(KnowledgeResolveMixin):
             return
         with self._lock:
             self._load()
+            # Внешний редактор мог дописать запись без `added` — чиним сразу.
+            if self._migrate_added():
+                self._save()
+
+    def _migrate_added(self) -> bool:
+        """Ставит сегодняшнюю дату записям без `added` (synonyms не трогаем). True — исправили."""
+        today = today_str()
+        changed = False
+        for b in BUCKETS:
+            for entry in self._data.get(b, {}).values():
+                if isinstance(entry, dict) and not entry.get(ADDED):
+                    entry[ADDED] = today
+                    changed = True
+        return changed
 
     def _save(self) -> None:
         if not self._file:
@@ -91,7 +111,11 @@ class KnowledgeStore(KnowledgeResolveMixin):
     def record(self, bucket: str, text: str, kind: str = COMMAND,
                command: Optional[str] = None, event: Optional[str] = None,
                key: Optional[str] = None) -> bool:
-        """Кладёт фразу в корзину; key — выбранный на доске триггер."""
+        """Кладёт фразу в корзину; key — выбранный на доске триггер.
+
+        `added` — дата первого появления записи: при перезаписи той же фразы
+        сохраняем исходную, при новой — ставим сегодняшнюю.
+        """
         core = normalize_core(text)
         if not core or bucket not in _RANK:
             return False
@@ -99,9 +123,11 @@ class KnowledgeStore(KnowledgeResolveMixin):
             current = self._bucket_of(core)
             if current is not None and _RANK[current] > _RANK[bucket]:
                 return False
-            hits = int((self._data.get(current or bucket, {})
-                        .get(core, {}) or {}).get("hits", 0))
-            raw: dict = {"kind": kind, "hits": hits,
+            prev = (self._data.get(current or bucket, {})
+                    .get(core, {}) or {})
+            hits = int(prev.get("hits", 0))
+            added = str(prev.get(ADDED) or "") or today_str()
+            raw: dict = {"kind": kind, "hits": hits, ADDED: added,
                          "command": command, "event": event, "key": key}
             entry: dict = {k: v for k, v in raw.items() if v is not None}
             for b in BUCKETS:
@@ -171,28 +197,3 @@ class KnowledgeStore(KnowledgeResolveMixin):
         self.reload()
         with self._lock:
             return {k: dict(v) for k, v in self._data.get(bucket, {}).items()}
-
-    # ---- карта синонимов задач (выучивается с доски) ----
-    def add_synonym(self, fragment: str, title: str) -> bool:
-        """Кладёт «остаток фразы → канонический заголовок». True, если добавили."""
-        core = normalize_core(fragment)
-        if not core or not title or core == normalize_core(title):
-            return False
-        self.reload()
-        with self._lock:
-            if self._syn.get(core) == title:
-                return False
-            self._syn[core] = title
-            self._save()
-        return True
-
-    def resolve_synonym(self, text: str) -> Optional[str]:
-        """Задача-фрагмент → канонический заголовок (точ по norm-ядру)."""
-        self.reload()
-        return self._syn.get(normalize_core(text)) or None
-
-    def synonyms(self) -> dict[str, str]:
-        """Копия карты синонимов (для доски/отладки)."""
-        self.reload()
-        with self._lock:
-            return dict(self._syn)

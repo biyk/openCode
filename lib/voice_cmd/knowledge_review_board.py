@@ -16,7 +16,7 @@ import urllib.request
 
 from lib.core.errors import swallowed
 from lib.voice_cmd.knowledge import (
-    CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core,
+    CONFIRMED, LAYA, UNDEFINED, KnowledgeStore, normalize_core, today_str,
 )
 from lib.voice_cmd.knowledge_learn import (  # noqa: F401
     atomic_dump_json, learn, learn_from_confirm, register_key)
@@ -62,11 +62,13 @@ def locked_confirmed(commands_file: str) -> dict:
     except Exception as e:
         swallowed("review.locked_match", e)
         return {}
+    today = today_str()
     out: dict[str, dict] = {}
     for cid, phrases in (data.get("match") or {}).items():
         for ph in phrases:
             out[normalize_core(ph)] = {"kind": "command", "command": cid,
                                        "hits": 0, "locked": True,
+                                       "added": today,
                                        "source": "commands.json"}
     return out
 

@@ -28,9 +28,9 @@ from lib.taskflow.task_check import evaluate
 from lib.taskflow.task_schedule import idle_offer, sleep_now
 
 # Вопрос, когда не запущено ничего (ответ — название задачи из таблицы).
+# Озвучка предложения задачи убрана (решение пользователя): голосом звучит
+# только сам вопрос, а «что начать» уходит кнопками в Telegram (см. offer).
 QUESTION_IDLE = "Чем ты сейчас занимаешься?"
-# К предложению незапущенной задачи в том же вопросе (см. suggest_idle_task).
-PROPOSE_PREFIX = "Предлагаю задачу:"
 # Ответ на него не похож ни на одну задачу: произносим и живём дальше.
 ANSWER_UNKNOWN = "Такой задачи в списке нет"
 
@@ -117,9 +117,8 @@ class TaskMonitor:
             self._output.print_info("[TaskMonitor] Идёт «СОН» — вопрос снят")
             return "sleep"
         self._rest.check_async()           # окно = отдых? проверить в фоне
-        voice, titles = idle_offer(rows, events, now)
-        question = (f"{QUESTION_IDLE} {PROPOSE_PREFIX} {voice}" if voice
-                    else QUESTION_IDLE)
+        _, titles = idle_offer(rows, events, now)
+        question = QUESTION_IDLE
         if not self._ask(question, self._on_idle_answer, "task_idle",
                          self._answer_timeout_s):
             self._output.print_info("[TaskMonitor] «task_idle» отложен")

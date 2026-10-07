@@ -11,8 +11,7 @@ PAGE = """<!doctype html>
  .tabs{display:flex;gap:.5rem;margin-bottom:.8rem}
  .tabs button{padding:.4rem .8rem;cursor:pointer;background:#333;color:#ddd;border:1px solid #555}
  .tabs button.on{background:#4a4adf;color:#fff}
- section{display:none}section.on{display:block}
- table{border-collapse:collapse;width:100%}
+ section{display:none}section.on{display:block}table{border-collapse:collapse;width:100%}
  td,th{border:1px solid #444;padding:.3rem .5rem;font-size:.9rem}
  input,select{background:#2a2a36;color:#eee;border:1px solid #555;padding:.2rem}
  select.cmd{max-width:11rem} .cdd{font-size:.75rem;color:#999;margin-top:.15rem}
@@ -80,7 +79,7 @@ function syncRow(tr){const box=tr.querySelector(".tasks"),
  task=cmd=="taskstart"||cmd=="taskdone";
  tr.querySelector(".cc").innerHTML=cmdCell(cmd,tr.dataset.text,tr.querySelector(".ev").value,(tr.querySelector(".key")||{}).value||"");
  if(task){if(!box&&tr.querySelector(".app")){tr
-  .querySelectorAll("td")[3].insertAdjacentHTML("beforeend",tasksBox());
+  .querySelectorAll("td")[4].insertAdjacentHTML("beforeend",tasksBox());
   ensureTasks()}}
  else if(box)box.remove()}
 function row(text,e,bucket){
@@ -99,20 +98,21 @@ function row(text,e,bucket){
  const task=e.command=="taskstart"||e.command=="taskdone";
  const extra=!e.locked&&task?tasksBox():"";
  return `<tr data-text="${esc(text)}" data-bucket="${bucket}" data-kind=\
-"${e.kind||"command"}"><td>${del}</td><td>${esc(text)}</td>\
+"${e.kind||"command"}"><td>${del}</td><td>${esc(text)}</td><td class=hit>${esc(e.added||"")}</td>\
 <td class=cc>${cmdCell(e.command,text,e.event,e.key)}</td>\
 <td><input class=ev size=22 value="${esc(e.event)}">${extra}</td>\
 <td class=hit>${e.hits||0}</td><td>${cell}${btns}</td></tr>`}
 function table(bucket,title,note){
- const b=S.boards[bucket]||{};const keys=Object.keys(b).sort();
+ const b=S.boards[bucket]||{};
+ const keys=Object.keys(b).sort((x,y)=>{const ax=b[x].added||"",ay=b[y].added||"";
+  return ax===ay?(x<y?-1:x>y?1:0):(ax<ay?1:-1)});
  const rows=keys.map(k=>row(k,b[k],bucket)).join("");
  const top=bucket=="undefined"?'<button id=recall>🔎 распознать все</button>'+\
 ' <span id=recst class=note></span>':"";
  return `<h3>${title} ${top}</h3><p class=note>${note}</p><table><tr><th></th>\
-<th>фраза</th><th>команда</th><th>мероприятие/параметр</th><th>hit</th><th></th>\
-</tr>${rows||'<tr><td colspan=6>пусто</td></tr>'}</table>`}
-function settings(){
- const l=S.laya,s=S.settings;
+<th>фраза</th><th>дата</th><th>команда</th><th>мероприятие/параметр</th><th>hit</th><th></th>\
+</tr>${rows||'<tr><td colspan=7>пусто</td></tr>'}</table>`}
+function settings(){const l=S.laya,s=S.settings;
  return `<h3>Серверы</h3><p>Laya (decision): ${l.enabled?"включена":\
 "выключена"} · ${l.up?'<span class=ok>сервер жив</span>':\
 '<span class=bad>сервер недоступен</span>'} · ${esc(l.url)}</p>\

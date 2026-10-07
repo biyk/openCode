@@ -6,18 +6,18 @@ from lib.core.task_pick import make_task_picker, TASKSTART_CMD_ID
 
 
 class TestMakeTaskPicker:
-    def test_ok_formats_reply(self):
+    def test_ok_formats_reply_and_offers_finish(self):
         handler = MagicMock()
         handler.start_task.return_value = {"ok": True, "title": "Уборка"}
         pick = make_task_picker(handler=handler)
-        assert pick("уборка") == "▶️ Задача «Уборка» запущена"
+        assert pick("уборка") == ("▶️ Задача «Уборка» запущена", "Уборка")
         handler.start_task.assert_called_once_with("уборка")
 
-    def test_error_reports_reason(self):
+    def test_error_reports_reason_no_finish(self):
         handler = MagicMock()
         handler.start_task.return_value = {"ok": False, "error": "не найдена"}
         pick = make_task_picker(handler=handler)
-        assert pick("Х") == "❌ не найдена"
+        assert pick("Х") == ("❌ не найдена", None)
 
     def test_swallows_exception(self, mocker):
         import lib.core.task_pick as pick_mod
@@ -25,7 +25,9 @@ class TestMakeTaskPicker:
         handler = MagicMock()
         handler.start_task.side_effect = OSError("нет сети")
         pick = make_task_picker(handler=handler)
-        assert "Не удалось" in pick("Х")
+        text, ft = pick("Х")
+        assert "Не удалось" in text
+        assert ft is None
         mocked.assert_called_once()
 
     def test_records_taskstart_on_ok(self):
@@ -48,7 +50,17 @@ class TestMakeTaskPicker:
         handler = MagicMock()
         handler.start_task.return_value = {"ok": True, "title": "Т"}
         pick = make_task_picker(handler=handler)   # record=None по умолчанию
-        assert "▶️" in pick("т")
+        text, _ = pick("т")
+        assert "▶️" in text
+
+    def test_title_falls_back_to_input_when_no_summary(self):
+        """Старт без `title` в ответе handler'а: finish всё равно есть."""
+        handler = MagicMock()
+        handler.start_task.return_value = {"ok": True}
+        pick = make_task_picker(handler=handler)
+        text, ft = pick("уборка")
+        assert ft == "уборка"
+        assert "уборка" in text
 
     def test_handler_is_recreated_per_click(self):
         """Без инжекта prod-путь строит Новый handler на клик.

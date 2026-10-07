@@ -25,7 +25,8 @@ def proxy_label(proxy: str) -> str:
 
 
 def start_telegram(worker: Any, output: Any,
-                   on_pick: Optional[Callable[[str], str]] = None
+                   on_pick: Optional[Callable[[str], Any]] = None,
+                   on_finish: Optional[Callable[[str], str]] = None
                    ) -> Optional[TelegramBot]:
     """Собирает и запускает бота по секции `telegram` commands.json.
 
@@ -34,7 +35,8 @@ def start_telegram(worker: Any, output: Any,
     Токен берётся из окружения (.env), а не из JSON. None — секция выключена
     или не настроена (без токена и whitelist бот не поднимается: он исполняет
     команды на ПК). `on_pick(title)->reply` — запуск задачи по нажатию кнопки
-    предложения (см. lib.core.task_pick).
+    предложения (см. lib.core.task_pick); `on_finish(title)->reply` —
+    завершение по кнопке «Завершить» (см. lib.core.task_finish).
     """
     raw = worker._matcher.get_telegram_config()
     if not raw.get("enabled"):
@@ -48,6 +50,7 @@ def start_telegram(worker: Any, output: Any,
     api = TelegramApi(config.token, proxy=config.proxy)
     name = api.get_me(timeout_s=TELEGRAM_VERIFY_S) or "?"
     bot = TelegramBot(api, config, output=output, on_pick=on_pick,
+                      on_finish=on_finish,
                       on_text=lambda text, sink: submit_manual_text(
                           worker, text, reply=sink))
     bot.start()
