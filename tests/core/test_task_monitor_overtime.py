@@ -92,3 +92,12 @@ class TestFactory:
             MagicMock(), notify=sink)
         assert monitor._overtime._notify is sink
         assert monitor._overtime._multiplier == 1.5
+
+    def test_threads_finish_markup_to_notifier(self, mocker):
+        """Кнопка «Завершить» под оповещением — проброс callable в нотифайер."""
+        mocker.patch.object(TaskMonitor, "start")
+        markup_fn = MagicMock(name="finish_markup")
+        monitor = start_task_monitor(
+            self._worker({"enabled": True}), MagicMock(),
+            finish_markup=markup_fn)
+        assert monitor._overtime._finish_markup is markup_fn

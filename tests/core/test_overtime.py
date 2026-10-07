@@ -101,3 +101,52 @@ class TestNoTelegramSink:
         ot, say, _out, _ask = _notifier(mocker, notify=None)
         assert ot.check(_sheet(), now_ms=START + 169 * MIN) == 1
         say.assert_called_once()
+
+
+class TestFinishMarkup:
+    """Кнопка «Завершить» на оповещении: переработку можно закрыть тапом."""
+
+    def test_notify_gets_reply_markup_when_callable_returns_dict(self, mocker):
+        """finish_markup вернул markup — notify вызван (message, reply_markup=…)."""
+        telegram = mocker.MagicMock(name="notify")
+        button = {"text": "Завершить", "callback_data": "f1"}
+        markup = {"inline_keyboard": [[button]]}
+        ot = OvertimeNotifier(say=mocker.MagicMock(),
+                              output=mocker.MagicMock(),
+                              notify=telegram,
+                              finish_markup=lambda t: markup)
+        ot.check(_sheet(title="Обед"), now_ms=START + 169 * MIN)
+        args, kwargs = telegram.call_args
+        assert len(args) == 1 and "Обед" in args[0]
+        assert kwargs == {"reply_markup": markup}
+
+    def test_markup_fn_gets_over_title(self, mocker):
+        """В finish_markup уходит именно заголовок перерабатывающей задачи."""
+        seen = []
+        ot = OvertimeNotifier(
+            say=mocker.MagicMock(), output=mocker.MagicMock(),
+            notify=mocker.MagicMock(),
+            finish_markup=lambda t: seen.append(t) or {"inline_keyboard": [[]]})
+        ot.check(_sheet(title="Мытьё", uuid="u-42"),
+                 now_ms=START + 200 * MIN)
+        assert seen == ["Мытьё"]
+
+    def test_notify_positional_when_markup_returns_none(self, mocker):
+        """finish_markup вернул None (не TG-сценарий) — notify как раньше."""
+        telegram = mocker.MagicMock(name="notify")
+        ot = OvertimeNotifier(say=mocker.MagicMock(),
+                              output=mocker.MagicMock(),
+                              notify=telegram,
+                              finish_markup=lambda _t: None)
+        ot.check(_sheet(), now_ms=START + 169 * MIN)
+        args, kwargs = telegram.call_args
+        assert len(args) == 1 and kwargs == {}
+
+    def test_no_finish_markup_by_default(self, mocker):
+        """finish_markup=None (дефолт) — notify одной позиционной строкой."""
+        telegram = mocker.MagicMock(name="notify")
+        ot = OvertimeNotifier(say=mocker.MagicMock(),
+                              output=mocker.MagicMock(), notify=telegram)
+        ot.check(_sheet(), now_ms=START + 169 * MIN)
+        args, kwargs = telegram.call_args
+        assert len(args) == 1 and kwargs == {}

@@ -175,3 +175,15 @@ class TestTaskOffersCallback:
         token = offers._store.register("Уборка", prefix=FINISH_PREFIX)
         assert offers.handle_callback(self._cb(token)) == token
         offers_mod.swallowed.assert_called_once()
+
+
+class TestTaskOffersFinishProxy:
+    """TaskOffers.finish_markup — тонкий прокси к OfferStore для broadcast'а."""
+
+    def test_delegates_to_store_and_returns_markup(self):
+        offers = TaskOffers(MagicMock(), _config())
+        markup = offers.finish_markup("Мытьё")
+        button = markup["inline_keyboard"][0][0]
+        assert button["text"] == FINISH_LABEL
+        assert button["callback_data"].startswith(FINISH_PREFIX)
+        assert offers._store.title(button["callback_data"]) == "Мытьё"

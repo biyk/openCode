@@ -22,7 +22,9 @@ from lib.taskflow.fun_fill import make_fun_fill
 
 def start_task_monitor(worker: Any, output: Any,
                        notify: Optional[Callable[[str], None]] = None,
-                       offer: Optional[Callable[[str, list], None]] = None
+                       offer: Optional[Callable[[str, list], None]] = None,
+                       finish_markup: Optional[
+                           Callable[[str], Any]] = None
                        ) -> Optional[TaskMonitor]:
     """Собирает и запускает монитор по секции `task_monitor` commands.json.
 
@@ -30,7 +32,8 @@ def start_task_monitor(worker: Any, output: Any,
     overtime_multiplier; чего нет — берём из lib.core.tuning. None — секция
     выключена. Секция `fun_holes` (enabled, min_gap_min, lookback_days)
     добавляет к циклу дыры календаря; `notify` — дубль в Telegram (вопрос на
-    idle и оповещение о переработке).
+    idle и оповещение о переработке); `finish_markup` — callable, возвращающий
+    inline-клавиатуру «Завершить» под названием задачи (для переработки).
     """
     config = worker._matcher.get_task_monitor_config()
     if not config.get("enabled"):
@@ -48,6 +51,7 @@ def start_task_monitor(worker: Any, output: Any,
     if config.get("overtime_enabled", True):
         overtime = OvertimeNotifier(
             say=worker._orchestrator.say, output=output, notify=notify,
+            finish_markup=finish_markup,
             multiplier=float(config.get(
                 'overtime_multiplier', TASK_OVERTIME_MULTIPLIER)))
     output.print_info(

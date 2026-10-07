@@ -97,6 +97,10 @@ class TaskOffers:
         for chat_id in sorted(self._config.chat_ids):
             self._api.send_message(chat_id, text, reply_markup=markup)
 
+    def finish_markup(self, title: str) -> dict:
+        """Одна кнопка «Завершить» под запущенную задачу (внешний broadcast)."""
+        return self._store.finish_markup(title)
+
     def handle_callback(self, callback: dict) -> Optional[str]:
         """Нажатие кнопки: запускает/завершает задачу, отвечает в чат."""
         message = callback.get("message") or {}

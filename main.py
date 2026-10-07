@@ -74,7 +74,9 @@ def main():
     task_monitor = start_task_monitor(
         worker, output,
         notify=telegram.broadcast if telegram is not None else None,
-        offer=telegram.offer if telegram is not None else None)
+        offer=telegram.offer if telegram is not None else None,
+        finish_markup=(telegram.finish_markup if telegram is not None
+                       else None))
 
     output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "
                       "или писать в Telegram.\n")

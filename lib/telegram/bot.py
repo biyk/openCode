@@ -1,17 +1,11 @@
 # TOOLTIP: TelegramBot: daemon-поток long polling'а, whitelist чатов, ответы в чат
-"""Фоновый канал текста из Telegram в пайплайн оркестратора.
+"""Фоновый канал текста из Telegram в пайплайн (long polling daemon-потоком).
 
-Бот ходит за обновлениями long polling'ом в daemon-потоке (как cron и
-task_monitor). Обработка при этом остаётся сериализованной: `process_text`
-сидит под замком оркестратора, поэтому сообщение чата не перемешивается со
-строкой микрофона в окне «трёх строк» (§10).
-
-Сборку бота из секции `telegram` и решение стартовать вынесли в
-`lib/telegram/launch.py` — здесь только транспорт и очередь сообщений.
-
-Пишут только чаты из whitelist — бот запускает shell-команды на компьютере.
-Сообщение от неизвестного чата логируется со своим id: остаётся скопировать
-его в `telegram.allowed_chat_ids`.
+Обработка сериализована: `process_text` под замком оркестратора, поэтому
+сообщение чата не перемешивается со строкой микрофона (§10). Сборку бота
+и решение стартовать вынесли в `lib/telegram/launch.py`. Пишут только чаты
+из whitelist — бот запускает shell-команды; неизвестный чат логируется со
+своим id: его и добавляем в `telegram.allowed_chat_ids`.
 """
 
 import threading
@@ -141,6 +135,10 @@ class TelegramBot:
         """Инициативный вопрос с кнопками выбора задачи во все чаты whitelist."""
         self._offers.offer(text, titles)
 
+    def finish_markup(self, title: str) -> dict:
+        """Одна кнопка «Завершить» (для broadcast-оповещения о переработке)."""
+        return self._offers.finish_markup(title)
+
     def reply(self, text: str,
               reply_markup: Optional[dict] = None) -> None:
         """Ответ в чат команды; при разбиении на части markup — на последней части."""
@@ -154,11 +152,14 @@ class TelegramBot:
                                           reply_markup=markup):
                 self._print("[Telegram] Ответ не отправлен (ошибка в логе)")
 
-    def broadcast(self, text: str) -> None:
-        """Инициативное уведомление во все чаты whitelist (оповещение о переработке)."""
+    def broadcast(self, text: str,
+                  reply_markup: Optional[dict] = None) -> None:
+        """Инициативное уведомление во все чаты whitelist (оповещение)."""
         for chat_id in sorted(self._config.chat_ids):
-            for chunk in self.chunks(text):
-                if not self._api.send_message(chat_id, chunk):
+            parts = self.chunks(text)
+            for idx, chunk in enumerate(parts):
+                m = reply_markup if idx == len(parts) - 1 else None
+                if not self._api.send_message(chat_id, chunk, reply_markup=m):
                     self._print("[Telegram] Уведомление не отправлено "
                                 "(ошибка в логе)")
 

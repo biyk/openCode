@@ -31,12 +31,15 @@ class OvertimeNotifier:
     """
 
     def __init__(self, say: Callable[[str], None], output: Any,
-                 notify: Optional[Callable[[str], None]] = None,
+                 notify: Optional[Callable[..., None]] = None,
                  multiplier: float = TASK_OVERTIME_MULTIPLIER,
-                 remind_min: float = REMIND_MIN_DEFAULT) -> None:
+                 remind_min: float = REMIND_MIN_DEFAULT,
+                 finish_markup: Optional[Callable[[str], Any]] = None
+                 ) -> None:
         self._say = say
         self._output = output
         self._notify = notify
+        self._finish_markup = finish_markup
         self._multiplier = multiplier
         # Порог повтора в мс (0 — каждый такт).
         self._remind_ms = max(0.0, float(remind_min)) * 60_000.0
@@ -64,12 +67,23 @@ class OvertimeNotifier:
         return count
 
     def _announce(self, over: Any) -> None:
-        """Одно оповещение: консоль/лог + голос + Telegram (без ответа)."""
+        """Одно оповещение: консоль/лог + голос + Telegram (без ответа).
+
+        Если поднят `finish_markup` (Telegram-кнопка) — дубль в чат уходит
+        с ней, чтобы одним нажатием закрыть перерабатывающую задачу.
+        """
         message = TASK_OVERTIME_TEXT.format(
             title=over.title, elapsed=over.elapsed, plan=over.plan)
         self._output.print_info(f"[Overtime] {message}")
         self._say(message)
-        if self._notify is not None:
+        if self._notify is None:
+            return
+        markup = None
+        if self._finish_markup is not None:
+            markup = self._finish_markup(over.title)
+        if markup is not None:
+            self._notify(message, reply_markup=markup)
+        else:
             self._notify(message)
 
 

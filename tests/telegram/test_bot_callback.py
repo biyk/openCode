@@ -1,7 +1,9 @@
 """тесты маршрутизации callback_query/offer в TelegramBot (lib/telegram/bot.py).
 
 Бот — только транспорт: нажатие кнопки уходит в TaskOffers, а не в пайплайн
-текстовых команд; `offer` делегирует сборку клавиатуры туда же.
+текстовых команд; `offer`/`finish_markup` делегируют сборку клавиатуры туда же.
+`broadcast` принимает reply_markup (для оповещения о переработке — кнопка
+«Завершить» под текстом), крепится только на последнюю часть длинного текста.
 """
 
 from unittest.mock import MagicMock
@@ -12,8 +14,10 @@ from lib.telegram.config import TelegramConfig
 CHAT = 111
 
 
-def _config():
-    return TelegramConfig(token="t", chat_ids=frozenset({str(CHAT)}))
+def _config(**kwargs):
+    defaults = dict(token="t", chat_ids=frozenset({str(CHAT)}))
+    defaults.update(kwargs)
+    return TelegramConfig(**defaults)
 
 
 def _bot(api=None):
@@ -45,3 +49,34 @@ class TestCallbackRouting:
         bot = _bot()
         bot._remember("555")
         assert bot._chat_id == "555"
+
+
+class TestFinishMarkup:
+    """Bot.finish_markup — тонкий прокси к TaskOffers (для broadcast-оповещения)."""
+
+    def test_delegates_to_offers(self):
+        bot = _bot()
+        bot._offers = MagicMock()
+        bot._offers.finish_markup.return_value = {"inline_keyboard": [[]]}
+        assert bot.finish_markup("Задача") == {"inline_keyboard": [[]]}
+        bot._offers.finish_markup.assert_called_once_with("Задача")
+
+
+class TestBroadcastMarkup:
+    """reply_markup broadcast'а доезжает только до последней части сообщения."""
+
+    def test_last_chunk_only(self):
+        api = MagicMock()
+        button = {"text": "Завершить", "callback_data": "f1"}
+        markup = {"inline_keyboard": [[button]]}
+        bot = TelegramBot(api, _config(max_len=4), MagicMock())
+        bot.broadcast("abcd\nefgh", reply_markup=markup)
+        calls = api.send_message.call_args_list
+        assert [c.kwargs.get("reply_markup") for c in calls] == [None, markup]
+
+    def test_no_markup_is_plain_text(self):
+        api = MagicMock()
+        bot = TelegramBot(api, _config(max_len=4096), MagicMock())
+        bot.broadcast("Просто текст")
+        call = api.send_message.call_args_list[0]
+        assert call.kwargs.get("reply_markup") is None
