@@ -1,4 +1,4 @@
-# Стоп с фолбэком: шлём Media Stop (0xB2); если через пару секунд
+﻿# Стоп с фолбэком: шлём Media Stop (0xB2); если через пару секунд
 # медиа всё ещё играет (например, YouTube игнорирует Stop) —
 # жмём Play/Pause (0xB3), чтобы поставить на паузу.
 $s = 'using System;using System.Runtime.InteropServices;public class K{[DllImport("user32.dll")]public static extern void keybd_event(byte bVk,byte bScan,uint dwFlags,IntPtr dwExtraInfo);public static void k(byte v){keybd_event(v,0,0,IntPtr.Zero);keybd_event(v,0,2,IntPtr.Zero);}}'

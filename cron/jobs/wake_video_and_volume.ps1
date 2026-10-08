@@ -1,4 +1,6 @@
-﻿# Включает тестовый ролик YouTube в CDP-браузере и выставляет громкость 30%.
+﻿# Включает тестовый ролик YouTube в CDP-браузере, снимает mute мастера и
+# выставляет громкость 40% (шаг 4: -Set + -Unmute — уровень и mute в Core Audio
+# независимы, без -Unmute будильник играл бы в заглушенный endpoint "тихо").
 # Каждый шаг проверяет результат и пишет в stdout («вывод» шага берёт в лог
 # планировщик cron) — видно, на каком этапе всё сломалось.
 $ErrorActionPreference = "Continue"
@@ -11,13 +13,21 @@ if ($LASTEXITCODE -ne 0) {
     Write-Output "[step 1] браузер не запущен - open-url запустит сам"
 }
 
-Write-Output "[step 2] open-new $url"
-# open-new, а не open-url: open-url переключается на любую уже открытую
-# youtube-вкладку, и наш ролик бы не открылся
-python -m lib.browser_control open-new $url
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "[step 2] НЕ ОТКРЫЛСЯ: open-new вернул ошибку"
-    exit 1
+Write-Output "[step 2] открыть $url (идемпотентно)"
+# Идемпотентность: будильник мог сработать дважды (ручная правка crontab
+# в соседнюю минуту, рестарт процесса), а open-new ВСЕГДА создаёт вкладку —
+# получаем дубли. Если вкладка с этим id уже есть — пропускаем открытие.
+# Через open-url не решается: он матчит по хосту и переключается на любую
+# youtube-вкладку, наш ролик мог бы не открыться.
+$tabs = python -m lib.browser_control tabs 2>$null | Out-String
+if ($tabs -and $tabs.Contains($video)) {
+    Write-Output "[step 2] вкладка с $video уже открыта - пропускаю open-new"
+} else {
+    python -m lib.browser_control open-new $url
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[step 2] НЕ ОТКРЫЛСЯ: open-new вернул ошибку"
+        exit 1
+    }
 }
 
 # Вкладка создана != страница загрузилась и плеер играет: проверяем состояние.
@@ -48,7 +58,7 @@ if ($state -ne "playing") {
     exit 1
 }
 
-Write-Output "[step 4] громкость -> 30"
-$vol = powershell -NoProfile -ExecutionPolicy Bypass -File bin/get_volume.ps1 -Set 40
+Write-Output "[step 4] снять mute и громкость -> 40"
+$vol = powershell -NoProfile -ExecutionPolicy Bypass -File bin/get_volume.ps1 -Set 40 -Unmute
 Write-Output "[step 4] громкость теперь: $vol"
 Write-Output "[done] все шаги выполнены"

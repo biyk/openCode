@@ -1,4 +1,4 @@
-# TOOLTIP: Список Bluetooth-устройств Windows + попытка прочитать заряд (печатает JSON)
+﻿# TOOLTIP: Список Bluetooth-устройств Windows + попытка прочитать заряд (печатает JSON)
 # Диагностика: python -m lib.runtime.bluetooth
 #
 # Устройство = devnode BTHENUM\DEV_<MAC> (классика/EDR) или BTHLE\DEV_<MAC> (LE).

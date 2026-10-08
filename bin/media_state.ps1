@@ -1,4 +1,4 @@
-# Определяет состояние медиа через Windows.Media.Control
+﻿# Определяет состояние медиа через Windows.Media.Control
 # (GlobalSystemMediaTransportControlsSessionManager).
 # По умолчанию: "true", если хоть одна сессия в Playing.
 # С ключом -AnySession: "true", если есть хоть одна сессия
