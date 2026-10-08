@@ -35,6 +35,17 @@ AUDIO_SUPPRESS_AFTER_TTS = 0.5
 STOP_WORDS = frozenset(("стоп", "останови", "stop", "хватит", "прекрати"))
 
 
+def _pick_mic_device(allowed_token: str):
+    """Микрофон по токену наушников: вход с тем же токеном в имени или дефолт."""
+    target = (allowed_token or "").strip().casefold()
+    if not target:
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if d.get("max_input_channels") and target in d["name"].casefold():
+            return i
+    return None
+
+
 class TranscriptionWorker:
     """Захватывает аудио и распознаёт речь."""
 
@@ -66,28 +77,19 @@ class TranscriptionWorker:
         self._tts = TextToSpeech()
 
         intent = build_intent(self._matcher, self._llm)
-        # Decision-слой Laya (заменяет mini-intent, когда настроен);
-        # intent не создаём — новый путь его не использует.
+        # Decision-слой Laya; intent не создаём — новый путь его не использует.
         self._decision = build_decision(self._matcher, self._output)
-        # База знаний (доска «проверки знаний»): laya/undefined наполняются
-        # из пайплайна (Лайя/LLM/промах), в рантайме решают только confirmed.
+        # База знаний: laya/undefined наполняются из пайплайна, в рантайме
+        # решают только confirmed.
         self._knowledge = KnowledgeStore(
             KnowledgeStore.path_for_commands_file(commands_file))
         self._orchestrator = Orchestrator(
-            matcher=self._matcher,
-            output=self._output,
-            tts=self._tts,
-            stop_words=STOP_WORDS,
-            suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
-            intent=intent,
-            knowledge=self._knowledge,
-            decision=self._decision,
-            llm=self._llm,
-            on_exit=self._dev_mode_exit,
-        )
+            matcher=self._matcher, output=self._output, tts=self._tts,
+            stop_words=STOP_WORDS, suppress_after=AUDIO_SUPPRESS_AFTER_TTS,
+            intent=intent, knowledge=self._knowledge, decision=self._decision,
+            llm=self._llm, on_exit=self._dev_mode_exit)
 
-        # Фолбэк: console opencode (скиллы из cli/.opencode/skill),
-        # флаг opencode_cli.enabled в commands.json
+        # Фолбэк: console opencode (скиллы из cli/.opencode/skill).
         opencode_config = self._matcher.get_opencode_cli_config()
         if opencode_config.get("enabled"):
             self._opencode = OpenCodeCliRunner(
@@ -96,8 +98,7 @@ class TranscriptionWorker:
             )
             self._orchestrator._opencode = self._opencode
 
-        # Шлюз захвата: с колонок играет медиа — и наша озвучка тоже, иначе
-        # ассистент слышит сам себя (§4.6); TTS докладывает шлюзу сам, без лага.
+        # Шлюз захвата: своя озвучка — медиа, TTS докладывает шлюзу (§4.6).
         self._gate = build_record_gate(self._matcher, self._output,
                                        voice=self._tts)
 
@@ -110,7 +111,7 @@ class TranscriptionWorker:
     def run(self):
         """Основной цикл - работает до вызова stop()."""
         if self._gate:
-            self._gate.start()          # шлюз живёт вместе с циклом захвата
+            self._gate.start()
         try:
             SetLogLevel(0)
             model_path = _vm.ensure_vosk_model(self.lang_code)
@@ -119,21 +120,19 @@ class TranscriptionWorker:
             recognizer.SetWords(True)
             stop_recognizer = KaldiRecognizer(
                 model, DEFAULT_SR, json.dumps(sorted(STOP_WORDS)))
-
+            mic_device = _pick_mic_device(
+                self._gate.allowed if self._gate else "")
             with sd.RawInputStream(samplerate=DEFAULT_SR, blocksize=BLOCKSIZE,
                                    dtype="int16", channels=1,
-                                   callback=self.audio_callback):
+                                   callback=self.audio_callback,
+                                   device=mic_device):
                 while self._running.is_set():
                     try:
                         data = self._queue.get(timeout=0.2)
                     except queue.Empty:
                         continue
-
-                    # переключение шлюза: обрывок команды вместе с музыкой — не команда
                     if self._gate is not None and self._gate.take_change():
                         recognizer.Reset()
-
-                    # Распознанный текст
                     if recognizer.AcceptWaveform(data):
                         res = json.loads(recognizer.Result())
                         text = _fix_encoding(res.get("text", "")).strip()
@@ -142,8 +141,8 @@ class TranscriptionWorker:
                             self._accumulated.append(text)
                             self._process_text(text)
                     else:
-                        # Частичные результаты: буфер забит эхом озвучки,
-                        # стоп-слово ловим не дожидаясь финала.
+                        # Частичные результаты: стоп-слово ловим не дожидаясь
+                        # финала (буфер забит эхом озвучки).
                         partial = json.loads(
                             recognizer.PartialResult()).get("partial", "").strip()
                         if partial:
@@ -151,8 +150,7 @@ class TranscriptionWorker:
                             if partial and self._orchestrator.maybe_abort(partial):
                                 recognizer.Reset()
 
-                    # Точный детектор стоп-слов по грамматике: работает всё время
-                    # озвучки, диктовочная модель тонет в аудио TTS.
+                    # Точный детектор стоп-слов по грамматике.
                     if self._orchestrator.speaking:
                         if stop_recognizer.AcceptWaveform(data):
                             stop_text = json.loads(

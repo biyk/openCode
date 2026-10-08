@@ -56,6 +56,7 @@ class TestRunLoopGate:
                      return_value="model")
         mocker.patch.object(worker_mod, "Model")
         mocker.patch.object(worker_mod, "KaldiRecognizer", return_value=rec)
+        mocker.patch.object(worker_mod.sd, "query_devices", return_value=[])
         return mocker.patch("lib.stt.transcription_worker.sd.RawInputStream",
                             return_value=mocker.MagicMock())
 
