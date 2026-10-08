@@ -14,7 +14,8 @@ from lib.core.laya_decision import LayaDecision
 from lib.core.orchestrator_event_match import EVENT_ACTION_THRESHOLD
 from lib.google.shopping_dedup import DEFAULT_THRESHOLD as SHOP_DEFAULT
 from lib.taskflow.tasks_dedup import BATCH_THRESHOLD, DUP_THRESHOLD
-from lib.task_start import TITLE_THRESHOLD, TOKEN_RATIO, TOKEN_ROOT_PREFIX
+from lib.task_start import TITLE_THRESHOLD
+from lib.taskflow.task_match import TOKEN_RATIO, TOKEN_ROOT_PREFIX
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))

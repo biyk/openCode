@@ -13,64 +13,23 @@
 import re
 import sys
 from datetime import datetime, timedelta
-from difflib import SequenceMatcher
 from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
-from lib.core.event_text import (STOP_TOKENS, clean_title, strip_noise,
-                                 title_segments)
-from lib.core.tuning import (
-    EVENT_MATCH_DEBUG_TOP, TITLE_THRESHOLD, TOKEN_RATIO, TOKEN_ROOT_PREFIX)
+from lib.core.event_text import strip_noise, title_segments
+from lib.core.tuning import EVENT_MATCH_DEBUG_TOP, TITLE_THRESHOLD
 from lib.google_calendar import GoogleCalendar
 from lib.taskflow.real_life_sheet import RealLifeSheet
+from lib.taskflow.task_match import norm, segment_score
 from lib.taskflow.task_start_sheet import TaskStartSheet
 
 # UUID в описании события-задачи (колонка D листа = стабилизатор Sheet↔Calendar)
 UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
     re.IGNORECASE)
-# Пороги и правила «одно ли слово» — в lib.core.tuning. Слова-паразиты,
-# скобки/эмодзи и разбиение по точкам — в lib.core.event_text.
-
-
-def _norm(text: str) -> str:
-    """Нормализация: очистка (скобки/эмодзи), нижний регистр, ё→е, без пунктуации."""
-    text = " ".join(clean_title(text).lower().replace("ё", "е").split())
-    return "".join(ch for ch in text if ch.isalnum() or ch == " ").strip()
-
-
-def _content_tokens(norm: str) -> list[str]:
-    """Значимые слова нормализованной строки (без местоимений/связок)."""
-    return [t for t in norm.split() if t and t not in STOP_TOKENS]
-
-
-def _same_word(a: str, b: str) -> bool:
-    """Одно ли слово: точно, по общему корню или по похожести (падеж/вид)."""
-    if a == b:
-        return True
-    if (min(len(a), len(b)) >= TOKEN_ROOT_PREFIX
-            and a[:TOKEN_ROOT_PREFIX] == b[:TOKEN_ROOT_PREFIX]):
-        return True
-    return SequenceMatcher(None, a, b).ratio() >= TOKEN_RATIO
-
-
-def _overlap_score(target: str, title: str) -> float:
-    """Похожесть по составу слов (Дайс): устойчива к падежу/виду и лишним
-    словам («утро»/«вечер»), где SequenceMatcher по строке недодаёт."""
-    tt = _content_tokens(target)
-    ct = _content_tokens(title)
-    if not tt or not ct:
-        return 0.0
-    matched = sum(1 for w in ct if any(_same_word(t, w) for t in tt))
-    return 2 * matched / (len(tt) + len(ct))
-
-
-def _segment_score(target: str, seg: str) -> float:
-    """Похожность одной точки составного заголовка на фразу-мишень."""
-    if f" {seg} " in f" {target} ":
-        return 1.0
-    return max(SequenceMatcher(None, target, seg).ratio(),
-               _overlap_score(target, seg))
+# Нормализация и скоринги похожести — в lib.taskflow.task_match;
+# слова-паразиты, скобки/эмодзи и разбиение по точкам — в
+# lib.core.event_text; пороги — в lib.core.tuning.
 
 
 class TaskStartHandler:
@@ -119,7 +78,7 @@ class TaskStartHandler:
                 filter_fn: Optional[Callable[[dict], bool]],
                 report: Optional[Callable[[str, float], None]]) -> Optional[dict]:
         """Матчинг по списку (порог TITLE_THRESHOLD); равные — берём раннее по времени."""
-        target = _norm(strip_noise(name))
+        target = norm(strip_noise(name))
         if not target:
             return None
         best: Optional[tuple[tuple[float, int], dict]] = None
@@ -129,7 +88,7 @@ class TaskStartHandler:
             if filter_fn is not None and not filter_fn(ev):
                 continue
             summary = ev.get("summary") or ""
-            segs = [s for s in (_norm(x) for x in title_segments(summary))
+            segs = [s for s in (norm(x) for x in title_segments(summary))
                     if s]
             if not segs:
                 continue
@@ -137,7 +96,7 @@ class TaskStartHandler:
                 if report is not None:
                     report(summary, 1.0)
                 return ev
-            score = max(_segment_score(target, seg) for seg in segs)
+            score = max(segment_score(target, seg) for seg in segs)
             scored.append((score, summary))
             key = (score, -idx)
             if best is None or key > best[0]:
@@ -187,7 +146,13 @@ def _main(argv: Optional[list[str]] = None) -> int:
     if not name:
         print("Укажите название задачи: python -m lib.task_start \"...\"")
         return 1
-    result = TaskStartHandler().start_task(name)
+    try:
+        result = TaskStartHandler().start_task(name)
+    except Exception as e:  # нет токена/сети/DNS-запинка на googleapis
+        # Без этой рамки subprocess dump'ит traceback в консоль и пугает
+        # пользователя; у `task_complete.py` аналогичная рамка уже есть.
+        print(f"[start] ошибка запуска: {e}")
+        return 1
     if result.get("ok"):
         print(f"▶️ Задача «{result['title']}» запущена "
               f"(строка {result['row']}, start={result['new_start']})")

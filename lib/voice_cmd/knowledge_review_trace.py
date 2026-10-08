@@ -91,7 +91,8 @@ def score_titles(text: str, titles: list[str]) -> tuple[str, float]:
     """
     try:
         from lib.core.event_text import strip_noise, title_segments
-        from lib.task_start import _norm, _segment_score
+        from lib.taskflow.task_match import norm as _norm, \
+            segment_score as _segment_score
     except Exception as e:
         swallowed("review.trace_scoring", e)
         return "", 0.0
