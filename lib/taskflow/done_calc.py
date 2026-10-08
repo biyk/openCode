@@ -21,9 +21,15 @@ DISCIPLINE_WINDOW_DAYS = 30
 
 def repeat_real(old_index: float, days_since: float,
                 event_was_new: bool) -> float:
-    """Новый repeat_index: среднее старого индекса и дней просрочки (§8)."""
-    value = (old_index + days_since) * 0.9 / 2
-    return value - 0.1 if event_was_new else value
+    """Новый repeat_index: среднее старого индекса и дней просрочки (§8).
+
+    Штраф −0.1 за новую галочку вычитается ИЗ СТАРОГО ИНДЕКСА ДО
+    усреднения — ровно как в JS (toggleTodo сначала `repeat_index -= 0.1`,
+    затем makeTaskDone `* 0.9 / 2`), иначе два клиента на одной ячейке
+    расходят штраф: 0.045 против 0.1.
+    """
+    base = old_index - 0.1 if event_was_new else old_index
+    return (base + days_since) * 0.9 / 2
 
 
 def _same_day_next_month(now: datetime) -> date:
@@ -115,10 +121,14 @@ def elapsed_minutes(start_ms: int, now_ms: int) -> int:
     return math.ceil((now_ms - start_ms) / 60_000)
 
 
-def average_task_time(old_time: int, elapsed_min: int) -> int:
-    """Усреднение плана с фактом (⏸ пауза — старый алгоритм). Больше не
-    применяется при ⏹: колонка B = сумма времени за день (см. ниже)."""
-    return math.ceil((old_time + elapsed_min) / 2)
+def average_task_time(old_time: int, actual_today: int) -> int:
+    """Колонка B = ceil((факт-за-день + старый план) / 2) (JS 68ecf95).
+
+    ⏹/⏸ передают в actual_today «сумма журнала за сегодня + текущий
+    отрезок», ✅ из паузы — суммарное время дня по журналу. ✅ без запуска
+    B НЕ трогает: план засчитывается как выполненный (фикс JS 3ddf636).
+    """
+    return math.ceil((old_time + actual_today) / 2)
 
 
 def day_start_ms(now: datetime) -> int:

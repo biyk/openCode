@@ -16,7 +16,7 @@ SPREADSHEET_ID = "1QPyPVOGKX5FWQUlB91q7hNNr3V7AWGho54RH5m_YMrY"
 SHEET_NAME = "real_life_tasks"
 UUID_COL = "D"      # task_uuid — стабильный ключ строки
 START_COL = "G"     # start_date: '' / '0' → не запущена, unix-мс → идёт
-FINISH_COL = "O"    # task_finish_date: накопленная длительность до паузы
+FINISH_COL = "O"    # task_finish_date: пауза пишет сентинел 1, не длительность
 
 
 def parse_ms_cell(value: Any) -> int:

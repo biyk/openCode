@@ -1,11 +1,11 @@
 """Эквивалент клика ⏹ («остановить и засчитать») из Python (stop.md).
 
 В отличие от ✅ (done_task.py) задача запущена: считаем фактическую
-длительность от start_date (колонка G). Колонка B — накопительное
-время за день: сумма уже засчитанных сегодня отрезков по журналу
-task_executions + текущий отрезок (аналог JS sumExecutedMinutesToday);
-награда и журнал — только по текущему отрезку. Колонка O на выходе = 0
-(в отличие от ⏸). Цикл операций идентичен done_task.py.
+длительность от start_date (колонка G). Колонка B — усреднение (JS
+68ecf95): ceil(((засчитанные сегодня по журналу task_executions отрезки
++ текущий) + старый план) / 2); награда и журнал — только по текущему
+отрезку. Колонка O на выходе = 0 (в отличие от ⏸). Цикл операций
+идентичен done_task.py.
 
 CLI: `python -m lib.taskflow.stop_task <task_uuid>`. Коды выхода: 0 —
 засчитано, 1 — задача не найдена/не запущена или запрос не прошёл.
@@ -21,6 +21,7 @@ from lib.taskflow.done_calc import (
     MS_PER_DAY,
     ONCE_MODE,
     average_discipline,
+    average_task_time,
     elapsed_minutes,
     money_reward,
     next_task_date,
@@ -59,11 +60,12 @@ def _execution_row(task_uuid: str, row: list[Any], now: datetime,
 
 def stop_task(task_uuid: str, api: Optional[Any] = None,
               now: Optional[datetime] = None) -> dict:
-    """⏹ по task_uuid: требует запущенной/на паузе задачи, считает elapsed.
+    """⏹ по task_uuid: требует запущенной задачи (G≠0), считает elapsed.
 
-    api/now инжектят тесты. Пауза (G=0, накоплен O≠0) тоже закрывается:
-    длительность тогда = накопленный O. RuntimeError — не начиналась
-    (G=0, O=0): тогда нужен ✅ по плану, а не ⏹ с фактической длительностью.
+    api/now инжектят тесты. Пауза (G=0) здесь больше не закрывается: JS
+    пишет в O сентинел 1 («была на паузе»), а не длительность, и закрытие
+    паузы — это ✅ (totalToday-ветка done_task). RuntimeError — задача не
+    запущена: тогда нужен ✅ по плану, а не ⏹ с фактической длительностью.
     """
     api = api or RealLifeSheet()
     now = now or datetime.now().astimezone()
@@ -74,21 +76,21 @@ def stop_task(task_uuid: str, api: Optional[Any] = None,
     row_idx, row = found
     title = str(row[COLS["task_title"]] or "").strip()
     start_ms = as_int(row[COLS["start_date"]])
-    finish_ms = as_int(row[COLS["task_finish_date"]])
-    if start_ms == 0 and finish_ms == 0:
+    if start_ms == 0:
+        # JS-пауза пишет в O сентинел 1 («была на паузе»), а не длительность,
+        # и закрытие паузы в JS — это ✅ (totalToday-ветка done_task), не ⏹.
         raise RuntimeError("задача не запущена — ожидается ✅, а не ⏹")
     now_ms = int(now.timestamp() * 1000)
 
-    # ⏹: длительность текущего отрезка по факту. Запущена (G≠0) — от
-    # start_date; на паузе (G=0, накоплен O=task_finish_date) — по
-    # накопленной длительности: старт эквивалентен now − O.
-    elapsed = elapsed_minutes(start_ms or (now_ms - finish_ms), now_ms)
-    # Накопительное время (новый алгоритм JS): B = сумма отрезков, уже
-    # засчитанных сегодня по журналу, + текущий отрезок; усреднение плана
-    # больше не применяется — оно теряло уже проработанное время.
+    # ⏹: длительность текущего отрезка по факту, от start_date.
+    elapsed = elapsed_minutes(start_ms, now_ms)
+    # Усреднение (JS 68ecf95): B = ceil(((отрезки, засчитанные сегодня по
+    # журналу, + текущий) + старый план) / 2); награда/журнал/событие —
+    # только по текущему отрезку.
     prior_today = sum_executed_minutes_today(api.execution_rows(), task_uuid,
                                              now)
-    new_time = prior_today + elapsed
+    new_time = average_task_time(as_int(row[COLS["task_time"]]),
+                                 prior_today + elapsed)
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(
         (event or {}).get("summary") or title, task_uuid, elapsed, now,

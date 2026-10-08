@@ -3,9 +3,9 @@
 Цикл тот же, что у ⏹ (done.md §1), но задача не запущена: длительность
 берётся из плана (колонка B), и сама колонка B остаётся прежней (§2).
 Исключение — завершение из паузы (G=0, накоплен O≠0): её отрезки уже в
-журнале, тогда B = суммарное время за день и награда не начисляется
-повторно (аналог JS skipReward). Нужен команде «я проснулся» для
-задачи «Пробуждение».
+журнале, тогда B = усреднение суммарного времени за день со старым
+планом (JS 68ecf95) и награда не начисляется повторно (аналог
+JS skipReward). Нужен команде «я проснулся» для задачи «Пробуждение».
 
 CLI: `python -m lib.taskflow.done_task <task_uuid>`. Коды выхода: 0 —
 засчитано (или уже было засчитано сегодня), 1 — задача не найдена или
@@ -22,6 +22,7 @@ from lib.taskflow.done_calc import (
     MS_PER_DAY,
     ONCE_MODE,
     average_discipline,
+    average_task_time,
     is_same_local_day,
     money_reward,
     next_task_date,
@@ -35,7 +36,7 @@ def _done_row(row: list[Any], ri_new: float, task_date: int, money: float,
               now_ms: int, event_was_new: bool,
               new_time: Optional[int] = None) -> list[Any]:
     """Строка A:T после ✅: по умолчанию B (план) и G (start_date) не меняются
-    (§4); new_time задаёт только ветвь из паузы — накопленное время за день."""
+    (§4); new_time задаёт только ветвь из паузы — усреднение суммы дня с B."""
     out = list(row)
     if new_time is not None:
         out[COLS["task_time"]] = new_time
@@ -84,8 +85,9 @@ def mark_task_done(task_uuid: str, api: Optional[Any] = None,
 
     # ✅: длительность по плану, колонку B не трогаем (§2, §8). Исключение —
     # завершение из паузы (G=0, O≠0): отрезки уже засчитаны в журнал (⏸,
-    # пауза пишет его с наградой), поэтому B = суммарное время за день,
-    # а награда и новая строка журнала не начисляются (аналог skipReward).
+    # пауза пишет его с наградой), поэтому B = усреднение суммарного
+    # времени за день со старым планом (JS 68ecf95), а награда и новая
+    # строка журнала не начисляются (аналог skipReward).
     # Пустой журнал (сентинел O=1 без отрезков) — остаёмся на плане.
     time_spent = as_int(row[COLS["task_time"]])
     new_time: Optional[int] = None
@@ -95,7 +97,8 @@ def mark_task_done(task_uuid: str, api: Optional[Any] = None,
                                                  task_uuid, now)
         if total_today > 0:
             time_spent = total_today
-            new_time = total_today
+            new_time = average_task_time(
+                as_int(row[COLS["task_time"]]), total_today)
             skip_reward = True
     event = api.find_done_event(task_uuid, now)
     was_new = api.upsert_done_event(

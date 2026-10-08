@@ -11,6 +11,7 @@ import pytest
 from lib.taskflow.done_calc import (
     MS_PER_DAY,
     average_discipline,
+    average_task_time,
     day_start_ms,
     is_same_local_day,
     money_reward,
@@ -38,9 +39,16 @@ def history(minutes_by_ago: dict[int, int]) -> list[list[str]]:
 
 
 def test_repeat_real_averages_index_and_lateness():
-    """(индекс + дни просрочки) · 0.9 / 2; новый ивент снимает 0.1."""
+    """(индекс + дни просрочки) · 0.9 / 2; новый ивент снимает 0.1 ДО среднего."""
     assert repeat_real(10.0, 4.0, False) == (10.0 + 4.0) * 0.9 / 2
-    assert repeat_real(10.0, 4.0, True) == (10.0 + 4.0) * 0.9 / 2 - 0.1
+    assert repeat_real(10.0, 4.0, True) == (10.0 - 0.1 + 4.0) * 0.9 / 2
+
+
+def test_average_task_time_rounds_plan_pair_up():
+    """B = ceil((факт-за-день + старый план) / 2) — как в JS 68ecf95."""
+    assert average_task_time(30, 20) == 25
+    assert average_task_time(30, 21) == 26        # ceil(51/2) — вверх
+    assert average_task_time(3, 7) == 5           # план 3 и факт 7 → 5
 
 
 def test_next_task_date_daily_monthly_yearly():

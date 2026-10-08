@@ -96,7 +96,7 @@ def test_counters_written_from_plan_and_now():
     assert column(api, "last_execution") == NOW_MS
     assert column(api, "task_finish_date") == 0
     assert column(api, "money_reward") == pytest.approx(1.5)   # 3 · 1 / 2 · 1
-    expected_ri = (10.5 + 2.0) * 0.9 / 2 - 0.1     # новый ивент → −0.1
+    expected_ri = (10.5 - 0.1 + 2.0) * 0.9 / 2     # новый ивент: −0.1 до среднего
     assert column(api, "repeat_index") == pytest.approx(expected_ri)
     assert column(api, "task_date") == NOW_MS + int(
         round(expected_ri * MS_PER_DAY))

@@ -1,9 +1,10 @@
-"""Юнит-тесты завершения задачи из паузы (накопительное время за день).
+"""Юнит-тесты завершения задачи из паузы (усреднение суммы дня).
 
-Новый алгоритм JS-клиента (deb5b567): ⏸ пишет отрезки в журнал с наградой
-и ставит сентинел task_finish_date=1; финальное ✅ по такой строке ставит
-в колонку B суммарное время за день по журналу task_executions и НЕ
-начисляет награду/строку журнала повторно (аналог skipReward).
+Алгоритм JS-клиента (68ecf95): ⏸ пишет отрезки в журнал с наградой и
+ставит сентинел task_finish_date=1; финальное ✅ по такой строке ставит
+в колонку B усреднение суммарного времени за день по журналу task_executions
+со старым планом и НЕ начисляет награду/строку журнала повторно
+(аналог skipReward).
 """
 
 import pytest
@@ -44,13 +45,13 @@ def column(api, name):
     return api.rows_written[0][1][COLS[name]]
 
 
-def test_done_from_pause_writes_cumulative_time_no_reward():
-    """Из паузы (G=0, O=1): B = сумма журнала за день, награда/журнал — нет."""
+def test_done_from_pause_averages_today_sum_no_reward():
+    """Из паузы (G=0, O=1): B = ceil((сумма журнала + план 3)/2), без награды."""
     api = paused_api(journal=[["h"] * 7, journal_entry(15), journal_entry(10)])
     result = done(api)
     assert result["ok"] is True and result["time_spent"] == 25
     assert result["skip_reward"] is True
-    assert column(api, "task_time") == 25          # накопительное за день
+    assert column(api, "task_time") == 14          # ceil((25 + 3) / 2)
     assert api.executions == [] and api.hero_delta == 0.0
     assert api.events_written[0][2] == 25          # галочка — на сумму дня
 
@@ -65,13 +66,13 @@ def test_done_from_pause_empty_journal_keeps_plan_and_reward():
 
 
 def test_done_from_pause_ignores_other_days_and_tasks():
-    """В сумму дня для паузы входят только сегодняшние свои отрезки."""
+    """В усреднение для паузы входят только сегодняшние свои отрезки."""
     api = paused_api(journal=[journal_entry(60, ago_ms=40 * 3_600_000),
                               journal_entry(9, uuid="чужой"),
                               journal_entry(7)])
     result = done(api)
     assert result["time_spent"] == 7
-    assert column(api, "task_time") == 7
+    assert column(api, "task_time") == 5           # ceil((7 + 3) / 2)
 
 
 def test_row_still_finalized_when_reward_skipped():

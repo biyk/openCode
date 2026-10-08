@@ -1,9 +1,10 @@
 """Юнит-тесты ⏹-завершения запущенной задачи (lib/taskflow/stop_task.py).
 
 Отличия ⏹ от ✅ (done.md §2 / stop.md §10): длительность по факту,
-колонка B — накопительное время за день (сумма журнала + текущий
-отрезок, а не усреднение плана), журнал и награда — только текущий
-отрезок; O на выходе = 0.
+колонка B — усреднение (JS 68ecf95): ceil(((сумма журнала за сегодня +
+текущий отрезок) + старый план) / 2), журнал и награда — только текущий
+отрезок; O на выходе = 0. Пауза (G=0) — не ⏹: закрытие паузы это ✅
+(ветка done_task), сентинел O=1 длительностью не считается.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -87,33 +88,33 @@ def today_journal_entry(minutes: int, uuid: str = UUID) -> list:
             "10", "Починить велосипед", uuid, "26.09.2026"]
 
 
-def test_elapsed_and_cumulative_task_time():
-    """Пустой журнал за сегодня: B = 0 + факт отрезка (без усреднения)."""
+def test_elapsed_and_averaged_task_time():
+    """Пустой журнал за сегодня: B = ceil((факт отрезка + план) / 2)."""
     api = FakeApi()
     result = stopped(api)
     assert result["ok"] is True and result["elapsed_minutes"] == 20
-    assert column(api, "task_time") == 20           # 0 + 20, не ceil((30+20)/2)
+    assert column(api, "task_time") == 25          # ceil((20 + 30) / 2)
     assert column(api, "start_date") == 0
     assert column(api, "task_finish_date") == 0    # стоп, не пауза
 
 
-def test_task_time_is_cumulative_for_today():
-    """Накопительное время: B = уже засчитанные сегодня + текущий отрезок."""
+def test_task_time_averages_today_sum_with_plan():
+    """Усреднение (JS 68ecf95): B = ceil(((15+10+20) + план 30) / 2)."""
     api = FakeApi(journal=[["h1", "h2", "h3", "h4", "h5", "h6", "h7"],
                            today_journal_entry(15),
                            today_journal_entry(10)])
     stopped(api)
-    assert column(api, "task_time") == 45          # 15 + 10 + 20
+    assert column(api, "task_time") == 38          # ceil((45 + 30) / 2)
 
 
 def test_journal_of_other_days_and_tasks_ignored():
-    """Вчерашние отрезки и чужие задачи в сумму за сегодня не входят."""
+    """Вчерашние отрезки и чужие задачи в усреднение за сегодня не входят."""
     yesterday = today_journal_entry(60)
     yesterday[1] = str(NOW_MS - MS_PER_DAY)       # вчера
     api = FakeApi(journal=[today_journal_entry(15, uuid="другой-uuid"),
                            yesterday, today_journal_entry(4)])
     stopped(api)
-    assert column(api, "task_time") == 24          # 4 + 20
+    assert column(api, "task_time") == 27          # ceil((24 + 30) / 2)
 
 
 def test_reward_and_journal_cover_only_current_segment():
@@ -130,7 +131,7 @@ def test_counters_and_reward_by_elapsed():
     assert column(api, "number_of_executions") == 411
     assert column(api, "last_execution") == NOW_MS
     assert column(api, "money_reward") == pytest.approx(10.0)  # 20·1/2·1
-    expected_ri = (10.5 + 2.0) * 0.9 / 2 - 0.1
+    expected_ri = (10.5 - 0.1 + 2.0) * 0.9 / 2    # −0.1 ДО усреднения (JS)
     assert column(api, "repeat_index") == pytest.approx(expected_ri)
     assert result["money"] == pytest.approx(10.0)
 
@@ -184,14 +185,13 @@ def test_not_running_task_raises():
     assert api.rows_written == []
 
 
-def test_paused_task_finalizes_from_accumulated_duration():
-    """Пауза (start=0, накоплен task_finish_date): elapsed = накопленное."""
+def test_paused_task_requires_done_not_stop():
+    """Пауза (G=0, сентинел O=1) — не ⏹: её закрывает ✅ (ветка done_task)."""
     api = FakeApi(row=task_row(start_date="0",
                                task_finish_date=str(25 * 60_000)))
-    result = stopped(api)
-    assert result["ok"] is True and result["elapsed_minutes"] == 25
-    assert column(api, "task_finish_date") == 0   # закрыто, накопленное обнулено
-    assert column(api, "task_time") == 25          # 0 накопленного журнала + 25
+    with pytest.raises(RuntimeError):
+        stopped(api)
+    assert api.rows_written == []
 
 
 def test_missing_row_is_error():

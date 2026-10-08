@@ -20,8 +20,8 @@ from lib.runtime.status import StatusStore
 from lib.tts import TextToSpeech
 from lib.stt import vosk_model as _vm
 from lib.stt.encoding import fix_encoding as _fix_encoding
-
 import sounddevice as sd
+
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
 _provider_manager = ProviderManager()
@@ -120,13 +120,9 @@ class TranscriptionWorker:
             stop_recognizer = KaldiRecognizer(
                 model, DEFAULT_SR, json.dumps(sorted(STOP_WORDS)))
 
-            with sd.RawInputStream(
-                samplerate=DEFAULT_SR,
-                blocksize=BLOCKSIZE,
-                dtype="int16",
-                channels=1,
-                callback=self.audio_callback
-            ):
+            with sd.RawInputStream(samplerate=DEFAULT_SR, blocksize=BLOCKSIZE,
+                                   dtype="int16", channels=1,
+                                   callback=self.audio_callback):
                 while self._running.is_set():
                     try:
                         data = self._queue.get(timeout=0.2)
