@@ -19,6 +19,7 @@ if sys.platform == "win32":
 
 from lib.scheduling.cron import CronScheduler  # noqa: E402
 from lib.core.output import TranscriptionOutput, TimestampedStream  # noqa: E402
+from lib.core.single_instance import AlreadyRunning, acquire  # noqa: E402
 from lib.core.task_finish import make_task_finisher  # noqa: E402
 from lib.core.task_monitor_launch import start_task_monitor  # noqa: E402
 from lib.core.task_pick import make_task_picker  # noqa: E402
@@ -32,6 +33,19 @@ from lib.telegram.launch import start_telegram  # noqa: E402
 def main():
     from lib.versioning.version_checker import start_version_checker
     from lib.versioning.version_gate import snapshot as _snapshot
+
+    # Single-instance lock ДО всего остального: иначе второй `python main.py`
+    # (F5 в IDE, ручной старт в соседней консоли) успевает поднять
+    # Vosk-воркер на том же микрофоне, Telegram-поток (Bot API → 409
+    # Conflict на getUpdates) и TTS-плеер — команды распознаются дважды,
+    # озвучка играет дважды. Сокет держим в локальной переменной до
+    # конца main(): когда процесс умрёт (обычный выход/Ctrl+C/kill), ядро
+    # ОС само снимет bind.
+    try:
+        _lock = acquire()  # noqa: F841 — ссылка нужна, чтобы GC не закрыл fd
+    except AlreadyRunning as exc:
+        print(f"[Startup] {exc}")
+        sys.exit(1)
 
     snap = _snapshot()
     # Проверка перед стартом (быстрый fail)
