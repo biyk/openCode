@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from lib.taskflow.wake_slots import (compute_free_slots, event_datetime,
                                      reschedule_sleep_events, WAKE_TASK_UUID)
+from lib.google.google_calendar_mutate import DONE_COLOR
 
 TZ = timezone(timedelta(hours=3))
 WAKE = datetime(2026, 9, 26, 8, 0, tzinfo=TZ)
@@ -20,9 +21,12 @@ def iso(dt: datetime) -> str:
     return dt.isoformat()
 
 
-def ev(eid, summary, start, end, description=""):
-    return {"id": eid, "summary": summary, "start": iso(start),
+def ev(eid, summary, start, end, description="", color=None):
+    item = {"id": eid, "summary": summary, "start": iso(start),
             "end": iso(end), "description": description}
+    if color is not None:
+        item["colorId"] = color
+    return item
 
 
 class FakeGoogle:
@@ -136,3 +140,33 @@ def test_reschedule_stop_when_move_fails():
     moved, _ = reschedule_sleep_events(FakeGoogle(move_ok=False), events,
                                        sleep_start, WAKE)
     assert moved == 0
+
+
+def test_reschedule_skips_done_color_events():
+    """Выполненные (colorId=7) в окне сна НЕ двигаются: это уже факт."""
+    sleep_start = WAKE - timedelta(hours=6)
+    events = [
+        ev("sleep", "СОН", sleep_start, WAKE),
+        ev("done", "Уже сделано", sleep_start + timedelta(hours=1),
+           sleep_start + timedelta(hours=2), color=DONE_COLOR),
+    ]
+    g = FakeGoogle()
+    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    assert moved == 0
+    assert g.moved == []
+
+
+def test_reschedule_done_color_does_not_block_others():
+    """Синяя «галочка» в окне стоит, обычные задачи переносятся после неё."""
+    sleep_start = WAKE - timedelta(hours=6)
+    events = [
+        ev("sleep", "СОН", sleep_start, WAKE),
+        ev("done", "Уже сделано", sleep_start + timedelta(hours=1),
+           sleep_start + timedelta(hours=2), color=DONE_COLOR),
+        ev("t1", "Зарядка", sleep_start + timedelta(hours=3),
+           sleep_start + timedelta(hours=4)),
+    ]
+    g = FakeGoogle()
+    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    assert moved == 1
+    assert [m[0] for m in g.moved] == ["t1"]

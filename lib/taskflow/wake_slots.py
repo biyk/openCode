@@ -3,14 +3,17 @@
 Свободные окна считаем как в restart/calendar.md §5: от начала рабочего
 окна до 23:00, шаг не короче 15 минут. Перенос: события, начавшиеся
 внутри окна сна, ставятся на свободные окна ПОСЛЕ пробуждения в исходном
-порядке и с той же длительностью. События «СОН» и галочку
-«Пробуждения» не трогаем: подъём засчитывается именно в момент пробуждения.
+порядке и с той же длительностью. События «СОН», галочку
+«Пробуждения» и ВСЕ выполненные события (`colorId == DONE_COLOR`) не
+трогаем: подъём засчитывается именно в момент пробуждения, а перенос
+готовой «галочки» был бы ложным сведением о выполненном действии.
 """
 
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
+from lib.google.google_calendar_mutate import DONE_COLOR
 from lib.sleep_event import SLEEP_TITLE_RE
 
 # Параметры рабочего дня (calendar.md §5): конец 23:00, мин. слот 15 мин.
@@ -87,8 +90,10 @@ def reschedule_sleep_events(google: Any, events: list[dict],
 
     Берёт их в исходном порядке (по началу), для каждого ищет ПЕРВОЕ
     свободное окно после пробуждения достаточной длительности и двигает
-    туда с сохранением длительности. События «СОН» и галочку
-    «Пробуждения» не трогает. Возвращает (число_переносов,
+    туда с сохранением длительности. События «СОН», галочку
+    «Пробуждения» и ВСЕ выполненные события (`colorId == DONE_COLOR` —
+    синяя «галочка» JS-приложения) не трогает: перенос завершённой задачи
+    был бы ложным сведением о выполненном. Возвращает (число_переносов,
     обновлённый список событий — для последующего автозаполнения).
     """
     day_end = wake_now.replace(hour=WORK_END_HOUR, minute=0,
@@ -99,6 +104,8 @@ def reschedule_sleep_events(google: Any, events: list[dict],
             continue
         if WAKE_TASK_UUID in (ev.get("description") or ""):
             continue  # галочка «Пробуждения» остаётся на своём месте
+        if str(ev.get("colorId") or "") == DONE_COLOR:
+            continue  # выполненные (colorId=7) не двигаем — это уже факт
         start = event_datetime(ev.get("start"))
         end = event_datetime(ev.get("end"))
         if start is None or end is None:
