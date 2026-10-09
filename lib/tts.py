@@ -5,6 +5,7 @@ import threading
 from typing import Any, Callable, Optional
 
 from lib.core.logger import Logger
+from lib.core.output import stamp_stdio
 from lib.synth import tts_cache
 from lib.synth.tts_engines import TtsEnginesMixin
 from lib.synth.tts_pipeline import TtsPipelineMixin
@@ -116,4 +117,5 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(main())

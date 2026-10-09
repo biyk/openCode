@@ -13,6 +13,7 @@ import re
 from datetime import timedelta
 from typing import Optional
 
+from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar, GoogleOAuthError
 from lib.scheduling.time_parser import ReminderSpec, TimeParseError, TimeParser
 from lib.tts import TextToSpeech
@@ -159,4 +160,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(main())

@@ -20,6 +20,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 from lib.scheduling.cron_edit import shift_job_schedule
@@ -152,4 +153,5 @@ def _arm_wakeup_side_effects(now: datetime) -> None:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(_main())

@@ -38,6 +38,24 @@ class TimestampedStream:
         return getattr(self._stream, name)
 
 
+def stamp_stdio() -> None:
+    """Метки времени в консоли для дочерних процессов (`python -m lib.…`).
+
+    Обёртка из main.py живёт в нашем процессе: у child-процесса свой stdout,
+    поэтому его строки ([TTS], итоги задач) выходят без [ЧЧ:ММ:СС]. Ставим
+    ту же обёртку в `__main__` каждой CLI-точки входа. Идемпотентно:
+    повторно завёрнутый поток метку не удваивает.
+
+    Не зовём там, где вывод разбирают построчно: `lib.browser_control`
+    (cron-будильник сравнивает строку с `playing`), `lib.tasks`,
+    `lib.google_calendar` — метка сломала бы парсинг.
+    """
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if not isinstance(stream, TimestampedStream):
+            setattr(sys, name, TimestampedStream(stream))
+
+
 class TranscriptionOutput:
     """Вывод информации в консоль (кратко) и лог-файл (подробно).
 

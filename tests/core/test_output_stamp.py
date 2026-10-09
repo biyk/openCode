@@ -1,13 +1,15 @@
 """Тесты обёртки консоли TimestampedStream: метка времени на каждой строке.
 
 Отдельно от test_output.py (лимит длины): там TranscriptionOutput, здесь —
-поток-обёртка, которую main.py ставит на sys.stdout/sys.stderr.
+поток-обёртка, которую main.py и CLI-точки входа (`python -m lib.…`) ставят
+на sys.stdout/sys.stderr.
 """
+import sys
 from datetime import datetime
 from io import StringIO
 
 from lib.core import output as output_module
-from lib.core.output import TimestampedStream
+from lib.core.output import TimestampedStream, stamp_stdio
 
 
 def _fixed_clock(monkeypatch):
@@ -100,3 +102,39 @@ class TestTimestampedStream:
         assert stream._line_start is True
         stream.write("x")
         assert stream._line_start is False
+
+
+class TestStampStdio:
+    """stamp_stdio: метки в потоках своего процесса, повторный вызов безопасен."""
+
+    def test_wraps_stdout_and_stderr(self, monkeypatch):
+        monkeypatch.setattr(sys, "stdout", StringIO())
+        monkeypatch.setattr(sys, "stderr", StringIO())
+        stamp_stdio()
+        assert isinstance(sys.stdout, TimestampedStream)
+        assert isinstance(sys.stderr, TimestampedStream)
+
+    def test_child_line_gets_stamp(self, monkeypatch):
+        """Так консоль видит строку озвучки из `python -m lib.tts`."""
+        _fixed_clock(monkeypatch)
+        buf = StringIO()
+        monkeypatch.setattr(sys, "stdout", buf)
+        stamp_stdio()
+        print("[TTS] Воспроизведение завершено")
+        assert buf.getvalue() == "[13:46:07] [TTS] Воспроизведение завершено\n"
+
+    def test_second_call_not_double_stamped(self, monkeypatch):
+        """Уже завёрнутый поток не получает метку дважды."""
+        _fixed_clock(monkeypatch)
+        buf = StringIO()
+        monkeypatch.setattr(sys, "stdout", buf)
+        stamp_stdio()
+        stamp_stdio()
+        print("раз")
+        assert buf.getvalue() == "[13:46:07] раз\n"
+
+    def test_default_streams_left_alone(self, monkeypatch):
+        """Без вызова sys.stdout — как был (import lib ничего не подменяет)."""
+        buf = StringIO()
+        monkeypatch.setattr(sys, "stdout", buf)
+        assert not isinstance(sys.stdout, TimestampedStream)

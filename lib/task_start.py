@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
 from lib.core.event_text import strip_noise, title_segments
+from lib.core.output import stamp_stdio
 from lib.core.tuning import EVENT_MATCH_DEBUG_TOP, TITLE_THRESHOLD
 from lib.google_calendar import GoogleCalendar
 from lib.taskflow.real_life_sheet import RealLifeSheet
@@ -162,4 +163,5 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(_main())

@@ -182,5 +182,8 @@ def run_tests(repo_root: Optional[str] = None) -> tuple[bool, str]:
 
 
 if __name__ == "__main__":
+    from lib.core.output import stamp_stdio
     from lib.diagnostics.diagnose_cli import main
+
+    stamp_stdio()
     raise SystemExit(main())

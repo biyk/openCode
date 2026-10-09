@@ -16,6 +16,7 @@ import uuid as uuidlib
 from datetime import datetime
 from typing import Any, Optional
 
+from lib.core.output import stamp_stdio
 from lib.taskflow.cells import as_float, as_int
 from lib.taskflow.done_calc import (
     MS_PER_DAY,
@@ -140,4 +141,5 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(_main())

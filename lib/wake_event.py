@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from lib.core.errors import swallowed
+from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin
 from lib.google.google_calendar_mutate import DONE_COLOR
@@ -187,4 +188,5 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(_main())

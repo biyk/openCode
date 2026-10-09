@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from lib.core.errors import swallowed
+from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar
 
 TRIGGER_PHRASES = (
@@ -126,4 +127,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(main())

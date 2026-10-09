@@ -19,6 +19,7 @@ import sys
 from datetime import datetime
 from typing import Any, Optional
 
+from lib.core.output import stamp_stdio
 from lib.google.shopping_dedup import find_duplicate, find_item
 from lib.google.shopping_sheet import (
     SHEET_ID, SHEET_NAME, SPREADSHEET_ID, ShoppingSheet)
@@ -159,4 +160,5 @@ def main(argv: Optional[list] = None) -> int:
 
 
 if __name__ == "__main__":
+    stamp_stdio()  # у дочернего процесса свой stdout — метки ставим здесь
     raise SystemExit(main())
