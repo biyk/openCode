@@ -151,7 +151,7 @@ class TestMainEntryPoint:
         def raise_on_get(*args, **kwargs):
             raise RuntimeError("stub network")
 
-        _out = _stub(TranscriptionOutput=StubOutput, stamp_stdio=lambda: None)
+        _out = _stub(TranscriptionOutput=StubOutput, stamp_stdio=lambda **k: None)
         monkeypatch.setitem(sys.modules, "lib.core.output", _out)
         monkeypatch.setitem(sys.modules, "lib.voice_cmd.commands",
                             _stub(CommandMatcher=StubMatcher))

@@ -17,6 +17,7 @@ import queue
 import threading
 
 from lib.core.errors import swallowed
+from lib.monitor import registry
 
 
 class OrchestratorLlmBgMixin:
@@ -48,8 +49,12 @@ class OrchestratorLlmBgMixin:
     def _llm_fallback_worker_loop(self) -> None:
         """Фоновый воркер детекта: классификация без лока, применение — в локе."""
         while True:
+            registry.report("llm_bg", "LLM-детект (фон)", registry.IDLE,
+                            "очередь пуста")
             text, reply, gen = self._llm_queue.get()
             try:
+                registry.report("llm_bg", "LLM-детект (фон)",
+                                registry.WORKING)
                 self._llm_active = True
                 if gen != self._llm_gen:
                     self._output.print_debug(

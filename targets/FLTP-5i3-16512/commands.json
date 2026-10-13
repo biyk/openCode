@@ -244,7 +244,9 @@
             "я закончил задачу",
             "сделал задачу",
             "закончил",
-            "закончен"
+            "закончен",
+            "вернулся",
+            "что-то закончил"
         ],
         "shop-add": [
             "нужно купить",
@@ -253,7 +255,8 @@
             "добавь в покупки",
             "запиши в покупки",
             "добавь в список покупок",
-            "внеси в список покупок"
+            "внеси в список покупок",
+            "добавь список покупок"
         ],
         "shop-bought": [
             "купил",
@@ -378,6 +381,17 @@
         "enabled": true,
         "allowed_device": "soundcore H30i",
         "poll_s": 1.0
+    },
+    "mic": {
+        "headphone_device": "soundcore H30i",
+        "laptop_device": "realtek",
+        "headset_mic": false,
+        "poll_s": 2.0
+    },
+    "monitor": {
+        "enabled": true,
+        "port": 8766,
+        "auto_open": true
     },
     "intent": {
         "enabled": true,

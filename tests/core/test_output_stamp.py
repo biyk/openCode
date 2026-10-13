@@ -8,8 +8,18 @@ import sys
 from datetime import datetime
 from io import StringIO
 
+import pytest
+
 from lib.core import output as output_module
+from lib.core import timing
 from lib.core.output import TimestampedStream, stamp_stdio
+
+
+@pytest.fixture(autouse=True)
+def _tracing_off():
+    """stamp_stdio(detail=True) включает трассировку — гасим её после теста."""
+    yield
+    timing.disable()
 
 
 def _fixed_clock(monkeypatch):
@@ -138,3 +148,22 @@ class TestStampStdio:
         buf = StringIO()
         monkeypatch.setattr(sys, "stdout", buf)
         assert not isinstance(sys.stdout, TimestampedStream)
+
+    def test_detail_turns_on_tracing(self, monkeypatch):
+        """Дочерний CLI попутно включает засечки: ему нужно объяснить паузу."""
+        calls = []
+        monkeypatch.setattr(output_module.timing, "enable",
+                            lambda: calls.append(1))
+        monkeypatch.setattr(sys, "stdout", StringIO())
+        stamp_stdio()
+        assert calls == [1]
+
+    def test_detail_false_keeps_tracing_off(self, monkeypatch):
+        """Голосовой цикл живёт часами — трассировка ему только мешает."""
+        calls = []
+        monkeypatch.setattr(output_module.timing, "enable",
+                            lambda: calls.append(1))
+        monkeypatch.setattr(sys, "stdout", StringIO())
+        stamp_stdio(detail=False)
+        assert calls == []
+        assert isinstance(sys.stdout, TimestampedStream)

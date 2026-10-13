@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core import timing
 from lib.core.errors import INFO, swallowed
 from lib.google.google_calendar_mutate import GoogleCalendarMutateMixin
 
@@ -50,8 +51,8 @@ class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
                 ],
             },
         }
-        result = self._calendar_service.events().insert(
-            calendarId=self._calendar_id, body=body).execute()
+        result = timing.execute(self._calendar_service.events().insert(
+            calendarId=self._calendar_id, body=body), "gcal events.insert")
         return str(result["id"])
 
     def pending_events(self, limit: int = 50) -> list[dict]:
@@ -144,8 +145,8 @@ class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
         }
         if time_max:
             kwargs["timeMax"] = time_max
-        events = self._calendar_service.events().list(**kwargs) \
-            .execute().get("items", [])
+        listed = self._calendar_service.events().list(**kwargs)
+        events = timing.execute(listed, "gcal events.list").get("items", [])
         result = []
         for ev in events:
             start = (ev.get("start") or {}).get(
@@ -169,8 +170,8 @@ class GoogleCalendarEventsMixin(GoogleCalendarMutateMixin):
         """
         self._ensure_ready()
         try:
-            ev = self._calendar_service.events().get(
-                calendarId=self._calendar_id, eventId=event_id).execute()
+            ev = timing.execute(self._calendar_service.events().get(
+                calendarId=self._calendar_id, eventId=event_id), "gcal get")
         except Exception as e:
             # 404 (нет такого события) — штатный ответ проверок «существует»,
             # поэтому INFO, а не WARNING.

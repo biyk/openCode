@@ -23,6 +23,7 @@ from typing import Any, Callable, Optional
 
 from lib.scheduling.cron_jobs import CronJob, JobRunner
 from lib.scheduling.cron_parse import parse_cron
+from lib.monitor import registry
 
 TICK_INTERVAL = 1.0
 
@@ -132,10 +133,15 @@ class CronScheduler:
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
+            registry.report("cron", "Крон (расписания)", registry.WORKING)
             try:
                 self.tick()
             except Exception as error:
                 self._print(f"[cron] ошибка цикла: {error}")
+            with self._active_lock:
+                running = len(self._active)
+            registry.report("cron", "Крон (расписания)", registry.IDLE,
+                            f"заданий: {len(self._jobs)}, в работе: {running}")
             self._stop_event.wait(TICK_INTERVAL)
 
     # ---------- Проверка и запуск заданий ----------

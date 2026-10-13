@@ -58,6 +58,36 @@ class TestAsk:
         assert orch.pending_ask == "two"
         first.assert_not_called()
 
+    def test_expiry_recalls_the_chat_question(self, mocker):
+        """Просрочка зовёт on_expire: реплика вопроса с кнопками уходит из чата."""
+        orch = _make(mocker)
+        recall = mocker.MagicMock()
+        orch.ask("Первый", mocker.MagicMock(), "one", on_expire=recall)
+        orch._pending_ask.deadline = time.monotonic() - 1
+        orch.ask("Второй", mocker.MagicMock(), "two")
+        recall.assert_called_once_with()
+
+    def test_stale_answer_also_recalls(self, mocker):
+        """Строка пришла поздно — ответ не принят и вопрос в чате снят."""
+        orch = _make(mocker)
+        recall = mocker.MagicMock()
+        answer = mocker.MagicMock()
+        orch.ask("Вопрос?", answer, "one", on_expire=recall)
+        orch._pending_ask.deadline = time.monotonic() - 1
+        assert orch._take_ask_answer("уборка") is False
+        recall.assert_called_once_with()
+        answer.assert_not_called()
+
+    def test_recall_failure_still_frees_the_question(self, mocker):
+        """Сбой снятия из чата не должен оставлять вопрос висеть."""
+        mocker.patch("lib.core.orchestrator_ask.swallowed")
+        orch = _make(mocker)
+        recall = mocker.MagicMock(side_effect=RuntimeError("telegram down"))
+        orch.ask("Первый", mocker.MagicMock(), "one", on_expire=recall)
+        orch._pending_ask.deadline = time.monotonic() - 1
+        assert orch.ask("Второй", mocker.MagicMock(), "two") is True
+        assert orch.pending_ask == "two"
+
 
 class TestAnswerInterception:
     """Следующая строка после вопроса — ответ, а не команда."""

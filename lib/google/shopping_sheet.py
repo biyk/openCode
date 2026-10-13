@@ -12,6 +12,7 @@
 import re
 from typing import Any, Optional
 
+from lib.core import timing
 from lib.google_calendar import GoogleCalendar
 
 SPREADSHEET_ID = "1GPiQPzUWRZ0G23OlSCTIVt266TZh_AcGM1B0F7W71jo"
@@ -56,7 +57,8 @@ class ShoppingSheet:
         if self._service is None:
             import googleapiclient.discovery
             creds = self._gcal._load_or_get_credentials()
-            self._service = googleapiclient.discovery.build(
+            self._service = timing.measure(
+                "sheets build", googleapiclient.discovery.build,
                 "sheets", "v4", credentials=creds)
         return self._service
 
@@ -64,10 +66,10 @@ class ShoppingSheet:
 
     def rows(self) -> list[list[Any]]:
         """Строки A:B ниже шапки КАК В ЛИСТЕ (пустые тоже) — ради номеров."""
-        resp = self._ensure_service().spreadsheets().values().get(
+        resp = timing.execute(self._ensure_service().spreadsheets().values().get(
             spreadsheetId=self._spreadsheet_id,
             range=self._rng(f"A{FIRST_DATA_ROW}:B"),
-            valueRenderOption="UNFORMATTED_VALUE").execute()
+            valueRenderOption="UNFORMATTED_VALUE"), "sheets rows")
         return resp.get("values") or []
 
     def items(self) -> list[dict]:
@@ -82,23 +84,23 @@ class ShoppingSheet:
 
     def ensure_header(self) -> None:
         """Пишет шапку A1:B1, если лист пуст (иначе первая строка — товар)."""
-        resp = self._ensure_service().spreadsheets().values().get(
+        resp = timing.execute(self._ensure_service().spreadsheets().values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=self._rng("A1:B1")).execute()
+            range=self._rng("A1:B1")), "sheets header get")
         first = (resp.get("values") or [[]])[0]
         if first and str(first[0]).strip():
             return
-        self._ensure_service().spreadsheets().values().update(
+        timing.execute(self._ensure_service().spreadsheets().values().update(
             spreadsheetId=self._spreadsheet_id,
             range=self._rng("A1:B1"), valueInputOption="RAW",
-            body={"values": [list(HEADER)]}).execute()
+            body={"values": [list(HEADER)]}), "sheets header write")
 
     def append_item(self, name: str, stamp: str) -> Optional[int]:
         """Одна строка A:B в конец списка; возвращает номер новой строки."""
-        resp = self._ensure_service().spreadsheets().values().append(
+        resp = timing.execute(self._ensure_service().spreadsheets().values().append(
             spreadsheetId=self._spreadsheet_id, range=self._rng("A:B"),
             valueInputOption="RAW", insertDataOption="INSERT_ROWS",
-            body={"values": [[name, stamp]]}).execute()
+            body={"values": [[name, stamp]]}), "sheets append item")
         return _row_from_range((resp.get("updates") or {})
                                .get("updatedRange"))
 
@@ -109,11 +111,11 @@ class ShoppingSheet:
         A1-номера: для строки 2 это [1, 2). Ошибка на единицу молча
         сдвигает удаление на строку вниз (проверено на живой таблице).
         """
-        self._ensure_service().spreadsheets().batchUpdate(
+        timing.execute(self._ensure_service().spreadsheets().batchUpdate(
             spreadsheetId=self._spreadsheet_id,
             body={"requests": [{"deleteDimension": {"range": {
                 "sheetId": self._sheet_id,
                 "dimension": "ROWS",
                 "startIndex": row_idx - 1,
                 "endIndex": row_idx,
-            }}}]}).execute()
+            }}}]}), "sheets delete row")

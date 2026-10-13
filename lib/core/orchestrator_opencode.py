@@ -4,6 +4,8 @@ import queue
 import threading
 import time
 
+from lib.monitor import registry
+
 
 class OrchestratorOpencodeMixin:
     """Миксин Orchestrator: очередь и воркер фоновых запросов opencode."""
@@ -46,9 +48,13 @@ class OrchestratorOpencodeMixin:
     def _opencode_worker_loop(self) -> None:
         """Фоновый воркер: обрабатывает запросы из очереди."""
         while True:
+            registry.report("opencode", "Opencode-фолбэк", registry.IDLE,
+                            "очередь пуста")
             text, raw, reply = self._opencode_queue.get()
             started = time.monotonic()
             try:
+                registry.report("opencode", "Opencode-фолбэк",
+                                registry.WORKING)
                 self._opencode_active = True
                 label = " (dev)" if raw else ""
                 self._output.print_info(

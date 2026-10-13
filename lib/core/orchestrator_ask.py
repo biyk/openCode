@@ -6,7 +6,9 @@
 перехватывается ДО уровня commands.json и отдаётся колбэку вопроса. Живёт
 ответ TASK_ANSWER_TIMEOUT_S секунд: просроченный вопрос снимается, и строка
 идёт в общий пайплайн как обычно (иначе ассистент ловил бы «ответ» к
-вопросу, заданному полчаса назад).
+вопросу, заданному полчаса назад). Снятие вопроса зовёт `on_expire` — так
+его копия с кнопками убирается из Telegram, пока пользователь не ответил на
+уже мёртвый вопрос (§4.7).
 """
 
 import time
@@ -25,6 +27,8 @@ class PendingAsk:
     label: str
     on_answer: Callable[[str], None]
     deadline: float
+    # Что сделать, когда вопрос умер без ответа (снять реплику из чата).
+    on_expire: Optional[Callable[[], None]] = None
 
 
 class OrchestratorAskMixin:
@@ -39,12 +43,14 @@ class OrchestratorAskMixin:
 
     def ask(self, question: str, on_answer: Callable[[str], None],
             label: str = "ask",
-            timeout_s: float = TASK_ANSWER_TIMEOUT_S) -> bool:
+            timeout_s: float = TASK_ANSWER_TIMEOUT_S,
+            on_expire: Optional[Callable[[], None]] = None) -> bool:
         """Озвучивает вопрос и ждёт ответ следующей строкой.
 
         True — вопрос задан. False — уже есть незакрытый вопрос или идёт
         озвучка: вопросы друг на друга не накладываем, проверка попробует
-        снова в следующий цикл.
+        снова в следующий цикл. `on_expire` зовётся, если ответ так и не
+        пришёл (вопрос просрочен) — у чата есть шанс убрать свой вопрос.
         """
         self._drop_expired_ask()
         if self._pending_ask is not None or self._speaking:
@@ -53,7 +59,7 @@ class OrchestratorAskMixin:
             return False
         self._pending_ask = PendingAsk(
             question=question, label=label, on_answer=on_answer,
-            deadline=time.monotonic() + timeout_s)
+            deadline=time.monotonic() + timeout_s, on_expire=on_expire)
         self._output.print_info(f"[Ask] Вопрос ({label}): «{question}»")
         self._say(question)
         return True
@@ -79,6 +85,20 @@ class OrchestratorAskMixin:
             self._output.print_info(
                 f"[Ask] Вопрос «{pending.label}» остался без ответа — снимаю")
             self._pending_ask = None
+            self._expire_ask(pending)
+
+    def _expire_ask(self, pending: PendingAsk) -> None:
+        """Зовёт on_expire вопроса (снять его реплику из Telegram-чата).
+
+        Сбой колбэка не должен мешать снять вопрос: его уже убрали из
+        ожидаемых, поэтому исключение только логируется.
+        """
+        if pending.on_expire is None:
+            return
+        try:
+            pending.on_expire()
+        except Exception as error:                # снятие не роняет цикл STT
+            swallowed("ask.on_expire", error)
 
     def _has_stop_word(self, text: str) -> bool:
         """Есть ли в строке стоп-слово (озвучку оно уже не прервёт)."""
@@ -93,6 +113,7 @@ class OrchestratorAskMixin:
         if time.monotonic() >= pending.deadline:
             self._output.print_info(
                 f"[Ask] Вопрос «{pending.label}» устарел — строка в пайплайн")
+            self._expire_ask(pending)
             return False
         if self._has_stop_word(text):
             self._output.print_info(

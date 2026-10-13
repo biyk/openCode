@@ -7,13 +7,10 @@
 устройства в `record_gate.allowed_device`.
 
 Своя озвучка — такой же звук с колонок: наслушавшись себя, ассистент делает
-команды из обрывков собственных фраз. Поэтому TTS пушем сообщает шлюзу о начале
-и конце воспроизведения (`RecordGate.voice`), а скидка по именам процессов-
-плееров по умолчанию выключена.
-
-Опрос живёт в daemon-потоке (как task_monitor): колбэк sounddevice — поток
-реального времени, COM-вызовы туда пускать нельзя, он только читает готовый
-флаг `blocked`.
+команды из обрывков собственных фраз, поэтому TTS пушем сообщает о начале и
+конце воспроизведения (`RecordGate.voice`), а скидка по процессам-плеерам по
+умолчанию выключена. Опрос — в daemon-потоке (как task_monitor): в real-time
+колбэк sounddevice COM-вызовы пускать нельзя, он только читает `blocked`.
 """
 import threading
 import time
@@ -23,6 +20,7 @@ from lib.core.errors import swallowed
 from lib.core.tuning import (RECORD_GATE_ALLOWED_DEVICE,
                              RECORD_GATE_IGNORED_PROCESSES, RECORD_GATE_MIN_PEAK,
                              RECORD_GATE_POLL_S, RECORD_GATE_VOICE_TAIL_S)
+from lib.monitor import registry
 from lib.runtime.audio_devices import (active_session_processes,
                                        default_device_name)
 from lib.runtime.win_com import co_initialize
@@ -33,8 +31,7 @@ def media_is_playing(ignored: tuple[str, ...],
     """True, если на устройстве сейчас слышен звук не из списка `ignored`.
 
     Скидки по умолчанию пустые: голос ассистента — тоже звук с колонок, а
-    считать его «не медиа» означало слушать самому себя. Список остаётся
-    ручкой на случай, когда какой-то источник нужно разрешить.
+    считать его «не медиа» означало слушать самому себя.
     """
     return any(p not in ignored
                for p in active_session_processes(min_peak))
@@ -58,8 +55,7 @@ class RecordGate:
         self._thread: Optional[threading.Thread] = None
         self._blocked = False
         self._changed = False
-        # Состояние: опрос в своём потоке + пуш из потока озвучки.
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()   # состояние: опрос + пуш из озвучки
         self._loud = False         # устройство «не наушники» (кэш последнего tick)
         self._media = False        # на нём что-то играет (кэш того же tick)
         self._voice = 0            # сколько наших плееров звучит сейчас
@@ -95,7 +91,12 @@ class RecordGate:
 
     def _loop(self) -> None:
         co_initialize()
-        while not self._stop.wait(self._poll_s):
+        while not self._stop.is_set():
+            registry.report("record_gate", "Шлюз микрофона", registry.IDLE,
+                            "заглушён" if self._blocked else "открыт")
+            if self._stop.wait(self._poll_s):
+                break
+            registry.report("record_gate", "Шлюз микрофона", registry.WORKING)
             try:
                 self.tick()
             except Exception as error:                # цикл не должен умирать
@@ -106,8 +107,8 @@ class RecordGate:
     def tick(self) -> bool:
         """Опрашивает устройство и медиа; возвращает актуальный `blocked`.
 
-        Сбой любого запроса — открываем запись (fail-open): ассистент,
-        оглохший из-за сломанной проверки, хуже, чем оглохший из-за музыки.
+        Сбой любого запроса — открываем запись (fail-open): оглохший из-за
+        сломанной проверки ассистент хуже оглохшего из-за музыки.
         """
         try:
             name = self._device_name()
@@ -129,8 +130,8 @@ class RecordGate:
     def voice(self, active: bool) -> None:
         """Пуш из TTS: наша озвучка началась/закончилась (без COM, из её потока).
 
-        Шлюз закрывается в момент, когда плеер реально заиграл: при опросе раз
-        в секунду начало фразы уходило бы в распознаватель. Хвост
+        Шлюз закрывается в момент, когда плеер реально заиграл (опрос раз в
+        секунду пропускал бы начало фразы в распознаватель); хвост
         `voice_tail_s` не даёт шлюзу щёлкнуть между блоками одной фразы.
         """
         with self._lock:
@@ -174,9 +175,9 @@ def build_record_gate(matcher: Any, output: Any,
     устройства), poll_s, min_peak (ниже какого порога пик-метра сессия тишина),
     voice_tail_s (хвост после нашей озвучки), ignored_processes (чей звук не
     считать медиа); чего нет — берём из lib.core.tuning. None — секция
-    выключена. `voice` (TextToSpeech) подписывается на переключения шлюза:
-    своя озвучка глохнет мгновенно, без лага опроса.
-    Поток опросов запускает владелец цикла захвата (worker.run).
+    выключена. `voice` (TextToSpeech) подписывается на переключения шлюза, чтобы
+    своя озвучка глохла мгновенно, без лага опроса; поток запускает владелец
+    цикла захвата (worker.run).
     """
     config = matcher.get_record_gate_config()
     if not config.get("enabled"):
@@ -185,9 +186,8 @@ def build_record_gate(matcher: Any, output: Any,
     poll_s = float(config.get("poll_s", RECORD_GATE_POLL_S))
     min_peak = float(config.get("min_peak", RECORD_GATE_MIN_PEAK))
     tail_s = float(config.get("voice_tail_s", RECORD_GATE_VOICE_TAIL_S))
-    ignored = tuple(str(p).lower() for p in
-                    config.get("ignored_processes",
-                               RECORD_GATE_IGNORED_PROCESSES))
+    ignored = tuple(str(p).lower() for p in config.get(
+        "ignored_processes", RECORD_GATE_IGNORED_PROCESSES))
     output.print_info(
         f"[RecordGate] Микрофон глохнет при звуке вне «{allowed}» "
         f"(опрос {poll_s:.1f} с)")

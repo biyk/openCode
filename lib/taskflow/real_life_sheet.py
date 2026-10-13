@@ -12,6 +12,7 @@ hero_money. Формулы и порядок операций — в lib/taskflo
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+from lib.core import timing
 from lib.google_calendar import GoogleCalendar
 from lib.google.google_calendar_mutate import DONE_COLOR
 from lib.taskflow.cells import as_float, as_int
@@ -60,15 +61,16 @@ class RealLifeSheet:
         if self._service is None:
             import googleapiclient.discovery
             creds = self._gcal._load_or_get_credentials()
-            self._service = googleapiclient.discovery.build(
+            self._service = timing.measure(
+                "sheets build", googleapiclient.discovery.build,
                 "sheets", "v4", credentials=creds)
         return self._service
 
     def _get(self, rng: str) -> list[list[Any]]:
         """Чтение диапазона без форматирования (типы ячеек как в таблице)."""
-        resp = self._ensure_service().spreadsheets().values().get(
+        resp = timing.execute(self._ensure_service().spreadsheets().values().get(
             spreadsheetId=self._spreadsheet_id, range=rng,
-            valueRenderOption="UNFORMATTED_VALUE").execute()
+            valueRenderOption="UNFORMATTED_VALUE"), "sheets get " + rng)
         return resp.get("values") or []
 
     # ---------- real_life_tasks ----------
@@ -84,11 +86,11 @@ class RealLifeSheet:
 
     def write_task_row(self, row_idx: int, values: list[Any]) -> None:
         """Один RAW-update строки A:T (колонку B вызывающий не меняет)."""
-        self._ensure_service().spreadsheets().values().update(
+        timing.execute(self._ensure_service().spreadsheets().values().update(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SHEET_TASKS}!A{row_idx}:T{row_idx}",
             valueInputOption="RAW",
-            body={"values": [_pad(values)]}).execute()
+            body={"values": [_pad(values)]}), "sheets write row")
 
     def find_running_task(self) -> Optional[dict]:
         """Первая запущенная задача (start_date != 0): row/uuid/title либо None.
@@ -169,11 +171,11 @@ class RealLifeSheet:
 
     def append_execution(self, cells: list[Any]) -> None:
         """Одна строка журнала (порядок A..G, как пишет JS-клиент)."""
-        self._ensure_service().spreadsheets().values().append(
+        timing.execute(self._ensure_service().spreadsheets().values().append(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SHEET_EXECUTIONS}!A:G",
             valueInputOption="RAW",
-            body={"values": [cells]}).execute()
+            body={"values": [cells]}), "sheets append execution")
 
     def add_hero_money(self, delta: float) -> None:
         """hero_money += delta; нет строки — добавляем её, как JS."""
@@ -181,12 +183,13 @@ class RealLifeSheet:
         for idx, row in enumerate(rows[1:], start=2):
             if row and str(row[0]).strip() == HERO_MONEY_CODE:
                 old = as_float(row[1] if len(row) > 1 else 0)
-                self._ensure_service().spreadsheets().values().update(
-                    spreadsheetId=self._spreadsheet_id,
-                    range=f"{SHEET_HERO}!B{idx}", valueInputOption="RAW",
-                    body={"values": [[old + delta]]}).execute()
+                timing.execute(
+                    self._ensure_service().spreadsheets().values().update(
+                        spreadsheetId=self._spreadsheet_id,
+                        range=f"{SHEET_HERO}!B{idx}", valueInputOption="RAW",
+                        body={"values": [[old + delta]]}), "sheets hero update")
                 return
-        self._ensure_service().spreadsheets().values().append(
+        timing.execute(self._ensure_service().spreadsheets().values().append(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SHEET_HERO}!A:B", valueInputOption="RAW",
-            body={"values": [[HERO_MONEY_CODE, delta]]}).execute()
+            body={"values": [[HERO_MONEY_CODE, delta]]}), "sheets hero append")

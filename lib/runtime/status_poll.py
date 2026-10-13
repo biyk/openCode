@@ -5,6 +5,8 @@ import sys
 import threading
 import time
 
+from lib.monitor import registry
+
 
 class StatusPollMixin:
     """Миксин StatusStore: daemon-поток опроса и заголовок консоли."""
@@ -64,6 +66,7 @@ class StatusPollMixin:
     def _loop(self) -> None:
         """Цикл опроса: проверяет просроченные статусы раз в секунду."""
         while not self._stop_event.is_set():
+            registry.report("status_poll", "Опрос статусов", registry.WORKING)
             cycle_start = time.monotonic()
             try:
                 self.reload()
@@ -74,5 +77,7 @@ class StatusPollMixin:
                         self.refresh(name)
             except Exception:
                 pass
+            registry.report("status_poll", "Опрос статусов", registry.IDLE,
+                            f"статусов: {len(self._defs)}")
             elapsed = time.monotonic() - cycle_start
             self._stop_event.wait(max(0.0, 1.0 - elapsed))

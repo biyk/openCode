@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from lib.core import timing
 from lib.core.errors import swallowed
 
 # Цвет «галочки» выполнения того же JS-приложения (done.md §0).
@@ -36,11 +37,13 @@ class GoogleCalendarMutateMixin:
         try:
             events = self._calendar_service.events()
             if event_id:
-                ev = events.update(calendarId=self._calendar_id,
-                                   eventId=event_id, body=body).execute()
+                ev = timing.execute(events.update(
+                    calendarId=self._calendar_id, eventId=event_id,
+                    body=body), "gcal events.update")
             else:
-                ev = events.insert(calendarId=self._calendar_id,
-                                   body=body).execute()
+                ev = timing.execute(events.insert(
+                    calendarId=self._calendar_id,
+                    body=body), "gcal events.insert")
         except Exception as e:
             return swallowed("gcal.put_done_event", e, "")
         return str(ev.get("id", ""))
@@ -54,8 +57,8 @@ class GoogleCalendarMutateMixin:
         """
         self._ensure_ready()
         try:
-            ev = self._calendar_service.events().get(
-                calendarId=self._calendar_id, eventId=event_id).execute()
+            ev = timing.execute(self._calendar_service.events().get(
+                calendarId=self._calendar_id, eventId=event_id), "gcal get")
         except Exception as e:
             return swallowed("gcal.update_bound.get", e, False)
         span = ev.get(field) or {}
@@ -87,9 +90,9 @@ class GoogleCalendarMutateMixin:
         """events().patch одним полем; False и лог при сбое запроса."""
         self._ensure_ready()
         try:
-            self._calendar_service.events().patch(
+            timing.execute(self._calendar_service.events().patch(
                 calendarId=self._calendar_id, eventId=event_id,
-                body=body).execute()
+                body=body), "gcal patch")
         except Exception as e:
             return swallowed(ctx, e, False)
         return True
@@ -116,8 +119,8 @@ class GoogleCalendarMutateMixin:
         """Удаляет событие по id. True — если запрос прошёл."""
         self._ensure_ready()
         try:
-            self._calendar_service.events().delete(
-                calendarId=self._calendar_id, eventId=event_id).execute()
+            timing.execute(self._calendar_service.events().delete(
+                calendarId=self._calendar_id, eventId=event_id), "gcal delete")
             return True
         except Exception as e:
             return swallowed("gcal.delete_event", e, False)
@@ -141,9 +144,9 @@ class GoogleCalendarMutateMixin:
             "end": {"dateTime": new_end.isoformat()},
         }
         try:
-            self._calendar_service.events().patch(
+            timing.execute(self._calendar_service.events().patch(
                 calendarId=self._calendar_id, eventId=event_id,
-                body=body).execute()
+                body=body), "gcal move_event")
         except Exception as e:
             return swallowed("gcal.move_event.patch", e, False)
         return True
@@ -171,8 +174,8 @@ class GoogleCalendarMutateMixin:
         if color_id:
             body["colorId"] = str(color_id)
         try:
-            ev = self._calendar_service.events().insert(
-                calendarId=self._calendar_id, body=body).execute()
+            ev = timing.execute(self._calendar_service.events().insert(
+                calendarId=self._calendar_id, body=body), "gcal insert")
         except Exception as e:
             return swallowed("gcal.create_task_event", e, "")
         return str(ev.get("id", ""))

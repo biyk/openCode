@@ -1,4 +1,4 @@
-"""тесты offer-ветки idle в task_monitor: кнопки в Telegram + откат к notify."""
+"""тесты offer-ветки idle в task_monitor: кнопки в Telegram и канал notify."""
 
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
@@ -54,14 +54,25 @@ class TestIdleOfferPath:
         offer.assert_called_once_with(QUESTION_IDLE, ["А", "Б"])
         notify.assert_not_called()
 
-    def test_no_events_falls_back_to_plain_notify(self, mocker):
-        """Без календаря (gcal=None) — откат: вопрос + текст в чат, без кнопок."""
+    def test_no_events_still_uses_the_offer_channel(self, mocker):
+        """Без календаря (gcal=None) канал тот же: offer с пустым списком кнопок.
+
+        Текстом вопрос шлёт сам TaskOffers.offer — монитор не выбирает канал
+        вручную: два пути в чат это расхождение в формулировке вопроса.
+        """
         offer = mocker.MagicMock()
         notify = mocker.MagicMock()
         monitor, ask = _monitor(mocker, None, offer=offer, notify=notify)
         assert monitor.tick() == "idle"
         assert ask.call_args.args[0] == QUESTION_IDLE
-        offer.assert_not_called()
+        offer.assert_called_once_with(QUESTION_IDLE, [])
+        notify.assert_not_called()
+
+    def test_without_offer_notify_is_the_channel(self, mocker):
+        """Telegram выключен (offer=None) — вопрос только голосом + notify."""
+        notify = mocker.MagicMock()
+        monitor, ask = _monitor(mocker, None, offer=None, notify=notify)
+        assert monitor.tick() == "idle"
         notify.assert_called_once_with(QUESTION_IDLE)
 
     def test_events_read_error_degrades_to_fallback(self, mocker):

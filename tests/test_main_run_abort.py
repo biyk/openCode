@@ -21,6 +21,8 @@ class TestTranscriptionWorkerRunAbort:
         worker._matcher = mocker.MagicMock()
         worker._llm = mocker.MagicMock()
         worker._tts = mocker.MagicMock()
+        worker._mic = mocker.MagicMock()
+        worker._mic.follow.return_value = False
         worker._orchestrator = mocker.MagicMock()
         worker._orchestrator.speaking = False
         return worker
@@ -44,7 +46,7 @@ class TestTranscriptionWorkerRunAbort:
 
         mocker.patch("lib.stt.transcription_worker.KaldiRecognizer", side_effect=_make_recognizer)
         mocker.patch(
-            "lib.stt.transcription_worker.sd.RawInputStream",
+            "lib.stt.mic_stream.sd.RawInputStream",
             return_value=mocker.MagicMock())
         return main_recognizer
 

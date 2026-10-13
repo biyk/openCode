@@ -21,6 +21,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from lib.core import timing
 from lib.core.errors import swallowed
 from lib.google.google_calendar_events import GoogleCalendarEventsMixin, GoogleOAuthError
 
@@ -126,7 +127,8 @@ class GoogleCalendar(GoogleCalendarEventsMixin):
 
     def _build_services(self, creds: Credentials) -> None:
         import googleapiclient.discovery
-        self._calendar_service = googleapiclient.discovery.build(
+        self._calendar_service = timing.measure(
+            "calendar build", googleapiclient.discovery.build,
             "calendar", "v3", credentials=creds)
 
     # ---------- Служебное ----------

@@ -2,8 +2,10 @@ import json
 import os
 import platform
 import subprocess
+import time
 from typing import Optional
 
+from lib.core import timing
 from lib.voice_cmd.command_stats import CommandStats, stats_path_for
 from lib.voice_cmd.commands_config import CommandConfigMixin
 from lib.voice_cmd.commands_match import CommandMatchMixin
@@ -155,7 +157,7 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         command = self._get_command(cmd_id, settings)
         if not command:
             return False
-        if not self._run(command):
+        if not self._run(command, cmd_id):
             return False
         self._mark_provides(cmd_id)
         self._stats.bump(cmd_id)   # любая реально исполненная команда
@@ -179,8 +181,13 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         for name in self.provides_for(cmd_id):
             self._status_store.set(name, True)
 
-    def _run(self, command: str) -> bool:
-        """Запускает shell-команду и возвращает успех."""
+    def _run(self, command: str, cmd_id: str = "") -> bool:
+        """Запускает shell-команду; длительность печатает всегда.
+
+        Дочерний `python -m lib.…` молчит ~12 Google-запросов кряду — без
+        отсечки не видно, кто съел паузу между командой и ответом.
+        """
+        t0 = time.perf_counter()
         try:
             subprocess.run(command, shell=True, check=True)
             if os.environ.get("VOICE_CONFIRMATION_PHRASE"):
@@ -188,3 +195,5 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
             return True
         except subprocess.CalledProcessError:
             return False
+        finally:
+            timing.report(f"команда {cmd_id or command}", time.perf_counter() - t0)

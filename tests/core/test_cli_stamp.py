@@ -67,3 +67,12 @@ class TestCliStamp:
         assert "stamp_stdio()" in block, (
             f"{module} печатает в консоль без метки времени: "
             "в __main__ нужен вызов stamp_stdio() (lib/core/output.py)")
+
+    def test_main_process_stamps_quietly(self):
+        """Долго живущий процесс метки ставит, трассировку — нет.
+
+        Иначе на каждой команде и проверке статусов консоль тонет в
+        строках [Timing] (подробность нужна дочерним процессам).
+        """
+        source = (REPO_ROOT / "main.py").read_text(encoding="utf-8")
+        assert "stamp_stdio(detail=False)" in source

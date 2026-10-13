@@ -75,6 +75,9 @@ class TestSttToCommandIntegration:
         worker._tts = mocker.MagicMock()
         worker._orchestrator = Orchestrator(
             matcher=matcher, output=worker._output, tts=worker._tts)
+        # Смену микрофона здесь не проверяем (она в test_worker_mic_switch.py).
+        worker._mic = mocker.MagicMock()
+        worker._mic.follow.return_value = False
         return worker
 
     def _patch_env(self, mocker):
@@ -86,7 +89,7 @@ class TestSttToCommandIntegration:
                      return_value="model")
         mocker.patch.object(worker_mod, "Model")
         mocker.patch.object(worker_mod, "KaldiRecognizer")
-        mocker.patch("lib.stt.transcription_worker.sd.RawInputStream",
+        mocker.patch("lib.stt.mic_stream.sd.RawInputStream",
                      return_value=mocker.MagicMock())
         run = mocker.patch("lib.voice_cmd.commands.subprocess.run",
                            return_value=mocker.MagicMock())

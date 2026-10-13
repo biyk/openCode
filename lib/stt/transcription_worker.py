@@ -17,10 +17,11 @@ from lib.core.output import TranscriptionOutput
 from lib.providers.manager import ProviderManager
 from lib.runtime.record_gate import build_record_gate
 from lib.runtime.status import StatusStore
+from lib.monitor import registry
 from lib.tts import TextToSpeech
 from lib.stt import vosk_model as _vm
 from lib.stt.encoding import fix_encoding as _fix_encoding
-import sounddevice as sd
+from lib.stt.mic_stream import MicWatcher, build_mic_watcher
 
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
@@ -33,17 +34,6 @@ BLOCKSIZE = 2048         # Размер блока аудио
 AUDIO_SUPPRESS_AFTER_TTS = 0.5
 # Слова, которые прерывают озвучку
 STOP_WORDS = frozenset(("стоп", "останови", "stop", "хватит", "прекрати"))
-
-
-def _pick_mic_device(allowed_token: str):
-    """Микрофон по токену наушников: вход с тем же токеном в имени или дефолт."""
-    target = (allowed_token or "").strip().casefold()
-    if not target:
-        return None
-    for i, d in enumerate(sd.query_devices()):
-        if d.get("max_input_channels") and target in d["name"].casefold():
-            return i
-    return None
 
 
 class TranscriptionWorker:
@@ -66,6 +56,9 @@ class TranscriptionWorker:
             output=self._output,
         )
         self._status.start()
+        if not self._status.enabled:
+            registry.report("status_poll", "Опрос статусов", registry.DISABLED,
+                            "нет status.json / пустой")
         self._matcher = CommandMatcher(commands_file, status_store=self._status)
         self._logger = Logger()
 
@@ -101,6 +94,12 @@ class TranscriptionWorker:
         # Шлюз захвата: своя озвучка — медиа, TTS докладывает шлюзу (§4.6).
         self._gate = build_record_gate(self._matcher, self._output,
                                        voice=self._tts)
+        if self._gate is None:
+            registry.report("record_gate", "Шлюз микрофона", registry.DISABLED,
+                            "секция record_gate выключена")
+        # Микрофон следует за наушниками: их вход, иначе — вход ноутбука (§4.11).
+        self._mic: MicWatcher = build_mic_watcher(
+            self._matcher, gate=self._gate, output=self._output)
 
     def audio_callback(self, indata, frames, time_info, status):
         """Пишет аудио в очередь (шлюз записи может глушить захват)."""
@@ -120,58 +119,64 @@ class TranscriptionWorker:
             recognizer.SetWords(True)
             stop_recognizer = KaldiRecognizer(
                 model, DEFAULT_SR, json.dumps(sorted(STOP_WORDS)))
-            mic_device = _pick_mic_device(
-                self._gate.allowed if self._gate else "")
-            with sd.RawInputStream(samplerate=DEFAULT_SR, blocksize=BLOCKSIZE,
-                                   dtype="int16", channels=1,
-                                   callback=self.audio_callback,
-                                   device=mic_device):
-                while self._running.is_set():
-                    try:
-                        data = self._queue.get(timeout=0.2)
-                    except queue.Empty:
-                        continue
-                    if self._gate is not None and self._gate.take_change():
-                        recognizer.Reset()
-                    if recognizer.AcceptWaveform(data):
-                        res = json.loads(recognizer.Result())
-                        text = _fix_encoding(res.get("text", "")).strip()
-                        if text:
-                            self._logger.log_command(text)
-                            self._accumulated.append(text)
-                            self._process_text(text)
-                    else:
-                        # Частичные результаты: стоп-слово ловим не дожидаясь
-                        # финала (буфер забит эхом озвучки).
-                        partial = json.loads(
-                            recognizer.PartialResult()).get("partial", "").strip()
-                        if partial:
-                            partial = _fix_encoding(partial)
-                            if partial and self._orchestrator.maybe_abort(partial):
-                                recognizer.Reset()
+            self._mic.open(self.audio_callback, DEFAULT_SR, BLOCKSIZE)
+            while self._running.is_set():
+                registry.report("stt", "Слушалка микрофона", registry.WORKING,
+                                "поток открыт")
+                self._read_block(recognizer, stop_recognizer)
+                if self._mic.follow():
+                    # Смена входа: хвост фразы со старого микрофона не должен
+                    # склеиться с началом речи на новом.
+                    recognizer.Reset()
 
-                    # Точный детектор стоп-слов по грамматике.
-                    if self._orchestrator.speaking:
-                        if stop_recognizer.AcceptWaveform(data):
-                            stop_text = json.loads(
-                                stop_recognizer.Result()).get("text", "").strip()
-                            stop_text = _fix_encoding(stop_text)
-                            if stop_text and self._orchestrator.maybe_abort(stop_text):
-                                recognizer.Reset()
-                                stop_recognizer.Reset()
-
-                # Финальный результат при остановке
-                final = json.loads(recognizer.FinalResult())
-                final_text = _fix_encoding(final.get("text", "")).strip()
-                if final_text:
-                    self._logger.log_command(final_text)
-                    self._accumulated.append(final_text)
-                    self._process_text(final_text)
+            # Финальный результат при остановке
+            final = json.loads(recognizer.FinalResult())
+            final_text = _fix_encoding(final.get("text", "")).strip()
+            if final_text:
+                self._logger.log_command(final_text)
+                self._accumulated.append(final_text)
+                self._process_text(final_text)
 
         except Exception as e:
             self._output.print_error(f"Ошибка STT: {e}")
         finally:
+            self._mic.close()
             self._output.print_stopped()
+
+    def _read_block(self, recognizer, stop_recognizer) -> None:
+        """Один блок аудио: строка команды, частичный результат, стоп-слово."""
+        try:
+            data = self._queue.get(timeout=0.2)
+        except queue.Empty:
+            return
+        if self._gate is not None and self._gate.take_change():
+            recognizer.Reset()
+        if recognizer.AcceptWaveform(data):
+            res = json.loads(recognizer.Result())
+            text = _fix_encoding(res.get("text", "")).strip()
+            if text:
+                self._logger.log_command(text)
+                self._accumulated.append(text)
+                self._process_text(text)
+        else:
+            # Частичные результаты: стоп-слово ловим не дожидаясь
+            # финала (буфер забит эхом озвучки).
+            partial = json.loads(
+                recognizer.PartialResult()).get("partial", "").strip()
+            if partial:
+                partial = _fix_encoding(partial)
+                if partial and self._orchestrator.maybe_abort(partial):
+                    recognizer.Reset()
+
+        # Точный детектор стоп-слов по грамматике.
+        if self._orchestrator.speaking:
+            if stop_recognizer.AcceptWaveform(data):
+                stop_text = json.loads(
+                    stop_recognizer.Result()).get("text", "").strip()
+                stop_text = _fix_encoding(stop_text)
+                if stop_text and self._orchestrator.maybe_abort(stop_text):
+                    recognizer.Reset()
+                    stop_recognizer.Reset()
 
     def _process_text(self, text: str) -> None:
         """Обрабатывает распознанный текст через оркестратор."""

@@ -2,6 +2,7 @@
 import json
 import queue
 
+import lib.stt.mic_stream as mic_mod
 import lib.stt.transcription_worker as worker_mod
 
 
@@ -17,6 +18,10 @@ def make_worker(mocker, gate):
     worker._orchestrator = mocker.MagicMock()
     worker._orchestrator.speaking = False
     worker._gate = gate
+    # Микрофон здесь не проверяем (он в test_worker_mic_switch.py): вход
+    # не меняем, чтобы сброс распознавателя ловил ровно одно событие.
+    worker._mic = mocker.MagicMock()
+    worker._mic.follow.return_value = False
     return worker
 
 
@@ -56,8 +61,8 @@ class TestRunLoopGate:
                      return_value="model")
         mocker.patch.object(worker_mod, "Model")
         mocker.patch.object(worker_mod, "KaldiRecognizer", return_value=rec)
-        mocker.patch.object(worker_mod.sd, "query_devices", return_value=[])
-        return mocker.patch("lib.stt.transcription_worker.sd.RawInputStream",
+        mocker.patch.object(mic_mod.sd, "query_devices", return_value=[])
+        return mocker.patch("lib.stt.mic_stream.sd.RawInputStream",
                             return_value=mocker.MagicMock())
 
     def _make_recognizer(self, mocker):

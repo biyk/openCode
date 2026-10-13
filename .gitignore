@@ -25,3 +25,7 @@ bin/*
 # Статистика использования команд (runtime-данные устройства, не в git)
 command_stats.json
 command_stats.json.tmp
+
+# Heartbeat монитора сервисов (runtime-снимок, не в git)
+services_heartbeat.json
+services_heartbeat.json.tmp

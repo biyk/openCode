@@ -23,6 +23,8 @@ from lib.core.single_instance import AlreadyRunning, acquire  # noqa: E402
 from lib.core.task_finish import make_task_finisher  # noqa: E402
 from lib.core.task_monitor_launch import start_task_monitor  # noqa: E402
 from lib.core.task_pick import make_task_picker  # noqa: E402
+from lib.monitor import registry  # noqa: E402
+from lib.monitor.launch import start_monitor  # noqa: E402
 from lib.stt.text_inputs import TextInputs, submit_manual_text  # noqa: E402
 from lib.stt.transcription_worker import TranscriptionWorker  # noqa: E402
 from lib.telegram.launch import start_telegram  # noqa: E402
@@ -82,20 +84,34 @@ def main():
         worker, output,
         on_pick=make_task_picker(record=worker._matcher.record_use),
         on_finish=make_task_finisher(record=worker._matcher.record_use))
+    if telegram is None:
+        registry.report("telegram", "Telegram-бот", registry.DISABLED,
+                        "секция telegram выключена/не настроена")
 
     # Фоновый контроль таблицы real_life_tasks (секция task_monitor):
     # вопросы вслух, старт задачи по ответу и оповещение о переработке.
+    # recall снимает из чата реплику вопроса, на который не ответили вовремя.
     task_monitor = start_task_monitor(
         worker, output,
         notify=telegram.broadcast if telegram is not None else None,
         offer=telegram.offer if telegram is not None else None,
         finish_markup=(telegram.finish_markup if telegram is not None
-                       else None))
+                       else None),
+        recall=telegram.recall if telegram is not None else None)
+    if task_monitor is None:
+        registry.report("task_monitor", "Монитор задач", registry.DISABLED,
+                        "секция task_monitor выключена")
+
+    # Монитор сервисов (секция monitor): heartbeat + detached-дашборд. Окно
+    # поднимается вместе с основным процессом (auto_open по умолчанию).
+    monitor = start_monitor(worker._matcher, output)
 
     output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "
                       "или писать в Telegram.\n")
     TextInputs(lambda t: submit_manual_text(worker, t), output=output).run()
 
+    if monitor is not None:
+        monitor.stop()
     if telegram is not None:
         telegram.stop()
     if task_monitor is not None:
@@ -111,5 +127,7 @@ if __name__ == "__main__":
     # прямых print() с тегами по всему коду; ставим на весь поток в одном
     # месте (в __main__, чтобы import main не подменял stdout чужому процессу).
     # Дочерние `python -m lib.…` зовут stamp_stdio() сами — у них свой поток.
-    stamp_stdio()
+    # detail=False: голосовой цикл живёт часами, подробная трассировка
+    # Google-запросов (lib/core/timing.py) здесь засорила бы консоль.
+    stamp_stdio(detail=False)
     main()

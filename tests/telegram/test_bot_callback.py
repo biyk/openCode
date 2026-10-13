@@ -62,6 +62,26 @@ class TestFinishMarkup:
         bot._offers.finish_markup.assert_called_once_with("Задача")
 
 
+class TestRecallProxy:
+    """bot.recall — то же, что TaskOffers.recall: снять вопрос из чата."""
+
+    def test_delegates_to_offers(self):
+        bot = _bot()
+        bot._offers = MagicMock()
+        bot._offers.recall.return_value = 2
+        assert bot.recall() == 2
+        bot._offers.recall.assert_called_once_with()
+
+    def test_offer_then_recall_round_trip(self):
+        """Настоящий TaskOffers за ботом: id вопроса помнятся и снимаются."""
+        api = MagicMock()
+        api.send_message.side_effect = [41]
+        bot = TelegramBot(api, _config(), MagicMock())
+        bot.offer("Чем ты сейчас занимаешься?", ["А"])
+        assert bot.recall() == 1
+        assert api.delete_message.call_args.args == (str(CHAT), 41)
+
+
 class TestBroadcastMarkup:
     """reply_markup broadcast'а доезжает только до последней части сообщения."""
 

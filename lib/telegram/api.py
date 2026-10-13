@@ -1,7 +1,7 @@
-# TOOLTIP: Тонкий клиент Bot API Telegram (getUpdates/sendMessage) поверх requests
-"""HTTP-клиент Bot API: long polling обновлений и отправка сообщений.
+# TOOLTIP: Тонкий клиент Bot API Telegram (getUpdates/sendMessage/deleteMessage)
+"""HTTP-клиент Bot API: long polling обновлений, отправка и снятие сообщений.
 
-Только два нужных ассистенту вызова, без сторонних библиотек: async-пакеты
+Нужные ассистенту вызовы, без сторонних библиотек: async-пакеты
 не ложатся в синхронный threading-цикл проекта. Ошибки сети/Telegram
 не валят поток — `swallowed()` пишет их в лог, вызывающий код получает None
 и пробует позже.
@@ -94,11 +94,12 @@ class TelegramApi:
         return [u for u in result if isinstance(u, dict)]
 
     def send_message(self, chat_id: Any, text: str,
-                     reply_markup: Optional[dict] = None) -> bool:
-        """Отправляет текст в чат; True — Telegram принял сообщение.
+                     reply_markup: Optional[dict] = None) -> Optional[int]:
+        """Отправляет текст в чат; message_id — Telegram принял сообщение.
 
         `reply_markup` — inline-клавиатура (кнопки предложения задач); без него
-        — обычное текстовое сообщение.
+        — обычное текстовое сообщение. id возвращаем, потому что по нему
+        сообщение потом убирают из чата (`delete_message`); None — не отправлено.
         """
         params: dict[str, Any] = {
             "chat_id": chat_id,
@@ -108,7 +109,23 @@ class TelegramApi:
         if reply_markup is not None:
             params["reply_markup"] = json.dumps(reply_markup,
                                                 ensure_ascii=False)
-        return self._call("sendMessage", params) is not None
+        result = self._call("sendMessage", params)
+        if not isinstance(result, dict):
+            return None
+        message_id = result.get("message_id")
+        return message_id if isinstance(message_id, int) else None
+
+    def delete_message(self, chat_id: Any, message_id: Any) -> bool:
+        """Убирает сообщение из чата; True — Telegram принял запрос.
+
+        Нужно для просроченного вопроса: реплика с кнопками, висящая в чате,
+        провоцирует ответ там, где его уже никто не ждёт. Без id ничего не
+        делаем; отказ (нет прав/сообщение древнее) — просто False.
+        """
+        if not message_id:
+            return False
+        return self._call("deleteMessage", {
+            "chat_id": chat_id, "message_id": message_id}) is not None
 
     def answer_callback(self, callback_id: Any, text: str = "") -> bool:
         """Снимает «часики» нажатия кнопки; True — Telegram принял ответ.

@@ -3,6 +3,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from lib.core import timing
+
 
 class TimestampedStream:
     """Обёртка stdout/stderr: каждая новая строка печатается с меткой
@@ -38,13 +40,18 @@ class TimestampedStream:
         return getattr(self._stream, name)
 
 
-def stamp_stdio() -> None:
+def stamp_stdio(detail: bool = True) -> None:
     """Метки времени в консоли для дочерних процессов (`python -m lib.…`).
 
     Обёртка из main.py живёт в нашем процессе: у child-процесса свой stdout,
     поэтому его строки ([TTS], итоги задач) выходят без [ЧЧ:ММ:СС]. Ставим
     ту же обёртку в `__main__` каждой CLI-точки входа. Идемпотентно:
     повторно завёрнутый поток метку не удваивает.
+
+    detail=True попутно включает подробную трассировку Google-запросов
+    (lib/core/timing.py) — именно_CHILD-процессам нужно объяснять, на что
+    ушли секунды; голосовой цикл зовёт `stamp_stdio(detail=False)`, чтобы
+    не засорять консоль.
 
     Не зовём там, где вывод разбирают построчно: `lib.browser_control`
     (cron-будильник сравнивает строку с `playing`), `lib.tasks`,
@@ -54,6 +61,8 @@ def stamp_stdio() -> None:
         stream = getattr(sys, name)
         if not isinstance(stream, TimestampedStream):
             setattr(sys, name, TimestampedStream(stream))
+    if detail:
+        timing.enable()
 
 
 class TranscriptionOutput:

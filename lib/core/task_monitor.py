@@ -7,10 +7,9 @@
 Вопроса нет, пока идёт событие «СОН»: спящего не о чем расспрашивать.
 
 Вопрос и сбор ответа — через оркестратор (`ask` из orchestrator_ask), чтобы
-реплика пользователя не ушла в пайплайн команд. Живёт проверка в собственном
-daemon-потоке (как version_checker): cron-подпроцесс не может ни озвучить
-вопрос, ни поймать ответ. Собирает и запускает его `start_task_monitor`
-(её вызывает main.py рядом с CronScheduler).
+реплика пользователя не ушла в пайплайн команд; `recall` убирает реплику
+вопроса из Telegram, когда ответа не дождались. Поток свой (как
+version_checker), а собирает и запускает монитор `start_task_monitor`.
 """
 
 import threading
@@ -22,14 +21,15 @@ from lib.core.overtime import OvertimeNotifier
 from lib.core.rest_watch import RestWatch
 from lib.core.task_pick import TASKSTART_CMD_ID
 from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
+from lib.monitor import registry
 from lib.task_start import TaskStartHandler
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.task_check import evaluate
 from lib.taskflow.task_schedule import idle_offer, sleep_now
 
-# Вопрос, когда не запущено ничего (ответ — название задачи из таблицы).
-# Озвучка предложения задачи убрана (решение пользователя): голосом звучит
-# только сам вопрос, а «что начать» уходит кнопками в Telegram (см. offer).
+# Вопрос, когда не запущено ничего (ответ — название задачи из таблицы):
+# голосом звучит только вопрос (решение пользователя), «что начать» уходит
+# кнопками в Telegram, а текстом — только когда задач-кнопок нет.
 QUESTION_IDLE = "Чем ты сейчас занимаешься?"
 # Ответ на него не похож ни на одну задачу: произносим и живём дальше.
 ANSWER_UNKNOWN = "Такой задачи в списке нет"
@@ -50,6 +50,7 @@ class TaskMonitor:
                  notify: Optional[Callable[[str], None]] = None,
                  gcal: Any = None,
                  offer: Optional[Callable[[str, list], None]] = None,
+                 recall: Optional[Callable[[], int]] = None,
                  record: Optional[Callable[[str], None]] = None) -> None:
         self._ask = ask
         self._say = say
@@ -65,6 +66,7 @@ class TaskMonitor:
         self._notify = notify
         self._gcal = gcal
         self._offer = offer
+        self._recall = recall
         self._record = record
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -88,7 +90,12 @@ class TaskMonitor:
             thread.join(timeout=2.0)
 
     def _loop(self) -> None:
-        while not self._stop.wait(self._interval):
+        while not self._stop.is_set():
+            registry.report("task_monitor", "Монитор задач", registry.IDLE,
+                            f"интервал {self._interval:.0f}с")
+            if self._stop.wait(self._interval):
+                break
+            registry.report("task_monitor", "Монитор задач", registry.WORKING)
             try:
                 self.tick()
             except Exception as error:            # цикл не должен умирать
@@ -118,15 +125,15 @@ class TaskMonitor:
             return "sleep"
         self._rest.check_async()           # окно = отдых? проверить в фоне
         _, titles = idle_offer(rows, events, now)
-        question = QUESTION_IDLE
-        if not self._ask(question, self._on_idle_answer, "task_idle",
-                         self._answer_timeout_s):
+        # on_expire — снять реплику вопроса: висящие кнопки зовут в чат впустую
+        if not self._ask(QUESTION_IDLE, self._on_idle_answer, "task_idle",
+                         self._answer_timeout_s, self._recall):
             self._output.print_info("[TaskMonitor] «task_idle» отложен")
             return "deferred"
-        if titles and self._offer is not None:
-            self._offer(QUESTION_IDLE, titles)  # 3 задачи кнопками в чат
+        if self._offer is not None:
+            self._offer(QUESTION_IDLE, titles)  # кнопки; без задач — текст
         elif self._notify is not None:
-            self._notify(question)              # тот же вопрос текстом в чат
+            self._notify(QUESTION_IDLE)         # чата нет — вопрос в консоль
         return "idle"
 
     def _today_events(self) -> Optional[list]:
@@ -176,9 +183,7 @@ class TaskMonitor:
         if result.get("ok"):
             if self._record is not None:    # старт по ответу — в статистику
                 self._record(TASKSTART_CMD_ID)
-            self._output.print_info(
-                f"[TaskMonitor] Задача «{title}» запущена "
-                f"(строка {result['row']})")
+            self._output.print_info(f"[TaskMonitor] «{title}» (стр. {result['row']}) запущена")
             self._say(f"Задача «{title}» запущена")
         else:
             self._output.print_error(
@@ -192,7 +197,4 @@ class TaskMonitor:
             event = self._task_handler().find_task_event(phrase)
         except Exception as error:                # сбой календаря/таблицы
             return swallowed("task_monitor.match", error, None)
-        if event is None:
-            return None
-        title = str(event.get("summary") or "").strip()
-        return title or None
+        return str((event or {}).get("summary") or "").strip() or None

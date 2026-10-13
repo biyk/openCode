@@ -11,13 +11,13 @@ class _Asker:
     """Заглушка orchestrator.ask: помнит вопрос и вызывает ответ по требованию."""
 
     def __init__(self, accepted=True):
-        self.accepted = accepted
-        self.questions = []
-        self.timeout_s = None
+        self.accepted, self.questions = accepted, []
+        self.timeout_s = self.on_expire = None
 
-    def __call__(self, question, on_answer, label, timeout_s):
+    def __call__(self, question, on_answer, label, timeout_s, on_expire=None):
         self.questions.append((question, label))
         self.timeout_s = timeout_s
+        self.on_expire = on_expire
         if self.accepted:
             self.on_answer = on_answer
         return self.accepted

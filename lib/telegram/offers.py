@@ -12,8 +12,10 @@
 уходит в `on_finish`). Один OfferStore на оба — так старая кнопка «старт» не
 может случайно уехать в finish по тому же номеру.
 
-Транспорт (sendMessage/answerCallbackQuery) и whitelist-решение — на стороне
-вызывающего; здесь только сборка клавиатуры, сопоставление нажатия и отправка.
+Транспорт (sendMessage/deleteMessage/answerCallbackQuery) и whitelist-решение
+— на стороне вызывающего; здесь только сборка клавиатуры, сопоставление
+нажатия, отправка и память о сообщении вопроса (`recall` убирает его из чата,
+когда ответ так и не пришёл и вопрос просрочен).
 """
 
 from typing import Any, Callable, Optional
@@ -85,17 +87,44 @@ class TaskOffers:
         self._reply = reply
         self._set_chat = set_chat
         self._store = OfferStore()
+        # Сообщения последнего вопроса: (chat_id, message_id) — по ним вопрос
+        # снимается из чата, когда ответ так и не пришёл (`recall`).
+        self._asked: list[tuple[Any, Any]] = []
 
     def offer(self, text: str, titles: list[str]) -> None:
-        """Вопрос с кнопками выбора задачи; без задач — просто текст в чат."""
+        """Вопрос с кнопками выбора задачи; без задач — просто текст в чат.
+
+        Каждый вызов начинает новый вопрос, поэтому прошлые id забываются:
+        снятие должно касаться ровно той реплики, что висит в чате сейчас.
+        """
+        self._asked = []
         clean = [str(t).strip() for t in (titles or []) if str(t).strip()]
         if not clean:
             for chat_id in sorted(self._config.chat_ids):
-                self._api.send_message(chat_id, text)
+                self._keep(chat_id, self._api.send_message(chat_id, text))
             return
         markup = self._store.markup(clean)
         for chat_id in sorted(self._config.chat_ids):
-            self._api.send_message(chat_id, text, reply_markup=markup)
+            self._keep(chat_id, self._api.send_message(
+                chat_id, text, reply_markup=markup))
+
+    def _keep(self, chat_id: Any, message_id: Any) -> None:
+        """Записывает id отправленного вопроса (None — не отправлено)."""
+        if message_id:
+            self._asked.append((chat_id, message_id))
+
+    def recall(self) -> int:
+        """Убирает сообщение вопроса из чатов; возвращает число удалённых.
+
+        id забываются независимо от ответа Telegram: отказ (нет прав,
+        сообщение древнее) повторять на каждый такт бессмысленно.
+        """
+        asked, self._asked = self._asked, []
+        removed = 0
+        for chat_id, message_id in asked:
+            if self._api.delete_message(chat_id, message_id):
+                removed += 1
+        return removed
 
     def finish_markup(self, title: str) -> dict:
         """Одна кнопка «Завершить» под запущенную задачу (внешний broadcast)."""

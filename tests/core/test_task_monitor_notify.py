@@ -3,7 +3,9 @@
 Вынесено из test_task_monitor.py (тот упирается в лимит 200 строк): здесь
 только то, что голосом звучит ровно «Чем ты сейчас занимаешься?» (без озвучки
 предлагаемой задачи — решение пользователя) и что этот же вопрос уходит в
-Telegram через notify — и чего notify не трогает, когда вопроса нет.
+Telegram через notify — и чего notify не трогает, когда вопроса нет. Плюс
+`recall`: просроченный вопрос убирается из чата, чтобы висящие кнопки не
+дразнили ответом туда, где его уже не ждут.
 """
 
 from unittest.mock import MagicMock
@@ -13,15 +15,17 @@ from lib.core.task_pick import TASKSTART_CMD_ID
 
 
 class _Asker:
-    """Заглушка orchestrator.ask: помнит вопрос, возвращает accepted."""
+    """Заглушка orchestrator.ask: помнит вопрос и on_expire, возвращает accepted."""
 
     def __init__(self, accepted=True):
         self.accepted = accepted
         self.questions = []
+        self.on_expire = None
 
-    def __call__(self, question, on_answer, label, timeout_s):
+    def __call__(self, question, on_answer, label, timeout_s, on_expire=None):
         self.questions.append((question, label))
         self.on_answer = on_answer
+        self.on_expire = on_expire
         return self.accepted
 
 
@@ -30,13 +34,13 @@ def _rows(*specs):
              "task_uuid": f"u-{i}"} for i, (t, s) in enumerate(specs)]
 
 
-def _monitor(mocker, rows, accepted=True, notify="default"):
+def _monitor(mocker, rows, accepted=True, notify="default", recall=None):
     ask = _Asker(accepted=accepted)
     sink = MagicMock() if notify == "default" else notify
     monitor = TaskMonitor(ask=ask, say=mocker.MagicMock(),
                           output=mocker.MagicMock(), core=lambda text: text,
                           sheet=_sheet(rows), handler=mocker.MagicMock(),
-                          notify=sink)
+                          notify=sink, recall=recall)
     return monitor, ask, sink
 
 
@@ -85,6 +89,32 @@ class TestIdleQuestionTelegram:
         monitor, ask, _ = _monitor(mocker, _rows(("Уборка", 0)), notify=None)
         assert monitor.tick() == "idle"
         assert ask.questions[0][1] == "task_idle"
+
+
+class TestIdleQuestionRecall:
+    """Просрочка вопроса снимает его реплику из чата: нет ответа — нет кнопок."""
+
+    def test_recall_is_passed_as_on_expire(self, mocker):
+        recall = mocker.MagicMock()
+        monitor, ask, _ = _monitor(mocker, _rows(("Уборка", 0)), recall=recall)
+        assert monitor.tick() == "idle"
+        assert ask.on_expire is recall
+        recall()                          # так делает оркестратор на просрочке
+        recall.assert_called_once_with()
+
+    def test_no_telegram_means_no_on_expire(self, mocker):
+        """recall=None (Telegram выключен) — вопрос живёт как раньше."""
+        monitor, ask, _ = _monitor(mocker, _rows(("Уборка", 0)))
+        monitor.tick()
+        assert ask.on_expire is None
+
+    def test_deferred_question_does_not_recall(self, mocker):
+        """Вопрос не задан — снимать из чата нечего и не за чем."""
+        recall = mocker.MagicMock()
+        monitor, _, _ = _monitor(mocker, _rows(("Уборка", 0)), accepted=False,
+                                 recall=recall)
+        assert monitor.tick() == "deferred"
+        recall.assert_not_called()
 
 
 class TestIdleAnswerRecord:

@@ -24,7 +24,8 @@ def start_task_monitor(worker: Any, output: Any,
                        notify: Optional[Callable[[str], None]] = None,
                        offer: Optional[Callable[[str, list], None]] = None,
                        finish_markup: Optional[
-                           Callable[[str], Any]] = None
+                           Callable[[str], Any]] = None,
+                       recall: Optional[Callable[[], int]] = None
                        ) -> Optional[TaskMonitor]:
     """Собирает и запускает монитор по секции `task_monitor` commands.json.
 
@@ -33,7 +34,8 @@ def start_task_monitor(worker: Any, output: Any,
     выключена. Секция `fun_holes` (enabled, min_gap_min, lookback_days)
     добавляет к циклу дыры календаря; `notify` — дубль в Telegram (вопрос на
     idle и оповещение о переработке); `finish_markup` — callable, возвращающий
-    inline-клавиатуру «Завершить» под названием задачи (для переработки).
+    inline-клавиатуру «Завершить» под названием задачи (для переработки);
+    `recall` — убирает реплику вопроса из чата, когда ответа не дождались.
     """
     config = worker._matcher.get_task_monitor_config()
     if not config.get("enabled"):
@@ -64,7 +66,7 @@ def start_task_monitor(worker: Any, output: Any,
         output=output, core=worker._matcher.core_phrase,
         interval_s=interval_s, fun=fun, overtime=overtime,
         title_fn=foreground_title, classify_fn=classify_until_answer,
-        notify=notify, gcal=GoogleCalendar(), offer=offer,
+        notify=notify, gcal=GoogleCalendar(), offer=offer, recall=recall,
         record=worker._matcher.record_use,
         answer_timeout_s=float(config.get("answer_timeout_s",
                                           TASK_ANSWER_TIMEOUT_S)))

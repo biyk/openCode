@@ -19,6 +19,7 @@ import sys
 from datetime import datetime
 from typing import Any, Optional
 
+from lib.core import timing
 from lib.core.errors import swallowed
 from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar
@@ -154,7 +155,7 @@ def _main(argv: Optional[list[str]] = None) -> int:
     name = " ".join(sys.argv[1:] if argv is None else argv).strip()
     handler = TaskCompleteHandler()
     try:
-        result = handler.complete_task(name)
+        result = timing.measure("разбор задачи", handler.complete_task, name)
     except Exception as e:  # нет токена/сети/неизвестный repeat_mode
         print(f"[complete] ошибка завершения: {e}")
         return 1
@@ -171,9 +172,10 @@ def _main(argv: Optional[list[str]] = None) -> int:
     else:
         print(f"✅ «{result['title']}» засчитана по плану: "
               f"{result['time_spent']} мин, награда {result['money']:.2f}")
-    blocks = _celebrate(handler, result)
+    blocks = timing.measure("поиск следующей задачи",
+                            _celebrate, handler, result)
     print(" ".join(blocks))
-    _speak(blocks)
+    timing.measure("озвучка", _speak, blocks)
     return 0
 
 

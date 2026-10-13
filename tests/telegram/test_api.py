@@ -81,25 +81,31 @@ class TestProxy:
 
 
 class TestSendMessage:
-    def test_true_on_accepted(self, mocker, requests_mock):
+    def test_message_id_on_accepted(self, mocker, requests_mock):
+        """id нужен вызывающему: по нему вопрос потом убирается из чата."""
         requests_mock.post.return_value = _ok(mocker, {"message_id": 12})
-        assert TelegramApi("TOKEN").send_message("777", "Готово") is True
+        assert TelegramApi("TOKEN").send_message("777", "Готово") == 12
         params = requests_mock.post.call_args.kwargs["params"]
         assert params["chat_id"] == "777"
         assert params["text"] == "Готово"
 
-    def test_false_when_rejected(self, mocker, requests_mock):
+    def test_none_when_rejected(self, mocker, requests_mock):
         response = mocker.MagicMock()
         response.json.return_value = {"ok": False, "description": "400: chat not found"}
         requests_mock.post.return_value = response
-        assert TelegramApi("TOKEN").send_message("1", "текст") is False
+        assert TelegramApi("TOKEN").send_message("1", "текст") is None
+
+    def test_none_when_result_has_no_id(self, mocker, requests_mock):
+        """Ответ без message_id — не «принято»: вызывать delete нечем."""
+        requests_mock.post.return_value = _ok(mocker, {})
+        assert TelegramApi("TOKEN").send_message("1", "текст") is None
 
     def test_reply_markup_is_json(self, mocker, requests_mock):
         """Inline-клавиатура уходит параметром reply_markup (JSON-строкой)."""
-        requests_mock.post.return_value = _ok(mocker, {"message_id": 1})
+        requests_mock.post.return_value = _ok(mocker, {"message_id": 7})
         markup = {"inline_keyboard": [[{"text": "Уборка", "callback_data": "t1"}]]}
         assert TelegramApi("TOKEN").send_message(
-            "777", "вопрос", reply_markup=markup) is True
+            "777", "вопрос", reply_markup=markup) == 7
         params = requests_mock.post.call_args.kwargs["params"]
         assert json.loads(params["reply_markup"]) == markup
 
@@ -107,6 +113,28 @@ class TestSendMessage:
         requests_mock.post.return_value = _ok(mocker, {"message_id": 1})
         TelegramApi("TOKEN").send_message("777", "текст")
         assert "reply_markup" not in requests_mock.post.call_args.kwargs["params"]
+
+
+class TestDeleteMessage:
+    def test_deletes_by_id(self, mocker, requests_mock):
+        requests_mock.post.return_value = _ok(mocker, True)
+        assert TelegramApi("TOKEN").delete_message("777", 42) is True
+        url = requests_mock.post.call_args.args[0]
+        params = requests_mock.post.call_args.kwargs["params"]
+        assert url.endswith("/botTOKEN/deleteMessage")
+        assert params == {"chat_id": "777", "message_id": 42}
+
+    def test_without_id_is_noop(self, mocker, requests_mock):
+        """Нечего удалять (сообщение не уходило) — API не дёргаем."""
+        assert TelegramApi("TOKEN").delete_message("777", None) is False
+        requests_mock.post.assert_not_called()
+
+    def test_refusal_is_false_not_crash(self, mocker, requests_mock):
+        """Нет прав или сообщение древнее — просто False (id всё равно забыт)."""
+        response = mocker.MagicMock()
+        response.json.return_value = {"ok": False, "description": "400"}
+        requests_mock.post.return_value = response
+        assert TelegramApi("TOKEN").delete_message("777", 42) is False
 
 
 class TestAnswerCallback:

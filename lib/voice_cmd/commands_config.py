@@ -65,6 +65,18 @@ class CommandConfigMixin:
         """
         return self._data.get("record_gate", {})
 
+    def get_mic_config(self) -> dict:
+        """Возвращает секцию `mic` (какой микрофон слушать).
+
+        Ключи: headphone_device (подстрока имени гарнитуры; по умолчанию —
+        `record_gate.allowed_device`), laptop_device (подстрока имени
+        микрофона ноутбука), headset_mic (говорить в микрофон BT-гарнитуры —
+        с ней её стерео-звук молчит, поэтому по умолчанию false), poll_s (как
+        часто пересобирать поток захвата); значения по умолчанию — в
+        lib.stt.mic_stream.
+        """
+        return self._data.get("mic", {})
+
     def get_fun_holes_config(self) -> dict:
         """Возвращает секцию `fun_holes` (развлечения в дырах календаря).
 
@@ -93,6 +105,15 @@ class CommandConfigMixin:
         не хранится.
         """
         return self._data.get("telegram", {})
+
+    def get_monitor_config(self) -> dict:
+        """Возвращает секцию `monitor` (GUI «что сейчас живёт»).
+
+        Ключи: enabled (писать heartbeat и поднимать дашборд), port
+        (дефолт MONITOR_PORT), auto_open (открыть app-окно при старте);
+        значения по умолчанию — в lib.monitor.tuning.
+        """
+        return self._data.get("monitor", {})
 
     def requires_map(self) -> dict:
         """Возвращает {command_id: [статусы]} — условия запуска команд."""

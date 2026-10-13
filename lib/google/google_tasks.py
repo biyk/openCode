@@ -15,6 +15,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from lib.core import timing
 from lib.core.errors import INFO, swallowed
 from lib.google_calendar import GoogleOAuthError
 
@@ -104,7 +105,8 @@ class GoogleTasks:
 
     def _build_services(self, creds: Credentials) -> None:
         import googleapiclient.discovery
-        self._tasks_service = googleapiclient.discovery.build(
+        self._tasks_service = timing.measure(
+            "tasks build", googleapiclient.discovery.build,
             "tasks", "v1", credentials=creds)
 
     # ---------- Публичные операции ----------
@@ -117,8 +119,8 @@ class GoogleTasks:
         body = {"title": title}
         if notes:
             body["notes"] = notes
-        result = self._tasks_service.tasks().insert(
-            tasklist=self._tasklist_id, body=body).execute()
+        result = timing.execute(self._tasks_service.tasks().insert(
+            tasklist=self._tasklist_id, body=body), "tasks insert")
         return str(result["id"])
 
     def list_tasks(self, show_completed: bool = False) -> list[dict]:
@@ -128,8 +130,8 @@ class GoogleTasks:
         Элемент: {"id", "title", "status", "completed"}.
         """
         self._ensure_ready()
-        result = self._tasks_service.tasks().list(
-            tasklist=self._tasklist_id, showCompleted=show_completed).execute()
+        result = timing.execute(self._tasks_service.tasks().list(
+            tasklist=self._tasklist_id, showCompleted=show_completed), "tasks list")
         return list(result.get("items", []))
 
     def complete_task(self, task_id: str) -> Optional[dict]:
@@ -140,11 +142,9 @@ class GoogleTasks:
         if not task_id:
             return None
         self._ensure_ready()
-        result = self._tasks_service.tasks().patch(
-            tasklist=self._tasklist_id,
-            task=task_id,
-            body={"status": "completed"},
-        ).execute()
+        result = timing.execute(self._tasks_service.tasks().patch(
+            tasklist=self._tasklist_id, task=task_id,
+            body={"status": "completed"}), "tasks patch")
         return result
 
     def get_task(self, task_id: str) -> Optional[dict]:
@@ -156,8 +156,8 @@ class GoogleTasks:
             return None
         self._ensure_ready()
         try:
-            result = self._tasks_service.tasks().get(
-                tasklist=self._tasklist_id, task=task_id).execute()
+            result = timing.execute(self._tasks_service.tasks().get(
+                tasklist=self._tasklist_id, task=task_id), "tasks get")
         except Exception as e:  # 404 (нет задачи) — штатно для дедупа
             return swallowed("tasks.get_task", e, None, level=INFO)
         if not result or not result.get("id"):
@@ -175,8 +175,8 @@ class GoogleTasks:
             return False
         self._ensure_ready()
         try:
-            self._tasks_service.tasks().delete(
-                tasklist=self._tasklist_id, task=task_id).execute()
+            timing.execute(self._tasks_service.tasks().delete(
+                tasklist=self._tasklist_id, task=task_id), "tasks delete")
             return True
         except Exception as e:
             return swallowed("tasks.delete_task", e, False)

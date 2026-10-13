@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
+from lib.core import timing
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.cells import as_float
 
@@ -48,13 +49,14 @@ class RewardsSheet(RealLifeSheet):
         """Одна строка покупки в rewards_history (колонки A:F); id строки."""
         item_id = str(uuid4())
         claim_ms = int(now.timestamp() * 1000)
-        self._ensure_service().spreadsheets().values().append(
+        timing.execute(self._ensure_service().spreadsheets().values().append(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SHEET_HISTORY}!A:F",
             valueInputOption="RAW",
             body={"values": [[item_id, claim_ms, amount,
                               reward["title"], reward["reward_id"],
-                              claim_ms / MS_PER_DAY + HERO_EPOCH_DAYS]]}).execute()
+                              claim_ms / MS_PER_DAY + HERO_EPOCH_DAYS]]}),
+            "sheets append claim")
         return item_id
 
     def spend(self, reward: dict[str, Any], amount: int,

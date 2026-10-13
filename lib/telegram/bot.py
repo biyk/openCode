@@ -5,14 +5,16 @@
 сообщение чата не перемешивается со строкой микрофона (§10). Сборку бота
 и решение стартовать вынесли в `lib/telegram/launch.py`. Пишут только чаты
 из whitelist — бот запускает shell-команды; неизвестный чат логируется со
-своим id: его и добавляем в `telegram.allowed_chat_ids`.
+своим id (его и добавляем в `telegram.allowed_chat_ids`).
 """
 
 import threading
 from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
+from lib.monitor import registry
 from lib.telegram.config import TelegramConfig
+from lib.telegram.message import split_chunks
 from lib.telegram.offers import TaskOffers
 
 # Подсказка на служебные /команды: в чате их печатают чаще, чем команды.
@@ -61,12 +63,16 @@ class TelegramBot:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            registry.report("telegram", "Telegram-бот", registry.WORKING,
+                            "long polling")
             try:
                 handled = self.poll_once()
             except Exception as error:            # цикл не должен умирать
                 swallowed("telegram.loop", error)
                 handled = None
             if handled is None:                   # сбой сети/API — пауза
+                registry.report("telegram", "Telegram-бот", registry.ERROR,
+                                f"пауза {self._config.retry_s:.0f}с")
                 self._stop.wait(self._config.retry_s)
 
     # ---------- Один шаг (публично для тестов) ----------
@@ -135,12 +141,15 @@ class TelegramBot:
         """Инициативный вопрос с кнопками выбора задачи во все чаты whitelist."""
         self._offers.offer(text, titles)
 
+    def recall(self) -> int:
+        """Снимает сообщение последнего вопроса: ответа нет — кнопок тоже нет."""
+        return self._offers.recall()
+
     def finish_markup(self, title: str) -> dict:
         """Одна кнопка «Завершить» (для broadcast-оповещения о переработке)."""
         return self._offers.finish_markup(title)
 
-    def reply(self, text: str,
-              reply_markup: Optional[dict] = None) -> None:
+    def reply(self, text: str, reply_markup: Optional[dict] = None) -> None:
         """Ответ в чат команды; при разбиении на части markup — на последней части."""
         if self._chat_id is None:
             self._print("[Telegram] Отвечать некуда: чат ещё не писал боту")
@@ -152,8 +161,7 @@ class TelegramBot:
                                           reply_markup=markup):
                 self._print("[Telegram] Ответ не отправлен (ошибка в логе)")
 
-    def broadcast(self, text: str,
-                  reply_markup: Optional[dict] = None) -> None:
+    def broadcast(self, text: str, reply_markup: Optional[dict] = None) -> None:
         """Инициативное уведомление во все чаты whitelist (оповещение)."""
         for chat_id in sorted(self._config.chat_ids):
             parts = self.chunks(text)
@@ -164,27 +172,8 @@ class TelegramBot:
                                 "(ошибка в логе)")
 
     def chunks(self, text: str) -> list[str]:
-        """Режет ответ по telegram.max_len, сохраняя границы строк."""
-        limit = max(1, int(self._config.max_len))
-        lines = [line for line in str(text).splitlines() if line.strip()]
-        parts: list[str] = []
-        current = ""
-        for line in lines:
-            while len(line) > limit:              # одна строка длиннее лимита
-                if current:                       # сначала дописываем накопленное
-                    parts.append(current)
-                    current = ""
-                parts.append(line[:limit])
-                line = line[limit:]
-            glued = f"{current}\n{line}" if current else line
-            if len(glued) > limit:
-                parts.append(current)
-                current = line
-            else:
-                current = glued
-        if current:
-            parts.append(current)
-        return parts
+        """Режет ответ по telegram.max_len (реализация — telegram/message.py)."""
+        return split_chunks(str(text), int(self._config.max_len))
 
     # ---------- Вывод ----------
 
