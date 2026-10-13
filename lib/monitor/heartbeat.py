@@ -75,12 +75,15 @@ class HeartbeatWriter(threading.Thread):
         self._registry = registry
         self._path = path or default_path()
         self._interval = interval
-        self._stop = threading.Event()
+        # Не `_stop`: у threading.Thread есть собственный метод `_stop()`,
+        # и атрибут-Event перекрывает его — join() падает на
+        # `TypeError: 'Event' object is not callable`.
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             write_heartbeat(self._registry, self._path)
-            self._stop.wait(self._interval)
+            self._stop_event.wait(self._interval)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()

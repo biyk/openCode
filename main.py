@@ -102,8 +102,9 @@ def main():
         registry.report("task_monitor", "Монитор задач", registry.DISABLED,
                         "секция task_monitor выключена")
 
-    # Монитор сервисов (секция monitor): heartbeat + detached-дашборд. Окно
-    # поднимается вместе с основным процессом (auto_open по умолчанию).
+    # Монитор сервисов (секция monitor): heartbeat + смотритель OmniRouter.
+    # Панель — вкладка «Сервисы» на сервере доски знаний (auto_open по
+    # умолчанию: поднимем доску и откроем её, если она лежит).
     monitor = start_monitor(worker._matcher, output)
 
     output.print_info("\n🎙️  Запись... Команды можно говорить, печатать "

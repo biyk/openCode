@@ -10,7 +10,7 @@ import inspect
 import json
 import time
 
-from lib.monitor import heartbeat, registry
+from lib.monitor import heartbeat, probes, registry
 from lib.monitor.status import collect
 from lib.monitor.tuning import MONITOR_STALE_S
 
@@ -69,3 +69,31 @@ def test_stale_default_follows_monitor_tuning():
     assert got == MONITOR_STALE_S
     hb = inspect.signature(heartbeat.is_stale).parameters["stale_s"].default
     assert hb == MONITOR_STALE_S
+
+
+def test_probe_does_not_duplicate_heartbeat_row(tmp_path, monkeypatch):
+    """OmniRouter докладывает и смотритель (heartbeat), и проба порта:
+    в панели должна быть одна строка на сервис, а не две."""
+    p = tmp_path / "hb.json"
+    _write_hb(p, {"omniroute": {"name": "OmniRouter (LLM)",
+                                "state": registry.IDLE,
+                                "detail": "завис: перезапускаю"}})
+    monkeypatch.setattr(probes, "http_ok", lambda *a, **k: True)
+    res = collect(heartbeat_path=str(p))
+    rows = [s for s in res["services"] if s["id"] == "omniroute"]
+    assert len(rows) == 1
+    assert rows[0]["state"] == registry.IDLE       # свежий main точнее
+    assert "перезапускаю" in rows[0]["detail"]
+
+
+def test_stale_heartbeat_loses_to_port_probe(tmp_path, monkeypatch):
+    """Зависший main не вправе врать за чужой порт: берём факт пробы."""
+    p = tmp_path / "hb.json"
+    _write_hb(p, {"omniroute": {"name": "OmniRouter (LLM)",
+                                "state": registry.WORKING}}, ts=1.0)
+    monkeypatch.setattr(probes, "http_ok", lambda *a, **k: True)
+    res = collect(heartbeat_path=str(p), stale_s=5)
+    row = [s for s in res["services"] if s["id"] == "omniroute"][0]
+    assert res["stale"] is True
+    assert row["state"] == registry.WORKING
+    assert row["detail"] != "основной процесс не отвечает"

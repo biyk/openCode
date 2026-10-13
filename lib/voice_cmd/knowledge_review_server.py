@@ -2,9 +2,10 @@
 """HTTP-сервер доски «проверка знаний» (stdlib http.server).
 
 API (JSON, всё на 127.0.0.1):
-  GET  /              — HTML-страница с пятью вкладками
+  GET  /              — HTML-страница доски с вкладкой «Сервисы»
   GET  /api/ping      — {"ok": true} (проверка «сервер уже жив»)
   GET  /api/board     — корзины + список команд + настройки + статистика
+  GET  /api/monitor   — снимок монитора сервисов (вкладка «Сервисы»)
   GET  /api/tasks     — названия задач real_life_tasks (подсказка task-complete)
   POST /api/act       — confirm/demote/forget/update/purge записи базы знаний
                         (purge — ✕ на «Подтверждено»: снимает match из
@@ -19,7 +20,9 @@ API (JSON, всё на 127.0.0.1):
   POST /api/settings  — сохранить port/llm_url/llm_model в review.json
 
 Операции доски (board_snapshot/apply_act/laya_status) — в
-knowledge_review_board; здесь только приём запросов и запуск.
+knowledge_review_board; здесь только приём запросов и запуск. Вкладку
+монитора приносим из lib.monitor: отдельный сервер дашборда для этого был
+бы лишней сущностью — heartbeat читается отсюда, порты проверяются тут же.
 """
 
 from __future__ import annotations
@@ -28,6 +31,8 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+from lib.monitor.status import collect as monitor_status
+from lib.monitor.ui import install as monitor_tab
 from lib.voice_cmd.knowledge import KnowledgeStore
 from lib.voice_cmd.knowledge_review_board import (
     apply_act, board_snapshot, laya_status, sheet_task_titles,
@@ -71,10 +76,13 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/":
-            html = page().encode("utf-8")
+            html = monitor_tab(page()).encode("utf-8")
             self._send(200, html, "text/html; charset=utf-8")
         elif self.path == "/api/ping":
             self._json(200, {"ok": True})
+        elif self.path == "/api/monitor":
+            # Вкладка «Сервисы»: пульс основного процесса + пробы портов.
+            self._json(200, monitor_status())
         elif self.path == "/api/board":
             assert self.store is not None
             snap = board_snapshot(self.store, self.commands_file, self.review)

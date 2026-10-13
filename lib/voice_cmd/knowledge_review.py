@@ -2,6 +2,7 @@
 """Доска «проверка знаний»: запуск GUI-сервера (точка входа).
 
     python -m lib.voice_cmd.knowledge_review launch   # для голосовой команды
+    python -m lib.voice_cmd.knowledge_review launch --tab services   # на вкладку
     python -m lib.voice_cmd.knowledge_review serve    # сам сервер (detached)
     python -m lib.voice_cmd.knowledge_review status   # жив ли сервер
 
@@ -66,15 +67,19 @@ def spawn_server(port: int) -> None:
     subprocess.Popen(cmd, **kwargs)  # detached, живёт после нашего exit
 
 
-def open_page(port: int) -> None:
-    """Открывает доску в дебаг-браузере (поднимет Brave, если закрыт)."""
+def open_page(port: int, fragment: str = "") -> None:
+    """Открывает доску в дебаг-браузере (поднимет Brave, если закрыт).
+
+    `fragment` — якорь вкладки (`#services` для монитора): без него страница
+    помнит последнюю открытую вкладку и показывает не то, что просили.
+    """
     from lib.browser_control import open_url
-    url = f"http://127.0.0.1:{port}/"
+    url = f"http://127.0.0.1:{port}/" + (f"#{fragment}" if fragment else "")
     if not open_url(url):
         print(f"[Review] Браузер не открылся — адрес: {url}")
 
 
-def launch(port: Optional[int] = None) -> int:
+def launch(port: Optional[int] = None, fragment: str = "") -> int:
     """Поднять сервер (если лежит) и открыть страницу. Для shell-команды."""
     cfile = commands_file()
     use_port = int(port or load_review(cfile).get("port") or 8765)
@@ -88,22 +93,29 @@ def launch(port: Optional[int] = None) -> int:
             print(f"[Review] Сервер не поднялся за {UP_WAIT_S}с "
                   f"(см. logs/review_server.log)")
             return 1
-    open_page(use_port)
-    print(f"[Review] Доска открыта: http://127.0.0.1:{use_port}/")
+    open_page(use_port, fragment)
+    print(f"[Review] Доска открыта: http://127.0.0.1:{use_port}/"
+          + (f"#{fragment}" if fragment else ""))
     return 0
 
 
 def main(argv: Optional[list] = None) -> int:
-    """CLI: launch (по умолчанию) / serve / serve --port N / status."""
+    """CLI: launch (по умолчанию) / launch --tab X / serve / status."""
     args = (argv if argv is not None else sys.argv[1:]) or ["launch"]
     port = None
     if "--port" in args:
         i = args.index("--port")
         port = int(args[i + 1])
         args = args[:i] + args[i + 2:]
+    # Якорь вкладки: `--tab services` открывает сразу «Сервисы» монитора.
+    tab = ""
+    if "--tab" in args:
+        i = args.index("--tab")
+        tab = str(args[i + 1]).lstrip("#")
+        args = args[:i] + args[i + 2:]
     cmd = args[0]
     if cmd == "launch":
-        return launch(port)
+        return launch(port, tab)
     if cmd == "serve":
         return serve(commands_file(), port)
     if cmd == "status":

@@ -11,6 +11,7 @@ import subprocess
 
 import pytest
 
+from lib.monitor.ui import install as monitor_tab
 from lib.voice_cmd.knowledge_review_ui import PAGE
 from lib.voice_cmd.knowledge_review_ui_log import page
 
@@ -22,8 +23,10 @@ def _script() -> str:
 
 
 def _all_scripts() -> str:
-    """Все блоки <script> итоговой страницы (основной + попап журнала)."""
-    return "\n".join(re.findall(r"<script>(.*?)</script>", page(), re.S))
+    """Все блоки <script> итоговой страницы: основной, попап журнала и
+    вкладка «Сервисы» — node проверяет в том числе наш внедряемый JS."""
+    return "\n".join(re.findall(r"<script>(.*?)</script>",
+                                monitor_tab(page()), re.S))
 
 
 class TestPageSyntax:
@@ -152,8 +155,10 @@ class TestPageSyntax:
             with urllib.request.urlopen(
                     f"http://127.0.0.1:{port}/", timeout=5) as r:
                 html = r.read().decode("utf-8")
-            assert html == page()
-            assert "showLog(" in html       # сервер отдаёт страницу с попапом
+            # Сервер отдаёт страницу с попапом И с вкладкой «Сервисы».
+            assert html == monitor_tab(page())
+            assert "showLog(" in html
+            assert 'dataset.t="services"' in html
             with urllib.request.urlopen(
                     f"http://127.0.0.1:{port}/api/ping", timeout=5) as r:
                 assert json.loads(r.read().decode()) == {"ok": True}

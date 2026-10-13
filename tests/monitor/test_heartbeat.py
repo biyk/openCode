@@ -71,5 +71,16 @@ def test_writer_loop_writes_and_stops(tmp_path):
     assert os.path.exists(path)
 
 
+def test_writer_join_works(tmp_path):
+    """`join()` обязан работать: Event в атрибуте `_stop` перекрывал метод
+    `Thread._stop()`, и ожидание потока падало с TypeError."""
+    path = str(tmp_path / "hb.json")
+    w = HeartbeatWriter(ServiceRegistry(), path=path, interval=0.05)
+    w.start()
+    w.stop()
+    w.join(2)
+    assert not w.is_alive()
+
+
 def test_default_path_absolute():
     assert os.path.isabs(default_path())

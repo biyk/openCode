@@ -107,11 +107,13 @@ class CommandConfigMixin:
         return self._data.get("telegram", {})
 
     def get_monitor_config(self) -> dict:
-        """Возвращает секцию `monitor` (GUI «что сейчас живёт»).
+        """Возвращает секцию `monitor` (панель «что сейчас живёт»).
 
-        Ключи: enabled (писать heartbeat и поднимать дашборд), port
-        (дефолт MONITOR_PORT), auto_open (открыть app-окно при старте);
-        значения по умолчанию — в lib.monitor.tuning.
+        Ключи: enabled (писать heartbeat и держать смотрителя), board_port
+        (порт доски знаний, где лежит вкладка «Сервисы»; дефолт
+        MONITOR_BOARD_PORT), auto_open (открыть её при старте), omni_enabled,
+        omni_url, omni_interval_s, omni_hang_fails, omni_cooldown_s,
+        omni_warmup_s (смотритель OmniRouter); дефолты — lib.monitor.tuning.
         """
         return self._data.get("monitor", {})
 
