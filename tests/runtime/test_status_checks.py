@@ -76,7 +76,7 @@ class TestStatusStoreChecks:
         path = _write_status_file({
             "proxy": {
                 "checker": "proxy",
-                "checker_config": {"host": "192.168.1.107", "port": 1080},
+                "checker_config": {"host": "192.168.2.136", "port": 1080},
             }
         })
         try:
@@ -84,7 +84,7 @@ class TestStatusStoreChecks:
                 "lib.runtime.status.BUILTIN_CHECKERS", {"proxy": _proxy_checker})
             store = StatusStore(path)
             assert store.refresh("proxy") is True
-            assert received == {"config": {"host": "192.168.1.107", "port": 1080}}
+            assert received == {"config": {"host": "192.168.2.136", "port": 1080}}
         finally:
             os.unlink(path)
 

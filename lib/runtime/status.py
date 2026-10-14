@@ -6,9 +6,9 @@ targets/<host>/status.json:
 {
   "statuses": {
     "proxy": {
-      "description": "Прокси 192.168.1.107:1080 доступен",
+      "description": "Прокси 192.168.2.136:1080 доступен",
       "checker": "proxy",
-      "checker_config": {"host": "192.168.1.107", "port": 1080},
+      "checker_config": {"host": "192.168.2.136", "port": 1080},
       "interval": 5,
       "need_message": "Проверь доступность прокси"
     }

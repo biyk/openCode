@@ -4,10 +4,10 @@
 def _check_proxy(config=None) -> bool:
     """True, если прокси достижим (TCP connect к host:port).
 
-    По умолчанию 192.168.1.107:1080. config — dict из status.json
+    По умолчанию 192.168.2.136:1080. config — dict из status.json
     (секция checker_config): host/port/timeout.
     """
-    host = "192.168.1.107"
+    host = "192.168.2.136"
     port = 1080
     timeout = 3.0
     if isinstance(config, dict):

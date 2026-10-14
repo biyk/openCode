@@ -41,7 +41,7 @@ def _proxy_ready() -> bool:
     store = StatusStore(StatusStore.path_for_commands_file(commands_file))
     if store.enabled:
         return store.refresh("proxy")
-    # Конфига статусов нет — дефолтная проверка 192.168.1.107:1080.
+    # Конфига статусов нет — дефолтная проверка 192.168.2.136:1080.
     return bool(_check_proxy())
 
 

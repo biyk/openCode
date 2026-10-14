@@ -92,4 +92,4 @@ class TestBuiltinCheckers:
         """Достижимый прокси даёт True (config с host/port передаются)."""
         mocker.patch("socket.create_connection",
                      return_value=mocker.MagicMock())
-        assert _check_proxy({"host": "192.168.1.107", "port": 1080}) is True
+        assert _check_proxy({"host": "192.168.2.136", "port": 1080}) is True

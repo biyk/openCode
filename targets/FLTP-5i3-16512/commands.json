@@ -450,7 +450,7 @@
         "allowed_chat_ids": [
             66166604
         ],
-        "proxy": "socks5h://192.168.1.107:1080",
+        "proxy": "socks5h://192.168.2.136:1080",
         "poll_timeout_s": 20,
         "retry_s": 15
     },
