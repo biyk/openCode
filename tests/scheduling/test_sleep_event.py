@@ -1,8 +1,9 @@
 """Юнит-тесты lib/sleep_event.py — фиксированный GoogleCalendar без сети.
 
 Проверяют выбор события «СОН» (идущее/скорое, без завершившихся и
-посторонних заголовков), перенос его начала на текущий момент и
-побочный сдвиг утреннего cron-задания на now + 7ч30.
+посторонних заголовков), перенос его начала на текущий момент,
+побочный сдвиг утреннего cron-задания на now + 7ч30 и то, что переход
+ко сну закрывает дыры дня сразу (§4.4).
 """
 from __future__ import annotations
 
@@ -13,8 +14,10 @@ from lib.scheduling import cron_edit
 from lib.sleep_event import (
     WAKE_JOB_ID,
     SleepEventHandler,
+    close_day_holes,
     shift_wake_job,
 )
+from lib.taskflow import fun_fill
 
 TZ = timezone(timedelta(hours=3))
 NOW = datetime(2026, 9, 25, 23, 30, tzinfo=TZ)
@@ -126,3 +129,25 @@ def test_shift_wake_job_missing_job_is_noop(tmp_path, monkeypatch):
     with open(path, encoding="utf-8") as file:
         job = json.load(file)["jobs"][0]
     assert job["schedule"] == "15 9 * * *"
+
+
+def test_sleep_transition_closes_day_holes(monkeypatch):
+    """Начало сна закрывает дыры сразу, не дожидаясь такта монитора."""
+    seen = {}
+
+    def fake_fill(gcal, sheet, now=None, **_kw):
+        seen["now"] = now
+        return 2
+
+    monkeypatch.setattr(fun_fill, "fill", fake_fill)
+    assert close_day_holes(NOW, gcal=object(), sheet=object()) == 2
+    assert seen["now"] == NOW
+
+
+def test_close_day_holes_never_breaks_sleep_command(monkeypatch):
+    """Сбой календаря или таблицы: команда сна своё уже сделала, не падаем."""
+    def boom(*_args, **_kw):
+        raise RuntimeError("нет сети")
+
+    monkeypatch.setattr(fun_fill, "fill", boom)
+    assert close_day_holes(NOW, gcal=object(), sheet=object()) == 0

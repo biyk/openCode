@@ -3,9 +3,14 @@
 
 Дыра — промежуток между двумя соседними событиями colorId=7 (задачи, помеченные
 «сделано»), даже если между ними стоят события других цветов. Окно ограничено
-снизу пробуждением (конец сегодняшнего «СОН»), сверху — началом последней
-синей задачи: всё, что мы заполняем, уже в прошедшем времени, и автоплан
-туда ничего не пишет.
+снизу пробуждением (конец последнего завершившегося «СОН»), сверху — началом
+последней синей задачи: всё, что мы заполняем, уже в прошедшем времени, и
+автоплан туда ничего не пишет.
+
+Последняя граница дня — начало «СНА», когда оно уже наступило: со сном время до
+него тоже стало прошлым, поэтому хвост дня (от конца последней задачи до сна)
+считается дырой и закрывается (§4.4). Пока сон не начался, хвост не трогаем —
+туда ещё пишет автоплан.
 
 Своё событие помечаем токеном в description. Развлечение НЕ синее, поэтому
 после вставки соседями по цвету остаются те же две задачи и та же дыра —
@@ -76,17 +81,60 @@ def done_spans(events: list[dict], since: datetime) -> list[tuple[datetime, date
     return out
 
 
-def wake_edge(events: list[dict], now: datetime) -> datetime:
-    """Левый край окна: конец сегодняшнего «СОН» (начало дня, если его нет)."""
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    edge = day_start
+def wake_edge(events: list[dict], now: datetime,
+              day_start: Optional[datetime] = None) -> datetime:
+    """Левый край окна: конец последнего «СОН», закончившегося к `now`.
+
+    Идущий сейчас сон пробуждением не считается: его конец завтра, край окна
+    уехал бы в будущее и дыр не осталось бы вовсе (вечер, §4.4).
+    """
+    left = day_start or now.replace(hour=0, minute=0, second=0, microsecond=0)
+    edge = left
     for ev in events:
         if not is_sleep_event(ev.get("summary")):
             continue
         span = _span(ev)
-        if span is not None and span[1] > edge and span[0] >= day_start:
+        if span is None or span[1] > now or span[1] < left:
+            continue
+        if span[1] > edge:
             edge = span[1]
     return edge
+
+
+def sleep_start(events: list[dict], now: datetime) -> Optional[datetime]:
+    """Начало «СОН», который идёт прямо сейчас — последняя граница дня.
+
+    None — сон ещё не наступил (его начало в будущем: там автоплан) или уже
+    завершился (день закрыт этим же кодом раньше). Берётся самое свежее из
+    начавшихся: команда сна сдвигает начало «СНА» на текущий момент.
+    """
+    best: Optional[datetime] = None
+    for ev in events:
+        if not is_sleep_event(ev.get("summary")):
+            continue
+        span = _span(ev)
+        if span is None or span[0] > now or span[1] <= now:
+            continue
+        if best is None or span[0] > best:
+            best = span[0]
+    return best
+
+
+def _did_tasks(events: list[dict], since: datetime) -> bool:
+    """Есть в окне синяя галочка именно ЗАДАЧИ (события «СОН» — не задача).
+
+    Нужно для хвоста дня: без единой выполненной задачи дыра «весь день»
+    списала бы hero_money за время, которого в календаре не было.
+    """
+    for ev in events:
+        if str(ev.get("colorId") or "").strip() != DONE_COLOR:
+            continue
+        if is_sleep_event(ev.get("summary")):
+            continue
+        span = _span(ev)
+        if span is not None and span[0] >= since:
+            return True
+    return False
 
 
 def _covered(funs: list[tuple[datetime, datetime]],
@@ -97,16 +145,18 @@ def _covered(funs: list[tuple[datetime, datetime]],
 
 def find_holes(events: list[dict], now: datetime,
                min_gap: float = FUN_MIN_GAP_MIN) -> list[dict]:
-    """Дыры между соседними синими задачами сегодня (start, end, minutes).
+    """Дыры дня (start, end, minutes) — всё строго в прошедшем времени.
 
     Пересекающиеся/вложенные синие события (галочки ставятся задним числом)
     сворачиваются бегущим максимумом конца, поэтому промежуток никогда не
-    бывает отрицательным. Дыра после последней синей задачи не возвращается:
-    её правого края нет, и там ещё возможны плановые события.
+    бывает отрицательным. Дыра после последней синей задачи появляется только
+    со сном: его начало — правый край хвоста дня (§4.4).
     """
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    bound = sleep_start(events, now)
+    day_start = (bound or now).replace(hour=0, minute=0, second=0,
+                                       microsecond=0)
     spans = done_spans(events, day_start)
-    if len(spans) < 2:
+    if not spans:
         return []
     funs = []
     for ev in events:
@@ -114,12 +164,19 @@ def find_holes(events: list[dict], now: datetime,
             span = _span(ev)
             if span is not None:
                 funs.append(span)
-    lo = wake_edge(events, now)
-    cursor = max(lo, spans[0][1])
+    cursor = max(wake_edge(events, now, day_start), spans[0][1])
     holes: list[dict] = []
     for start, end in spans[1:]:
         gap = (start - cursor).total_seconds() / 60.0
         if gap >= min_gap and not _covered(funs, cursor, start):
             holes.append({"start": cursor, "end": start, "minutes": gap})
         cursor = max(cursor, end)
+    if bound is None or not _did_tasks(events, day_start):
+        return holes
+    # Хвост дня: сон наступил — промежуток до его начала последняя дыра.
+    # Если сам «СОН» синий, его начало уже правый край дыры выше, а курсор
+    # ушёл за сон, поэтому двойного списания не выходит.
+    gap = (bound - cursor).total_seconds() / 60.0
+    if gap >= min_gap and not _covered(funs, cursor, bound):
+        holes.append({"start": cursor, "end": bound, "minutes": gap})
     return holes

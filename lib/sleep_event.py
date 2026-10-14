@@ -11,6 +11,10 @@ Windows разовый будильник WakeToRun на сейчас + 7ч20м
 (lib/scheduling/wake_alarm.py) — система проснётся сама, успеет
 прогреться, а её cron включит ролик ровно в +7ч30.
 
+И, наконец, закрывает день в дырах календаря: начало сна — последняя
+граница, где ещё считаются дыры, поэтому хвост дня списывается сразу
+(`close_day_holes`), не дожидаясь такта фонового контроля (§4.4).
+
 CLI: `python -m lib.sleep_event` — вызывается как шаг sequence `sleepmode`
 после опускания громкости. Коды выхода: 0 — начало зафиксировано,
 1 — событие не найдено или запрос к календарю не прошёл.
@@ -18,7 +22,7 @@ CLI: `python -m lib.sleep_event` — вызывается как шаг sequence
 
 import re
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from lib.core.output import stamp_stdio
 from lib.google_calendar import GoogleCalendar
@@ -129,6 +133,26 @@ def arm_wake_alarm(now: datetime) -> None:
     print(f"[sleep] планировщик разбудит систему в {moment:%d.%m.%Y %H:%M}")
 
 
+def close_day_holes(now: datetime, gcal: Any = None,
+                    sheet: Any = None) -> int:
+    """Переход ко сну закрывает день: хвост дыр считаем сразу, не в такт.
+
+    Фоновый контроль прогоняет то же каждые `interval_min` (§4.4), но начало
+    сна — последняя граница подсчёта и тянуть до следующего цикла незачем:
+    всё до сна уже в прошлом. Сбой календаря или таблицы команду не валит —
+    своё (сдвиг начала сна, cron, будильник) она уже сделала.
+    """
+    try:
+        # Локально: fun_holes ← wake_slots ← sleep_event, иначе цикл импортов.
+        from lib.taskflow.fun_fill import fill
+        from lib.taskflow.rewards_sheet import RewardsSheet
+        cal = gcal or GoogleCalendar()
+        return fill(cal, sheet or RewardsSheet(cal), now=now)
+    except Exception as error:            # отдых — не цена команды сна
+        print(f"[sleep] дыры дня не закрыты: {error}")
+        return 0
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     handler = SleepEventHandler()
     try:
@@ -141,8 +165,9 @@ def _main(argv: Optional[list[str]] = None) -> int:
     if ev is None:
         print("[sleep] событие «СОН» (идущее или ближайшее) не найдено")
         return 1
+    closed = close_day_holes(handler.now)
     print(f"[sleep] начало «{ev['summary']}» перенесено на "
-          f"{handler.now:%d.%m.%Y %H:%M}")
+          f"{handler.now:%d.%m.%Y %H:%M}, закрыто дыр: {closed}")
     return 0
 
 

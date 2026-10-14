@@ -1,7 +1,7 @@
 """Тесты заполнения дыр развлечениями (lib/taskflow/fun_fill)."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -19,9 +19,15 @@ def _at(hour, minute=0, second=0):
 
 
 def _ev(start, end, color="", summary="Задача", desc=""):
-    """Событие вида list_events_between (ISO-строки с часовым поясом)."""
+    """Событие вида list_events_between (ISO-строки с часовым поясом).
+
+    Конец раньше начала (сон 23:00 → 07:00) уводит конец на сутки вперёд.
+    """
+    s, e = _at(*start), _at(*end)
+    if e <= s:
+        e += timedelta(days=1)
     return {"id": f"{summary}-{start}", "summary": summary,
-            "start": _at(*start).isoformat(), "end": _at(*end).isoformat(),
+            "start": s.isoformat(), "end": e.isoformat(),
             "description": desc, "colorId": color}
 
 
@@ -130,6 +136,15 @@ class TestFill:
         gcal, sheet = _gcal(mocker, events), _sheet(mocker)
         assert fill(gcal, sheet, now=NOW) == 0
         sheet.find_reward.assert_not_called()
+
+    def test_sleep_onset_fills_the_day_tail(self, mocker):
+        """Сон наступил: хвост дня до его начала закрывается тем же проходом."""
+        events = _events() + [_ev((23, 0), (7, 0), color="1", summary="СОН")]
+        gcal, sheet = _gcal(mocker, events), _sheet(mocker)
+        assert fill(gcal, sheet, now=_at(23, 20)) == 2
+        tail = gcal.create_task_event.call_args_list[1]
+        assert tail.args[2] == _at(10, 30) and tail.args[3] == _at(23, 0)
+        assert sheet.spend.call_args.args[1] == 750
 
 
 class TestAudit:
