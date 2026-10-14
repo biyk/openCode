@@ -60,6 +60,19 @@ def pause_app_for_live_session():
         set_enabled(original)
 
 
+@pytest.fixture(autouse=True)
+def reset_sleep_gate():
+    """Обнуляет кэш вердикта «СОН».
+
+    `lib/core/sleep_gate.py` — модульный синглтон: без сброса тест, поймавший
+    «спим», оставил бы молчащими все последующие тесты монитора и Telegram.
+    """
+    from lib.core.sleep_gate import set_sleeping
+    set_sleeping(False)
+    yield
+    set_sleeping(False)
+
+
 @pytest.fixture(scope="session")
 def live_announce():
     """Один раз озвучивает «Внимание, идёт тестирование»."""

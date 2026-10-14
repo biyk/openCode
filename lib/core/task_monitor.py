@@ -4,7 +4,8 @@
 Ни одной запущенной задачи (start_date = 0 у всех строк) — вслух вопрос
 «чем ты сейчас занимаешься?»; следующая строка — ответ: название ищется
 среди задач таблицы и найденная задача запускается (как `taskstart`).
-Вопроса нет, пока идёт событие «СОН»: спящего не о чем расспрашивать.
+Пока идёт «СОН», цикл молчит ЦЕЛИКОМ: и вопроса, и оповещения (§4.3).
+Вердикт держит `lib/core/sleep_gate.py`, а не локальное чтение календаря.
 
 Вопрос и сбор ответа — через оркестратор (`ask` из orchestrator_ask), чтобы
 реплика пользователя не ушла в пайплайн команд; `recall` убирает реплику
@@ -13,19 +14,20 @@ version_checker), а собирает и запускает монитор `star
 """
 
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 from lib.core.errors import swallowed
 from lib.core.overtime import OvertimeNotifier
 from lib.core.rest_watch import RestWatch
+from lib.core.sleep_gate import check_sleeping, today_events
 from lib.core.task_pick import TASKSTART_CMD_ID
 from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
 from lib.monitor import registry
 from lib.task_start import TaskStartHandler
 from lib.taskflow.real_life_sheet import RealLifeSheet
 from lib.taskflow.task_check import evaluate
-from lib.taskflow.task_schedule import idle_offer, sleep_now
+from lib.taskflow.task_schedule import idle_offer
 
 # Вопрос, когда не запущено ничего (ответ — название задачи из таблицы):
 # голосом звучит только вопрос (решение пользователя), «что начать» уходит
@@ -51,6 +53,7 @@ class TaskMonitor:
                  gcal: Any = None,
                  offer: Optional[Callable[[str, list], None]] = None,
                  recall: Optional[Callable[[], int]] = None,
+                 sleep_fn: Optional[Callable[[], bool]] = None,
                  record: Optional[Callable[[str], None]] = None) -> None:
         self._ask = ask
         self._say = say
@@ -67,6 +70,7 @@ class TaskMonitor:
         self._gcal = gcal
         self._offer = offer
         self._recall = recall
+        self._sleep_fn = sleep_fn
         self._record = record
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -104,25 +108,32 @@ class TaskMonitor:
     # ---------- Одна проверка (публично для тестов) ----------
 
     def tick(self) -> str:
-        """Читает таблицу; если запущено ничего нет — спрашивает вслух."""
+        """Читает таблицу; «СОН» снимает весь цикл, иначе idle — вопрос."""
         if self._fun is not None:
             self._fun()             # дыры календаря молча закрываются каждый цикл
         snapshot = self._snapshot()
         if snapshot is None:
             return "skip"
         check, rows = snapshot
+        if self._sleeping():        # до оповещений: спящего не будим (§4.3)
+            self._output.print_info("[TaskMonitor] «СОН» — вопрос и оповещения сняты")
+            return "sleep"
         if self._overtime is not None:
             self._overtime.check(check)   # и при занятой задаче, не только idle
         if check.idle:
             return self._handle_idle(rows)
         return "busy"
 
+    def _sleeping(self) -> bool:
+        """Вердикт «СОН»: липкий кэш гейта, иначе — своё чтение календаря."""
+        if self._sleep_fn is not None:
+            return bool(self._sleep_fn())
+        return bool(self._gcal) and check_sleeping(self._gcal)
+
     def _handle_idle(self, rows: list) -> str:
-        """Idle: вопрос вслух (+кнопки в Telegram); во время «СОН» — молчим."""
-        events, now = self._today_events(), datetime.now().astimezone()
-        if sleep_now(events, now):
-            self._output.print_info("[TaskMonitor] Идёт «СОН» — вопрос снят")
-            return "sleep"
+        """Idle: вопрос вслух (+кнопки в Telegram); «СОН» снят ещё в tick()."""
+        now = datetime.now().astimezone()
+        events = today_events(self._gcal, now) if self._gcal else None
         self._rest.check_async()           # окно = отдых? проверить в фоне
         _, titles = idle_offer(rows, events, now)
         # on_expire — снять реплику вопроса: висящие кнопки зовут в чат впустую
@@ -135,18 +146,6 @@ class TaskMonitor:
         elif self._notify is not None:
             self._notify(QUESTION_IDLE)         # чата нет — вопрос в консоль
         return "idle"
-
-    def _today_events(self) -> Optional[list]:
-        """Сегодняшние события календаря; None, если календарь не подключён."""
-        if self._gcal is None:
-            return None
-        now = datetime.now().astimezone()
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        try:
-            return self._gcal.list_events_between(
-                day_start, day_start + timedelta(days=1))
-        except Exception as error:                # нет токена/сети — откат к таблице
-            return swallowed("task_monitor.events", error, None)
 
     def _snapshot(self):
         """Снимок таблицы: (SheetCheck, сырые строки); None при сбое чтения."""

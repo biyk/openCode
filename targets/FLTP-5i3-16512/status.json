@@ -24,6 +24,12 @@
             "checker": "browser_youtube",
             "interval": 5,
             "need_message": "Открой ютуб"
+        },
+        "sleeping": {
+            "description": "Идёт мероприятие «СОН» — уведомления и сообщения сняты",
+            "checker": "sleep",
+            "interval": 60,
+            "need_message": "Сейчас не идёт событие «СОН»"
         }
     }
 }

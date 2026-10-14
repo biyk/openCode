@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional
 from lib.core.errors import swallowed
 from lib.monitor import registry
 from lib.telegram.config import TelegramConfig
-from lib.telegram.message import split_chunks
+from lib.telegram.message import muted, split_chunks
 from lib.telegram.offers import TaskOffers
 
 # Подсказка на служебные /команды: в чате их печатают чаще, чем команды.
@@ -29,11 +29,13 @@ class TelegramBot:
                  on_text: Callable[[str, Callable[[str], None]], None],
                  output: Any = None,
                  on_pick: Optional[Callable[[str], Any]] = None,
-                 on_finish: Optional[Callable[[str], str]] = None) -> None:
+                 on_finish: Optional[Callable[[str], str]] = None,
+                 mute: Optional[Callable[[], bool]] = None) -> None:
         self._api = api
         self._config = config
         self._on_text = on_text
         self._output = output
+        self._mute = mute
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._offset = 0
@@ -139,6 +141,8 @@ class TelegramBot:
 
     def offer(self, text: str, titles: list) -> None:
         """Инициативный вопрос с кнопками выбора задачи во все чаты whitelist."""
+        if muted(self._mute, "предложение", self._print):
+            return
         self._offers.offer(text, titles)
 
     def recall(self) -> int:
@@ -162,7 +166,13 @@ class TelegramBot:
                 self._print("[Telegram] Ответ не отправлен (ошибка в логе)")
 
     def broadcast(self, text: str, reply_markup: Optional[dict] = None) -> None:
-        """Инициативное уведомление во все чаты whitelist (оповещение)."""
+        """Инициативное уведомление во все чаты whitelist (оповещение).
+
+        Ответы на сообщения пользователя (`reply`) здесь не проходят: сон их
+        не снимает — в чате можно оставаться на связи и ночью.
+        """
+        if muted(self._mute, "уведомление", self._print):
+            return
         for chat_id in sorted(self._config.chat_ids):
             parts = self.chunks(text)
             for idx, chunk in enumerate(parts):

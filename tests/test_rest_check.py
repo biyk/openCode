@@ -124,3 +124,39 @@ class TestClassifyUntilAnswer:
         assert rest_check.classify_until_answer(
             "", c) == RestAnswer("", None, "", False)
         assert c.asked == []
+
+
+class TestRestModel:
+    """Маршрут классификатора окна: auto/tools и ретраи на нём же (§4.3).
+
+    `auto/best-fast` прокси упорно сажал на кодовую модель (замер по его
+    call_logs: mistral/codestral-latest в 85% ответов), поэтому маршрут вынесен
+    в REST_MODEL и переопределяется ключом `rest_model` секции task_monitor.
+    """
+
+    def test_default_route_is_auto_tools(self):
+        assert rest_check.REST_MODEL == "auto/tools"
+
+    def test_classify_builds_client_on_the_route(self, mocker):
+        made = mocker.patch("lib.rest_check.OmniRouterClient")
+        rest_check.classify("Игра")
+        assert made.call_args.kwargs["model"] == rest_check.REST_MODEL
+
+    def test_model_argument_overrides_route(self, mocker):
+        made = mocker.patch("lib.rest_check.OmniRouterClient")
+        rest_check.classify("Игра", model="auto/best-fast")
+        assert made.call_args.kwargs["model"] == "auto/best-fast"
+
+    def test_retries_stay_on_the_same_route(self, mocker):
+        """Фолбэк — та же модель: клиент создаётся один на все попытки."""
+        made = mocker.patch("lib.rest_check.OmniRouterClient")
+        mocker.patch("lib.rest_check.time.sleep")
+        made.return_value = SequenceClient(["Read timed out", "мусор", GOOD])
+        assert rest_check.classify_until_answer("Игра").is_rest is True
+        assert made.call_count == 1              # не пересобирается на ретрае
+
+    def test_history_is_not_polluted(self, mocker):
+        """Классификатор окна не пишет диалог в историю LLM (он фоновый)."""
+        made = mocker.patch("lib.rest_check.OmniRouterClient")
+        rest_check.classify("Игра")
+        assert made.call_args.kwargs["log_history"] is False

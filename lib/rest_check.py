@@ -4,7 +4,8 @@
   - ``rest_prompt``   — только строит вопрос модели (structured-формат);
   - ``parse_rest_answer`` — только разбирает ответ («Ответ/Вероятность/Объяснение»);
   - ``classify``      — то и вместе: спрашивает OmniRouter (маршрут
-    auto/best-fast) про заголовок окна и возвращает разобранный ``RestAnswer``.
+    ``REST_MODEL``, по умолчанию auto/tools) про заголовок окна и возвращает
+    разобранный ``RestAnswer``.
 
 Брать заголовок активного окна и печатать результат — дело вызывающего кода
 (например ``lib.core.task_monitor``); здесь только работа с моделью.
@@ -15,6 +16,13 @@ import time
 from typing import NamedTuple, Optional
 
 from lib.providers.omni import OmniRouterClient
+
+# Маршрут OmniRouter для классификатора окна (решение пользователя — auto/tools
+# вместо auto/best-fast). Это НЕ имя модели: роутер сам выбирает шаг комбо
+# (в его call_logs auto/best-fast садился на mistral/codestral-latest в 85%
+# ответов), поэтому маршрут — ручка настройки, а модель решает роутер.
+# Переопределяется ключом `rest_model` секции task_monitor commands.json.
+REST_MODEL = "auto/tools"
 
 _ANSWER_RE = re.compile(r"^\s*ответ\s*[:\-–]\s*(.+)", re.IGNORECASE | re.M)
 _PROB_RE = re.compile(
@@ -55,31 +63,40 @@ def parse_rest_answer(raw: Optional[str]) -> RestAnswer:
     return RestAnswer(answer, probability, explanation, answer == "да")
 
 
+def _client(model: Optional[str] = None) -> OmniRouterClient:
+    """Клиент OmniRouter на маршруте отдыха (по умолчанию REST_MODEL)."""
+    return OmniRouterClient(log_history=False, model=model or REST_MODEL)
+
+
 def classify(title: str,
-             client: Optional[OmniRouterClient] = None) -> RestAnswer:
+             client: Optional[OmniRouterClient] = None,
+             model: Optional[str] = None) -> RestAnswer:
     """Спрашивает модель про заголовок окна и возвращает разобранный ответ."""
     if not title:
         return RestAnswer("", None, "", False)
-    client = client or OmniRouterClient(log_history=False)
+    client = client or _client(model)
     return parse_rest_answer(client.ask(rest_prompt(title)))
 
 
 def classify_until_answer(title: str,
                           client: Optional[OmniRouterClient] = None,
                           delay_s: float = 5.0,
-                          max_attempts: Optional[int] = None) -> RestAnswer:
+                          max_attempts: Optional[int] = None,
+                          model: Optional[str] = None) -> RestAnswer:
     """Дёргает модель про заголовок, пока не придёт разборчатый ответ.
 
     OmniRouter то и дело отдаёт `Read timed out` / мусор без полей — разовый
     ``classify`` на этом молча глохнет. Здесь же крутимся (пауза ``delay_s``)
-    до настоящего «да/нет/не знаю». Пустой заголовок — сети не трогает.
-    ``max_attempts=None`` — без потолка (фоновый поток может ждать); ставим
-    лимит там, где ждать нельзя. Последний неполный ответ — если уперлись в
-    лимит.
+    до настоящего «да/нет/не знаю». **Фолбэк — на ТОТ ЖЕ маршрут:** клиент
+    создаётся один и переиспользуется всеми попытками, поэтому сбой шага
+    комбо не уводит запрос на другую модель. Пустой заголовок — сети не
+    трогает. ``max_attempts=None`` — без потолка (фоновый поток может ждать);
+    ставим лимит там, где ждать нельзя. Последний неполный ответ — если
+    уперлись в лимит.
     """
     if not title:
         return RestAnswer("", None, "", False)
-    client = client or OmniRouterClient(log_history=False)
+    client = client or _client(model)
     attempts = 0
     while True:
         attempts += 1

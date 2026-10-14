@@ -1,9 +1,10 @@
-"""тесты idle-ветки task_monitor: во время «СОН» вопроса «чем занимаешься?» нет.
+"""тесты ветки «СОН» в task_monitor: молчит весь цикл, а не только вопрос.
 
-Сама проверка «идёт ли сон» — sleep_now, её ветки —
-в tests/taskflow/test_task_schedule.py. Здесь — что монитор на idle
-не печатает вопрос, не шлёт его в Telegram и не поднимает проверку окна,
-а при сбое календаря молчание НЕ включается (fail-open).
+Сама проверка «идёт ли сон» — sleep_now/sleep_gate, её ветки —
+в tests/taskflow/test_task_schedule.py и tests/core/test_sleep_gate.py.
+Здесь — что монитор во время сна не печатает вопрос, не шлёт его в Telegram,
+не поднимает проверку окна и НЕ оповещает о переработке; при пустом
+календаре молчание НЕ включается (сбой — держим прошлый вердикт).
 """
 
 from datetime import datetime, timedelta
@@ -87,13 +88,51 @@ class TestSleepSilencesQuestion:
         ask.assert_called_once()
 
     def test_busy_task_untouched_by_sleep(self, mocker):
-        """Задача запущена — idle-ветка (и сон) вообще не рассматриваются."""
+        """Задача запущена — idle-ветка (и вопрос) вообще не рассматривается."""
         sheet = _sheet([{"task_title": "Работа", "task_time": 10,
                          "start_date": 1_700_000_000_000, "task_uuid": "u-1"}])
         gcal = MagicMock()
-        gcal.list_events_between.return_value = [_sleep_event()]
+        gcal.list_events_between.return_value = []   # спим? вердикт не меняем
         monitor = TaskMonitor(ask=mocker.MagicMock(return_value=True),
                               say=mocker.MagicMock(), output=mocker.MagicMock(),
                               sheet=sheet, handler=MagicMock(), gcal=gcal)
         assert monitor.tick() == "busy"
-        gcal.list_events_between.assert_not_called()
+
+
+def _busy_monitor(mocker, events, overtime):
+    """Монитор с запущенной задачей, мок-календарём на events и оповещателем."""
+    gcal = MagicMock()
+    gcal.list_events_between.return_value = events
+    return TaskMonitor(ask=mocker.MagicMock(return_value=True),
+                       say=mocker.MagicMock(), output=mocker.MagicMock(),
+                       sheet=_sheet([{"task_title": "Работа",
+                                      "task_time": 10,
+                                      "start_date": 1_700_000_000_000,
+                                      "task_uuid": "u-1"}]),
+                       handler=MagicMock(), gcal=gcal, overtime=overtime)
+
+
+class TestSleepSilencesOvertime:
+    """Оповещение о переработке — тоже инициатива: сон его снимает (§4.3)."""
+
+    def test_sleep_mutes_overtime_alert(self, mocker):
+        overtime = mocker.MagicMock()
+        monitor = _busy_monitor(mocker, [_sleep_event()], overtime)
+        assert monitor.tick() == "sleep"
+        overtime.check.assert_not_called()
+
+    def test_no_sleep_still_checks_overtime(self, mocker):
+        """Без сна (календарь пуст — вердикт не меняем) переработка как обычно."""
+        overtime = mocker.MagicMock()
+        monitor = _busy_monitor(mocker, [], overtime)
+        assert monitor.tick() == "busy"
+        overtime.check.assert_called_once()
+
+    def test_gate_verdict_wins_over_calendar(self, mocker):
+        """sleep_fn (гейт) важнее локального чтения: календарь не дёргается."""
+        overtime = mocker.MagicMock()
+        monitor = _busy_monitor(mocker, [], overtime)
+        monitor._sleep_fn = lambda: True
+        assert monitor.tick() == "sleep"
+        overtime.check.assert_not_called()
+        monitor._gcal.list_events_between.assert_not_called()

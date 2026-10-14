@@ -36,6 +36,7 @@ from lib.runtime.status_checkers import (
     _check_media,
     _check_media_session,
     _check_proxy,
+    _check_sleep,
 )
 from lib.runtime.status_poll import StatusPollMixin
 
@@ -46,6 +47,7 @@ BUILTIN_CHECKERS: dict[str, Callable[[], bool]] = {
     "media_session": _check_media_session,
     "browser": _check_browser,
     "browser_youtube": _check_browser_youtube,
+    "sleep": _check_sleep,
 }
 
 

@@ -1,13 +1,17 @@
 """тесты idle-ветки task_monitor: делегирование проверки окна в RestWatch.
 
-Сама логика опроса модели — в test_rest_watch.py. Здесь — что monitor на idle
-передаёт проверку окна фоновому RestWatch (не блокируя цикл) и не трогает сеть
-без примитивов, а на busy вообще не запускает проверку.
+Сама логика опроса модели — в test_rest_watch.py и tests/test_rest_check.py.
+Здесь — что monitor на idle передаёт проверку окна фоновому RestWatch (не
+блокируя цикл) и не трогает сеть без примитивов, а на busy вообще не запускает
+проверку; и что фабрика прокидывает маршрут классификатора из секции
+`task_monitor` (`rest_model`, дефолт — REST_MODEL).
 """
 
 from unittest.mock import MagicMock
 
 from lib.core.task_monitor import TaskMonitor
+from lib.core.task_monitor_launch import start_task_monitor
+from lib.rest_check import REST_MODEL
 
 
 def _sheet(rows):
@@ -61,3 +65,28 @@ class TestIdleDispatchesRestWatch:
         assert monitor._rest.enabled is False
         assert monitor.tick() == "idle"
         monitor._output.print_info.assert_not_called()
+
+
+class TestRouteFromConfig:
+    """Маршрут классификатора окна берётся из секции task_monitor."""
+
+    def _worker(self, mocker, config):
+        worker = mocker.MagicMock()
+        worker._matcher.get_task_monitor_config.return_value = config
+        worker._matcher.get_fun_holes_config.return_value = {}
+        worker._matcher.core_phrase.side_effect = lambda text: text
+        return worker
+
+    def _route(self, mocker, config):
+        mocker.patch.object(TaskMonitor, "start")   # поток в тесте не нужен
+        monitor = start_task_monitor(self._worker(mocker, config),
+                                     mocker.MagicMock())
+        return monitor._rest._classify_fn.keywords["model"]
+
+    def test_configured_route_is_passed(self, mocker):
+        assert self._route(mocker, {"enabled": True,
+                                    "rest_model": "auto/tools"}) == "auto/tools"
+
+    def test_default_route_when_key_absent(self, mocker):
+        """Без ключа — REST_MODEL, а не молчаливый best-fast из клиента."""
+        assert self._route(mocker, {"enabled": True}) == REST_MODEL

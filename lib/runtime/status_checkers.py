@@ -1,4 +1,4 @@
-"""Встроенные проверки статусов (proxy, media, browser)."""
+"""Встроенные проверки статусов (proxy, media, browser, сон)."""
 
 
 def _check_proxy(config=None) -> bool:
@@ -46,6 +46,20 @@ def _check_browser() -> bool:
     try:
         return bool(is_running())
     except Exception:
+        return False
+
+
+def _check_sleep() -> bool:
+    """Возвращает True, если сейчас идёт мероприятие «СОН».
+
+    Читает кэш `lib/core/sleep_gate.py` (его обновляет этот же опрос по
+    интервалу status.json, checker `sleep`), поэтому проверка дешёвая и без
+    сети; сбой календаря вердикт не меняет — липкость (§4.3).
+    """
+    from lib.core.sleep_gate import check_sleeping
+    try:
+        return bool(check_sleeping())
+    except Exception:                       # blind-ok: опрос статуса fail-open (§4.3)
         return False
 
 

@@ -7,15 +7,17 @@
 ``main.py`` рядом с CronScheduler.
 """
 
+from functools import partial
 from typing import Any, Callable, Optional
 
 from lib.core.overtime import OvertimeNotifier
+from lib.core.sleep_gate import check_sleeping
 from lib.core.task_monitor import TaskMonitor
 from lib.core.tuning import (FUN_LOOKBACK_DAYS, FUN_MIN_GAP_MIN,
                              TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S,
                              TASK_OVERTIME_MULTIPLIER)
 from lib.google_calendar import GoogleCalendar
-from lib.rest_check import classify_until_answer
+from lib.rest_check import REST_MODEL, classify_until_answer
 from lib.runtime.window_title import foreground_title
 from lib.taskflow.fun_fill import make_fun_fill
 
@@ -30,12 +32,15 @@ def start_task_monitor(worker: Any, output: Any,
     """Собирает и запускает монитор по секции `task_monitor` commands.json.
 
     Ключи секции: enabled, interval_min, answer_timeout_s, overtime_enabled,
-    overtime_multiplier; чего нет — берём из lib.core.tuning. None — секция
-    выключена. Секция `fun_holes` (enabled, min_gap_min, lookback_days)
-    добавляет к циклу дыры календаря; `notify` — дубль в Telegram (вопрос на
-    idle и оповещение о переработке); `finish_markup` — callable, возвращающий
-    inline-клавиатуру «Завершить» под названием задачи (для переработки);
-    `recall` — убирает реплику вопроса из чата, когда ответа не дождались.
+    overtime_multiplier, rest_model; чего нет — берём из lib.core.tuning.
+    None — секция выключена. Секция `fun_holes` (enabled, min_gap_min,
+    lookback_days) добавляет к циклу дыры календаря; `notify` — дубль в
+    Telegram (вопрос на idle и оповещение о переработке); `finish_markup` —
+    callable, возвращающий inline-клавиатуру «Завершить» под названием задачи
+    (для переработки); `recall` — убирает реплику вопроса из чата, когда ответа
+    не дождались.
+    Вердикт «СОН» — из `lib.core.sleep_gate` (липкий кэш + статус `sleeping`):
+    он снимает и вопрос, и оповещения о переработке (§4.3).
     """
     config = worker._matcher.get_task_monitor_config()
     if not config.get("enabled"):
@@ -56,6 +61,9 @@ def start_task_monitor(worker: Any, output: Any,
             finish_markup=finish_markup,
             multiplier=float(config.get(
                 'overtime_multiplier', TASK_OVERTIME_MULTIPLIER)))
+    # Классификатор активного окна — на своём маршруте роутера (не best-fast,
+    # который прокси упорно сажает на кодовую модель); ретраи — на нём же.
+    rest_model = config.get("rest_model", REST_MODEL)
     output.print_info(
         f"[TaskMonitor] Таблица задач: проверка каждые "
         f"{interval_s / 60.0:.0f} мин"
@@ -65,8 +73,10 @@ def start_task_monitor(worker: Any, output: Any,
         ask=worker._orchestrator.ask, say=worker._orchestrator.say,
         output=output, core=worker._matcher.core_phrase,
         interval_s=interval_s, fun=fun, overtime=overtime,
-        title_fn=foreground_title, classify_fn=classify_until_answer,
+        title_fn=foreground_title,
+        classify_fn=partial(classify_until_answer, model=rest_model),
         notify=notify, gcal=GoogleCalendar(), offer=offer, recall=recall,
+        sleep_fn=check_sleeping,
         record=worker._matcher.record_use,
         answer_timeout_s=float(config.get("answer_timeout_s",
                                           TASK_ANSWER_TIMEOUT_S)))
