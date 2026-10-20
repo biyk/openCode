@@ -3,6 +3,8 @@
 import platform
 import subprocess
 
+from lib.core.tuning import COMMAND_TIMEOUT_S
+
 
 class SkillActionsMixin:
     """Миксин SkillRegistry: open_url / run_cmd шаги."""
@@ -37,6 +39,11 @@ class SkillActionsMixin:
             return False
 
     def _action_open_url(self, p: dict) -> bool:
+        """Открывает URL штатным обработчиком; ждётся тем же потолком.
+
+        `start`/`open` возвращаются сразу, но шаг идёт в цикле распознавания,
+        и зависнуть он значит оглушить микрофон — как и shell-шаг ниже.
+        """
         url = p.get("url")
         if not url:
             self._logger.log_error("[Skills] open_url: нет url")
@@ -44,11 +51,14 @@ class SkillActionsMixin:
         system = platform.system().lower()
         try:
             if system == "windows":
-                subprocess.run(["cmd", "/c", "start", "", url], check=True)
+                subprocess.run(["cmd", "/c", "start", "", url], check=True,
+                               timeout=COMMAND_TIMEOUT_S)
             elif system == "darwin":
-                subprocess.run(["open", url], check=True)
+                subprocess.run(["open", url], check=True,
+                               timeout=COMMAND_TIMEOUT_S)
             else:
-                subprocess.run(["xdg-open", url], check=True)
+                subprocess.run(["xdg-open", url], check=True,
+                               timeout=COMMAND_TIMEOUT_S)
             self._logger.log_info(f"[Skills] Открыт URL: {url}")
             return True
         except subprocess.CalledProcessError as e:
@@ -56,12 +66,17 @@ class SkillActionsMixin:
             return False
 
     def _action_run_cmd(self, p: dict) -> bool:
+        """Выполняет shell-шаг; потолок общий с голосовыми командами.
+
+        Без `timeout` зависший шаг вешает цикл распознавания: шаги идут
+        синхронно, и микрофон во время шага ничего не видит.
+        """
         cmd = p.get("cmd")
         if not cmd:
             self._logger.log_error("[Skills] run_cmd: нет cmd")
             return False
         try:
-            subprocess.run(cmd, shell=True, check=True)
+            subprocess.run(cmd, shell=True, check=True, timeout=COMMAND_TIMEOUT_S)
             self._logger.log_info(f"[Skills] Команда выполнена: {cmd}")
             return True
         except subprocess.CalledProcessError as e:

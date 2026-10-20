@@ -41,6 +41,7 @@ def _run_wake() -> str:
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
          "-File", str(WAKE_PS1)],
         capture_output=True, text=True, timeout=180,
+        encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
     )
     if res.returncode != 0:
@@ -68,6 +69,7 @@ def browser_up():
     res = subprocess.run(
         ["python", "-m", "lib.browser_control", "status"],
         capture_output=True, text=True, timeout=15,
+        encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
     )
     if res.returncode != 0:

@@ -11,7 +11,9 @@ from gtts import gTTS
 from lib.synth import tts_cache
 
 _BASE_DIR = Path(__file__).resolve().parents[2]
-_PIPER_MODEL = _BASE_DIR / "models" / "piper" / "ru_RU-irina-medium.onnx"
+# ВРЕМЕННО (режим «только Denis»): мужская модель. Прежняя женская —
+# "ru_RU-irina-medium.onnx".
+_PIPER_MODEL = _BASE_DIR / "models" / "piper" / "ru_RU-denis-medium.onnx"
 
 
 class TtsEnginesMixin:

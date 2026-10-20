@@ -49,7 +49,8 @@ def schedule_wake_alarm(moment: datetime,
         result = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
              "-Command", ps],
-            capture_output=True, text=True, timeout=timeout)
+            capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         return f"powershell не ответил за {timeout:.0f} с"
     if result.returncode == 0:

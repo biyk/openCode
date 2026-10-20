@@ -6,13 +6,12 @@ import time
 from typing import Optional
 
 from lib.core import timing
+from lib.core.tuning import COMMAND_TIMEOUT_S
 from lib.voice_cmd.command_stats import CommandStats, stats_path_for
 from lib.voice_cmd.commands_config import CommandConfigMixin
 from lib.voice_cmd.commands_match import CommandMatchMixin
 from lib.runtime.status import StatusStore
 from lib.tts import TextToSpeech
-
-CONFIRMATION_PHRASE = os.environ.get("VOICE_CONFIRMATION_PHRASE")
 
 DEFAULT_TRIGGERS = ["пожалуйста", "алиса"]
 
@@ -27,9 +26,8 @@ def _fmt_number(value: float) -> str:
 class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
     """Сопоставление голосовых команд с shell-командами.
 
-    Каждая команда может требовать статусы ("requires": {"id": [...]}):
-    команда выполняется только если все её статусы активны в StatusStore.
-    Составные команды описываются в "sequences": {"id": {"steps": [...]}},
+    "requires": {"id": [...]} — команда идёт только если все её статусы активны
+    в StatusStore. Составные команды — "sequences": {"id": {"steps": [...]}},
     после успешного шага выставляются его "provides"-статусы.
     """
 
@@ -75,12 +73,10 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
                      settings: tuple[str, ...] = ()) -> Optional[str]:
         """Возвращает команду с учётом платформы и настроек.
 
-        Настройки {немного}/{сильно} меняют числовые параметры
-        (например {{step}}): множитель из секции "settings".
-        Плейсхолдер {{text}} подставляет свободный текст — все слова,
-        идущие после команды (для calendar-reminder/task-add).
-        Кавычки вокруг {{text}} ставит сам шаблон; двойные кавычки
-        внутри текста вырезаются, чтобы не разорвать shell-команду.
+        Настройки {немного}/{сильно} меняют числовые параметры ({{step}})
+        множителем из секции "settings". {{text}} получает свободный текст —
+        всё, что идёт после команды (calendar-reminder/task-add); кавычки
+        вокруг него ставит сам шаблон, двойные внутри — вырезаются.
         """
         commands = self._data.get("commands", {})
         cmd = commands.get(cmd_id)
@@ -127,10 +123,9 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
                       settings: tuple[str, ...] = ()) -> bool:
         """Выполняет команду по id (или составную sequence по шагам).
 
-        Статистику ведения: каждый реально исполненный шаг считает
-        `_execute_step` (в т.ч. подшаги sequence); здесь добавляётся только
-        счёт самой составной команды как макро (её id), иначе одиночная
-        команда была бы засчитана дважды. Статистика fail-open.
+        Статистику ведёт `_execute_step` (каждый реально исполненный шаг, в т.ч.
+        подшаги sequence); здесь добавляется только счёт самой составной команды
+        как макро (её id), иначе одиночная была бы засчитана дважды.
         """
         self.reload()
         seq = self.sequences().get(cmd_id)
@@ -142,10 +137,9 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         return self._execute_step(cmd_id, settings)
 
     def record_use(self, cmd_id: str) -> None:
-        """Пишет запуск команды, исполненной вне execute_by_id (кнопка/фон).
+        """Пишет запуск команды вне execute_by_id (кнопка, ответ на вопрос).
 
-        Голос/текст/LLM считаются через `_execute_step`; пути мимо матчера
-        (клик кнопки «начать задачу», ответ на idle-вопрос) зовут это явно.
+        Голос/текст/LLM считаются через `_execute_step`, остальные пути — здесь.
         """
         self._stats.bump(cmd_id)
 
@@ -185,14 +179,20 @@ class CommandMatcher(CommandMatchMixin, CommandConfigMixin):
         """Запускает shell-команду; длительность печатает всегда.
 
         Дочерний `python -m lib.…` молчит ~12 Google-запросов кряду — без
-        отсечки не видно, кто съел паузу между командой и ответом.
+        отсечки не видно, кто съел паузу. Цикл распознавания ждёт ребёнка
+        синхронно: зависшая команда глушит микрофон, поэтому COMMAND_TIMEOUT_S
+        — страховка всего пути (снимается только оболочка, не весь процесс).
         """
         t0 = time.perf_counter()
         try:
-            subprocess.run(command, shell=True, check=True)
+            subprocess.run(command, shell=True, check=True, timeout=COMMAND_TIMEOUT_S)
             if os.environ.get("VOICE_CONFIRMATION_PHRASE"):
                 self._tts.speak_and_play(os.environ["VOICE_CONFIRMATION_PHRASE"])
             return True
+        except subprocess.TimeoutExpired:
+            print(f"[Command] {cmd_id or command}: нет ответа за "
+                  f"{COMMAND_TIMEOUT_S:.0f} с — процесс снят")
+            return False
         except subprocess.CalledProcessError:
             return False
         finally:

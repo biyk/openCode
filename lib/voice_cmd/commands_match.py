@@ -61,16 +61,21 @@ class CommandMatchMixin:
             return None, [], 0.0
         return best_id, tokens[best_len:], best_score
 
-    def find_command(self, text: str) -> tuple[Optional[str], list[str]]:
+    def find_command(self, text: str,
+                     require_trigger: bool = True) -> tuple[Optional[str], list[str]]:
         """Поиск команды уровня commands.json в ОДНОЙ строке.
 
         Триггер и команда должны стоять в одной строке: ядро строки
         (текст без триггеров) матчится на команду. Соседние строки не
         смотрим и следующую не ждём. Возвращает (cmd_id, настройки);
         (None, []) — команды в строке нет.
+
+        require_trigger=False — строка уже адресована ассистенту (ответ на
+        его вопрос, см. lib/core/orchestrator_ask.py): ключ ищем в самой
+        строке, а слово-обращение не ждём.
         """
         self.reload()
-        if not self.has_trigger(text):
+        if require_trigger and not self.has_trigger(text):
             return None, []
         cmd_id, settings, _score = self._match_command(
             self.core_phrase(text))

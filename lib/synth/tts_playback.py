@@ -5,7 +5,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 _BASE_DIR = Path(__file__).resolve().parents[2]
 _SAPI_SCRIPT = _BASE_DIR / "bin" / "tts_sapi.ps1"
@@ -44,6 +44,41 @@ class TtsPlaybackMixin:
             listener(active)
         except Exception as e:
             print(f"[TTS] Слушатель озвучки: {e}")
+
+    # ---------- Можно ли говорить вслух (шлюз озвучки, §4.14) ----------
+
+    def set_speak_gate(self, gate: Optional[Any]) -> None:
+        """Ограничение озвучки по устройству вывода (SpeakGate | None).
+
+        None — играть всегда. Обычный шлюз ставит себе сам `TextToSpeech` по
+        конфигу устройства; сеттер нужен живому процессу (свои output/matcher)
+        и тестам, чтобы подменить источник решения.
+        """
+        self._speak_gate = gate
+
+    def _may_speak(self, blocks: list[str]) -> bool:
+        """Играть ли сейчас; False — молчаливый режим, синтез не тратим.
+
+        Текст при этом уже напечатан вызывающим: `_say` пишет его в консоль и
+        лог, чату уходит ответ отдельно (§4.7) — молчание только про звук.
+        Сбой самого шлюза озвучку не отменяет (fail-open, как со слушателем
+        выше): промолчать из-за сломанного условия хуже, чем сказать вслух.
+        """
+        gate = self._speak_gate
+        if gate is None:
+            self.audible = True
+            return True
+        try:
+            heard = gate.allowed()
+        except Exception as e:
+            print(f"[TTS] Шлюз озвучки: {e}")
+            heard = True
+        self.audible = heard
+        if heard:
+            return True
+        print(f"[TTS] Молчу (звук не в «{gate.headphone}»): "
+              f"{' '.join(blocks)[:60]}")
+        return False
 
     def _speak_sapi(self, text: str) -> Optional[str]:
         """Синтез через системный голос Windows (System.Speech) в WAV."""

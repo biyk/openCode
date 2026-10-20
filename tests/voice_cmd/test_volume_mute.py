@@ -34,6 +34,7 @@ def _ps1_args(*args: str) -> list[str]:
 def _run(*args: str) -> str:
     res = subprocess.run(
         _ps1_args(*args), capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
         timeout=60, cwd=str(REPO_ROOT),
     )
     if res.returncode != 0:
@@ -139,6 +140,7 @@ class TestVolumeMuteDecoupling:
         """Одновременно -Mute и -Unmute — ошибка (exit != 0)."""
         res = subprocess.run(
             _ps1_args("-Mute", "-Unmute"), capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             timeout=60, cwd=str(REPO_ROOT),
         )
         assert res.returncode != 0, (

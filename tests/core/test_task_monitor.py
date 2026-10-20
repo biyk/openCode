@@ -3,21 +3,24 @@
 from unittest.mock import MagicMock
 
 from lib.core import task_monitor_launch as launch_module
+from lib.core.task_pick import TASKSTART_KEY
 from lib.core.task_monitor import ANSWER_UNKNOWN, QUESTION_IDLE, TaskMonitor
 from lib.core.task_monitor_launch import start_task_monitor
 
 
 class _Asker:
-    """Заглушка orchestrator.ask: помнит вопрос и вызывает ответ по требованию."""
+    """Заглушка orchestrator.ask: помнит вопрос (и его ключ) и зовёт ответ."""
 
     def __init__(self, accepted=True):
         self.accepted, self.questions = accepted, []
-        self.timeout_s = self.on_expire = None
+        self.timeout_s = self.on_expire = self.prefix = None
 
-    def __call__(self, question, on_answer, label, timeout_s, on_expire=None):
+    def __call__(self, question, on_answer, label, timeout_s, on_expire=None,
+                 prefix=None):
         self.questions.append((question, label))
         self.timeout_s = timeout_s
         self.on_expire = on_expire
+        self.prefix = prefix
         if self.accepted:
             self.on_answer = on_answer
         return self.accepted
@@ -34,8 +37,7 @@ def _sheet(rows):
 
 
 def _row(title="Уборка", start=0, uuid="u-1"):
-    return {"task_title": title, "task_time": 10, "start_date": start,
-            "task_uuid": uuid}
+    return {"task_title": title, "task_time": 10, "start_date": start, "task_uuid": uuid}
 
 
 def _monitor(mocker, rows, handler=None, accepted=True):
@@ -56,6 +58,7 @@ class TestIdleQuestion:
         assert monitor.tick() == "idle"
         assert ask.questions == [(QUESTION_IDLE, "task_idle")]
         assert ask.timeout_s == 90.0
+        assert ask.prefix == TASKSTART_KEY   # ответ уйдёт в уровни командой
 
     def test_answer_starts_matching_task(self, mocker):
         """Ответ похож на задачу таблицы → task_start по чистому заголовку."""
@@ -178,9 +181,8 @@ class TestFunHolesHook:
 
     def _monitor(self, mocker, rows=None, sheet=None, fun=None):
         return TaskMonitor(ask=mocker.MagicMock(), say=mocker.MagicMock(),
-                           output=mocker.MagicMock(),
-                           sheet=sheet or _sheet(rows or []),
-                           handler=mocker.MagicMock(), fun=fun)
+                           output=mocker.MagicMock(), handler=mocker.MagicMock(),
+                           sheet=sheet or _sheet(rows or []), fun=fun)
 
     def test_hook_runs_even_when_task_is_busy(self, mocker):
         calls = []

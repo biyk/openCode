@@ -1,14 +1,16 @@
 # TOOLTIP: Скорость играющего видео в тестовом браузере: поиск звучащей вкладки и сдвиг playbackRate
 """Скорость воспроизведения — «алиса быстрее / алиса медленней».
 
-Звучащую вкладку ищем по состоянию самой страницы: CDP в `/json/list` не
-отдаёт признак «эта вкладка издаёт звук» (полей audible там нет), поэтому
-каждую обычную вкладку спрашиваем JS-пробой по `video`/`audio`. Из играющих
-элементов выбирается звучащий (не muted, volume > 0), заглушённые — в конце
-списка; найденной вкладке двигаем `playbackRate` на шаг (параметр `step`
-команды в commands.json — 0.05, как шаг громкости).
+Звучащую вкладку ищет проба `lib/browser/cdp_probe.py` (в CDP нет поля
+«эта вкладка издаёт звук», поэтому каждую обычную вкладку спрашивают JS-пробой
+по `video`/`audio` с коротким таймаутом). Из играющих элементов выбирается
+звучащий (не muted, volume > 0), заглушённые — в стороне; найденной вкладке
+dвигаем `playbackRate` на шаг (параметр `step` команды в commands.json — 0.05,
+как шаг громкости).
 
-Плееры в iframe (встроенные ролики) пробой не видны: смотрим основной документ.
+Обход прекращается на первой звучащей вкладке, а неответившие не считаются
+тишиной: иначе зависший браузер глушил бы микрофон минутами, а команда
+выглядела бы невыполненной при играющем видео.
 
 Запуск:
     python -m lib.browser.playback_rate up 0.05
@@ -19,7 +21,7 @@ import json
 import sys
 from typing import Any, Optional
 
-from lib.browser import cdp_client as cdc
+from lib.browser import cdp_probe
 from lib.browser.cdp_client import DEFAULT_PORT
 
 # Границы скорости: ниже 0.25 речь неразборчива, выше 4.0 уже не слушают.
@@ -35,26 +37,9 @@ STEP_DEFAULT = 0.05
 # подтверждение направления важнее нейтрального «Готово».
 PHRASES = {"up": "Быстрее", "down": "Медленней"}
 PHRASE_SILENCE = "Ни одно видео не играет"
-
-# Элемент «играет» = не на паузе, не закончен, данные текут (readyState ≥ 2).
-_PLAYING = "if (m.paused || m.ended || m.readyState < 2) continue;"
-_AUDIBLE = "!m.muted && m.volume > 0"  # звук идёт с этой вкладки
-
-
-def _probe_js() -> str:
-    """JS вопроса «звучит ли страница»: первый играющий элемент и его скорость."""
-    return (
-        "(function(){'use strict';"
-        "var els = document.querySelectorAll('video, audio');"
-        "for (var i = 0; i < els.length; i++) {"
-        "  var m = els[i];"
-        + _PLAYING +
-        "  return {playing: true, audible: " + _AUDIBLE + ","
-        "          rate: m.playbackRate};"
-        "}"
-        "return {playing: false, audible: false, rate: 0};"
-        "})()"
-    )
+# Вкладки молчат на пробу — говорить «не играет» было бы ложью: там видео
+# может идти, просто страница не отвечает.
+PHRASE_DEAD = "Браузер не отвечает"
 
 
 def _apply_js(delta: float) -> str:
@@ -66,7 +51,7 @@ def _apply_js(delta: float) -> str:
         "var before = 0, after = 0, count = 0;"
         "for (var i = 0; i < els.length; i++) {"
         "  var m = els[i];"
-        + _PLAYING +
+        + cdp_probe.PLAYING +
         "  var rate = Math.min(" + str(RATE_MAX) + ", Math.max("
         + str(RATE_MIN) + ", m.playbackRate + delta));"
         "  if (!count) { before = m.playbackRate; after = rate; }"
@@ -79,32 +64,9 @@ def _apply_js(delta: float) -> str:
     )
 
 
-def _eval(tab: dict, script: str) -> dict:
-    """JS на вкладке → словарь; пустой словарь — вкладка не ответила."""
-    ok, value = cdc.eval_js(tab, script)
-    if not ok:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def page_tabs(port: int = DEFAULT_PORT) -> list[dict]:
-    """Обычные вкладки: service worker и фоновые страницы расширений — мимо."""
-    return [t for t in cdc._list_tabs(port)
-            if t.get("type", "page") in ("page", "")]
-
-
-def sounding_tabs(port: int = DEFAULT_PORT) -> list[tuple[dict, dict]]:
-    """Вкладки, где что-то играет: звучащие впереди, заглушённые — после.
-
-    Порядок внутри группы сохраняется (как в списке браузера), поэтому
-    повторная команда крутит скорость одной и той же вкладки, а не прыгает.
-    """
-    found = []
-    for tab in page_tabs(port):
-        info = _eval(tab, _probe_js())
-        if info.get("playing"):
-            found.append((tab, info))
-    return sorted(found, key=lambda pair: 0 if pair[1].get("audible") else 1)
+def _fail(error: str, phrase: str) -> dict:
+    """Неуспех с тем, что сказать вслух (зависший браузер — не тишина)."""
+    return {"ok": False, "error": error, "phrase": phrase}
 
 
 def bump_rate(delta: float, port: int = DEFAULT_PORT) -> dict:
@@ -113,18 +75,20 @@ def bump_rate(delta: float, port: int = DEFAULT_PORT) -> dict:
     Вкладку не активируем: `playbackRate` применим и к фоновой вкладке, а
     угон фокуса у пользователя ни за что.
     """
-    tabs = sounding_tabs(port)
-    if not tabs:
-        return {"ok": False, "error": "ни одно видео не играет"}
-    tab, info = tabs[0]
-    res = _eval(tab, _apply_js(delta))
+    scan = cdp_probe.sounding(cdp_probe.page_tabs(port))
+    if scan.tab is None:
+        if scan.dead:
+            return _fail(f"вкладки не ответили ({scan.dead})", PHRASE_DEAD)
+        return _fail("ни одно видео не играет", PHRASE_SILENCE)
+    res = cdp_probe.eval_tab(scan.tab, _apply_js(delta))
     if not res.get("playing"):
         # Вкладка замолчала между пробой и сдвигом (ролик закончился).
-        return {"ok": False, "error": "вкладка перестала играть"}
-    return {"ok": True, "title": (tab.get("title") or "").strip(),
-            "url": tab.get("url", ""), "before": res.get("before"),
+        return _fail("вкладка перестала играть", PHRASE_SILENCE)
+    return {"ok": True, "title": (scan.tab.get("title") or "").strip(),
+            "url": scan.tab.get("url", ""), "before": res.get("before"),
             "after": res.get("after"), "count": res.get("count"),
-            "audible": bool(info.get("audible")), "others": len(tabs) - 1}
+            "audible": bool(scan.info.get("audible")), "others": scan.others,
+            "dead": scan.dead}
 
 
 def _num(value: Any) -> str:
@@ -143,9 +107,10 @@ def _report(result: dict) -> None:
     muted = "" if result.get("audible") else " (без звука)"
     extra = "" if not result.get("others") else \
         f" +{result['others']} играющих вкладок(и)"
+    dead = (f"; {result['dead']} без ответа" if result.get("dead") else "")
     print(f"[Browser] «{result.get('title')}»: скорость "
           f"{_num(result.get('before'))} → {_num(result.get('after'))}"
-          f"{muted}{extra}")
+          f"{muted}{extra}{dead}")
 
 
 def _speak(text: str) -> None:
@@ -184,7 +149,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 2
     result = bump_rate(step if action == "up" else -step)
     _report(result)
-    _speak(PHRASES[action] if result.get("ok") else PHRASE_SILENCE)
+    phrase = PHRASES[action] if result.get("ok") else (
+        result.get("phrase") or PHRASE_SILENCE)
+    _speak(phrase)
     return 0 if result.get("ok") else 1
 
 

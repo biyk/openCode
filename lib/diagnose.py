@@ -96,7 +96,8 @@ def git_status_dirty(repo_root: Optional[str] = None) -> bool:
     try:
         proc = subprocess.run(
             ["git", "status", "--porcelain"],
-            cwd=repo_root, capture_output=True, text=True, timeout=30)
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
+            encoding="utf-8", errors="replace")
     except Exception:
         return True
     if proc.returncode != 0:

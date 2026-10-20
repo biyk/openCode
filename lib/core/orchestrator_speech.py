@@ -145,9 +145,14 @@ class OrchestratorSpeechMixin:
         return True
 
     def _on_speaking_finished(self) -> None:
-        """Сбрасывает флаг озвучки и ставит окно эхо-затишья."""
+        """Сбрасывает флаг озвучки и ставит окно эхо-затишья.
+
+        Окно нужно только если фраза реально звучала: в молчаливом режиме
+        (§4.14) эха с колонок нет, а `suppress_after` съел бы следующую команду.
+        """
         self._speaking = False
-        self._suppress_until = time.monotonic() + self._suppress_after
+        if getattr(self._tts, "audible", True):
+            self._suppress_until = time.monotonic() + self._suppress_after
         self._clear_speech_buffer()
 
     def stop(self) -> None:

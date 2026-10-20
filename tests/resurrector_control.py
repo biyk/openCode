@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+
+from contextlib import contextmanager
 from pathlib import Path
 
 CONFIG_PATH = (
@@ -87,12 +89,21 @@ def set_enabled(enabled: bool) -> bool:
 def _main_app_pids():
     """PID python-процессов с main.py или None, если определить не вышло."""
     try:
-        out = subprocess.run(
+        proc = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'",
              "get", "ProcessId,CommandLine", "/format:csv"],
-            capture_output=True, text=True, timeout=15).stdout
+            capture_output=True, timeout=15)
     except Exception:
         return None
+    # wmic печатает системной кодировкой (cp866/cp1251), поэтому читаем байты:
+    # `text=True` без `encoding` под `-X utf8` не декодирует вывод и кладёт
+    # в stdout None — а `None.splitlines()` ронял всю тестовую сессию. Пустой
+    # вывод остаётся «определить не вышло»: пустой список здесь означал бы
+    # «приложения нет», и живые тесты пошли бы поверх всё ещё живого процесса.
+    if proc.stdout is None:
+        return None
+    # Идентификатор процесса и «main.py» — ASCII, они переживают замену.
+    out = proc.stdout.decode("utf-8", errors="replace")
     pids = []
     for line in out.splitlines():
         if "main.py" not in line:
@@ -112,3 +123,29 @@ def wait_app_stopped(timeout: float = 15.0) -> bool:
             return True
         time.sleep(1.0)
     return False
+
+
+@contextmanager
+def paused_app():
+    """Гасит приложение на время live-сессии и включает его ОБЯЗАТЕЛЬНО.
+
+    Выключение и ожидание стоят ВНУТРИ try: падение на любом из шагов
+    обязано вернуть enabled=True. Если бы `set_enabled(False)` выполнялся до
+    try (как раньше), упавшая проверка процессов оставляла ассистента
+    выключенным намертво — и живым его не считал бы даже следующий прогон,
+    потому что он запомнил бы уже выключенное состояние как «исходное».
+
+    Не трогает ничего, если приложение было выключено ДО нас (False) или
+    секции/файла нет (None): «восстановить False» — это не восстановить,
+    а оставить пользователя без ассистента.
+    """
+    original = get_enabled()
+    if original is not True:
+        yield False
+        return
+    try:
+        set_enabled(False)
+        wait_app_stopped()
+        yield True
+    finally:
+        set_enabled(original)

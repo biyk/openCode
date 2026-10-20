@@ -77,6 +77,16 @@ class CommandConfigMixin:
         """
         return self._data.get("mic", {})
 
+    def get_speak_gate_config(self) -> dict:
+        """Возвращает секцию `speak_gate` (шлюз озвучки, §4.14).
+
+        Ключи: enabled, headphone_device (подстрока имени наушников; по
+        умолчанию — `record_gate.allowed_device`), ttl_s (сколько секунд держать
+        вердикт); значения по умолчанию — в lib.runtime.speak_gate. Выключенная
+        секция означает озвучку без ограничений.
+        """
+        return self._data.get("speak_gate", {})
+
     def get_fun_holes_config(self) -> dict:
         """Возвращает секцию `fun_holes` (развлечения в дырах календаря).
 
@@ -112,8 +122,11 @@ class CommandConfigMixin:
         Ключи: enabled (писать heartbeat и держать смотрителя), board_port
         (порт доски знаний, где лежит вкладка «Сервисы»; дефолт
         MONITOR_BOARD_PORT), auto_open (открыть её при старте), omni_enabled,
-        omni_url, omni_interval_s, omni_hang_fails, omni_cooldown_s,
-        omni_warmup_s (смотритель OmniRouter); дефолты — lib.monitor.tuning.
+        omni_url, omni_interval_s (как часто пробовать), omni_hang_fails и
+        omni_hang_after_s (когда молчание считается зависанием), omni_warmup_s
+        (потолок прогрева после нашего запуска), omni_backoff_s (список пауз
+        между перезапусками), omni_budget_restarts + omni_budget_window_s
+        (бюджет перезапусков); дефолты — lib.monitor.tuning.
         """
         return self._data.get("monitor", {})
 

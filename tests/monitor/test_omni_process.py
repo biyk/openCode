@@ -30,8 +30,10 @@ def test_is_healthy_uses_health_endpoint(monkeypatch):
 
     monkeypatch.setattr(omni, "http_ok", _fake)
     assert omni.is_healthy("http://127.0.0.1:20128/") is True
-    assert seen["url"] == "http://127.0.0.1:20128/api/health"
-    # Общий таймаут проб (1 с) слишком тесный для /api/health под нагрузкой:
+    # /healthz, а не /api/health: тот же 200, но дешевле и раньше в буте
+    # (рекомендация тестировщика шлюза: решать по 200, а не по «порт открыт»).
+    assert seen["url"] == "http://127.0.0.1:20128/healthz"
+    # Общий таймаут проб (1 с) слишком тесный для пробы под нагрузкой:
     # спотыкаясь о него, смотритель считал здоровый прокси зависшим.
     assert seen["timeout"] == MONITOR_OMNI_HEALTH_TIMEOUT_S
     assert MONITOR_OMNI_HEALTH_TIMEOUT_S > MONITOR_PROBE_TIMEOUT_S

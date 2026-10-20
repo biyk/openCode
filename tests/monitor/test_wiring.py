@@ -14,6 +14,7 @@ REPO = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "stt": "lib/stt/transcription_worker.py",
     "record_gate": "lib/runtime/record_gate.py",
+    "speak_gate": "lib/runtime/speak_gate.py",
     "status_poll": "lib/runtime/status_poll.py",
     "cron": "lib/scheduling/cron.py",
     "task_monitor": "lib/core/task_monitor.py",
@@ -71,6 +72,17 @@ def test_device_config_documents_monitor_section():
         assert isinstance(section.get("enabled"), bool)
         assert int(section.get("board_port", 0)) > 0
         assert int(section.get("omni_hang_fails", 1)) >= 1
+        assert "omni_cooldown_s" not in section, (
+            "фиксированный cooldown вернулся: он и был периодом перезапусков "
+            "187–202 с; теперь бэк-офф растёт (omni_backoff_s) + бюджет")
+        if "omni_hang_after_s" in section:
+            # окно молчания обязана переживать «N неудач подряд» (правило 3),
+            # иначе «завис» снова решается раньше, чем успевает догореть запрос
+            window = int(section["omni_hang_after_s"])
+            assert window >= int(section.get("omni_interval_s", 30)) \
+                * int(section.get("omni_hang_fails", 3))
+        if "omni_backoff_s" in section:
+            assert [float(x) for x in section["omni_backoff_s"]]
         assert "port" not in section, (
             "панель больше не отдельный сервер: ключ `port` (8766) устарел, "
             "вкладка живёт на доске знаний (`board_port`)")
@@ -102,8 +114,8 @@ def test_omni_restart_uses_flags_the_cli_has():
 
 def test_watchdog_gives_the_server_time_to_warm_up():
     """Регресс «смотритель сам ломает прокси»: порт после `serve --daemon`
-    занят с первой секунды, а /api/health отвечает только через ~45 с. Без
-    паузы на прогрев три такта по 15 с объявляли греющийся сервер «зависшим»,
+    занят с первой секунды, а /healthz отвечает только через ~45 с. Без
+    паузы на прогрев такты объявляли греющийся сервер «зависшим»,
     и рестарт гонялся по кругу, не давая прокси дожить до готовности."""
     text = _source("lib/monitor/watchdog.py")
     warmup = text.index("_warmup_left()")
@@ -111,6 +123,40 @@ def test_watchdog_gives_the_server_time_to_warm_up():
     assert warmup < fails, (
         "watchdog.py снова считает неудачи до паузы на подъём сервера")
     assert "MONITOR_OMNI_WARMUP_S" in text
+
+
+def test_watchdog_never_kills_a_busy_or_unmeasured_gateway():
+    """Регресс трёхминутного цикла: молчание пробы — НЕ повод убивать.
+    Штатный long-запрос глушит /healthz на минуты (замер: 40–170 с), поэтому
+    «завис» решается только по долгому молчанию И нулю соединений; не смогли
+    посчитать соединения — тоже не убиваем (destructive только по факту)."""
+    text = _source("lib/monitor/watchdog.py")
+    kill = text.index('self._restart("завис"')
+    assert text.index('return "busy"') < kill, (
+        "проверка занятости ушла из-под удара — стримы снова режутся")
+    assert text.index('return "unknown"') < kill, (
+        "непосчитанные соединения перестали запрещать перезапуск")
+    assert "hang_after" in text and "_hang_expired" in text
+
+
+def test_restart_cadence_is_backoff_and_budget_not_cooldown():
+    """Фиксированный cooldown давал ровно период 187–202 с из отчёта
+    тестировщика; ему на смену — растущий бэк-офф и бюджет перезапусков."""
+    text = _source("lib/monitor/watchdog.py")
+    assert "wait_s()" in text and "exhausted()" in text
+    assert "MONITOR_OMNI_COOLDOWN_S" not in _source("lib/monitor/tuning.py")
+    tuning = _source("lib/monitor/tuning.py")
+    assert "MONITOR_OMNI_BACKOFF_S" in tuning
+    assert "MONITOR_OMNI_BUDGET_RESTARTS" in tuning
+
+
+def test_watchdog_sees_the_process_from_outside():
+    """pid-файл и соединения — у «завис» должно быть доказательство, а не
+    догадка по одной пробе: без omni_proc смотритель слеп (правила 1 и 8)."""
+    text = _source("lib/monitor/watchdog.py")
+    assert "omni_proc" in text
+    proc = _source("lib/monitor/omni_proc.py")
+    assert "netstat" in proc and "server_running" in proc
 
 
 def test_board_server_serves_monitor_tab():

@@ -18,7 +18,8 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from lib.monitor.probes import http_ok
-from lib.monitor.tuning import (MONITOR_OMNI_HEALTH_PATH,
+from lib.monitor.tuning import (MONITOR_OMNI_DRAIN_WAIT_S,
+                                MONITOR_OMNI_HEALTH_PATH,
                                 MONITOR_OMNI_HEALTH_TIMEOUT_S,
                                 MONITOR_OMNI_PORT,
                                 MONITOR_OMNI_STOP_TIMEOUT_S,
@@ -38,7 +39,11 @@ def port_from_url(base_url: str = MONITOR_OMNI_URL) -> int:
 
 def is_healthy(base_url: str = MONITOR_OMNI_URL,
                timeout: float = MONITOR_OMNI_HEALTH_TIMEOUT_S) -> bool:
-    """Отвечает ли `/api/health` (2xx): прокси жив и разговаривает."""
+    """Отвечает ли проба здоровья кодом 2xx: прокси жив и разговаривает.
+
+    Не путать с «порт открыт»: OmniRouter занимает порт с первой секунды,
+    а `/healthz` отвечает только после подъёма Next.js.
+    """
     url = base_url.rstrip("/") + MONITOR_OMNI_HEALTH_PATH
     return http_ok(url, timeout)
 
@@ -114,19 +119,39 @@ def _wait_port(url: str, wait_s: float, poll_s: float = 1.0) -> bool:
     return is_listening(url)
 
 
-def restart(port: Optional[int] = None,
+def wait_port_closed(url: str, wait_s: float, poll_s: float = 1.0) -> bool:
+    """Ждёт, пока процесс сам отдаст порт (дренаж после `stop`, правило 4).
+
+    Не дождались — False: второй экземпляр на ту же связку порт не откроет
+    (CLI сам отказывается: «Port is already in use»), а в логе это ещё и
+    гонка EADDRINUSE поверх живого процесса.
+    """
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        if not is_listening(url):
+            return True
+        time.sleep(poll_s)
+    return not is_listening(url)
+
+
+def restart(port: Optional[int] = None, drain: bool = True,
             timeout_s: float = MONITOR_OMNI_RESTART_TIMEOUT_S,
             stop_timeout_s: float = MONITOR_OMNI_STOP_TIMEOUT_S,
-            up_wait_s: float = MONITOR_OMNI_UP_WAIT_S) -> tuple:
-    """Поднять/перезапустить собственным CLI: `stop` + `serve --daemon`.
+            up_wait_s: float = MONITOR_OMNI_UP_WAIT_S,
+            drain_wait_s: float = MONITOR_OMNI_DRAIN_WAIT_S) -> tuple:
+    """Поднять/перезапустить собственным CLI: (`stop` + дренаж) + `serve --daemon`.
 
     `omniroute restart --daemon` не существует: у restart только --port, и
     Commander отсекает неизвестную опцию (rc=1, «error: unknown option»),
     а без --daemon restart вызывает runServe в foreground того же процесса —
     такой CLI никогда не вернулся бы. Отсоединённый сервер умеет только
-    `serve --daemon` (spawn detached + pid-файл), поэтому порядок такой:
-    `stop` (убить зависший, если он ещё держит порт; осечка не помеха —
-    процесс мог упасть сам) и `serve --daemon --port N`.
+    `serve --daemon` (spawn detached + pid-файл).
+
+    `drain=True` — процесс жив и держит порт: сначала `stop`, потом ждём,
+    пока порт освободится (до `drain_wait_s`). Осечка `stop` не помеха: его
+    CLI на Windows опрашивает процесс 5 с и только потом SIGKILL’ует.
+    `drain=False` — порта нет, останавливать нечего (никого), и `serve` сам
+    откажется стартовать на занятом.
 
     Возвращает (ok, подробности для GUI); ok=True — только когда порт
     действительно открылся.
@@ -134,9 +159,13 @@ def restart(port: Optional[int] = None,
     use = int(port if port is not None
               else port_from_url(MONITOR_OMNI_URL))
     url = f"http://127.0.0.1:{use}"
-    rc, tail = _run_cli(["stop"], stop_timeout_s)
-    if rc is None:
-        return False, tail
+    if drain:
+        rc, tail = _run_cli(["stop"], stop_timeout_s)
+        if rc is None:
+            return False, tail
+        if not wait_port_closed(url, drain_wait_s):
+            return False, (f"порт :{use} · процесс не отдал порт за "
+                           f"{drain_wait_s:.0f} с — не стартую второй")
     rc, tail = _run_cli(["serve", "--daemon", "--port", str(use)], timeout_s)
     if rc != 0:
         return False, f"порт :{use} · CLI не поднял сервер: {tail}"
@@ -147,4 +176,4 @@ def restart(port: Optional[int] = None,
 
 
 __all__ = ["cli_argv", "entry_path", "is_healthy", "is_listening",
-           "port_from_url", "restart"]
+           "port_from_url", "restart", "wait_port_closed"]

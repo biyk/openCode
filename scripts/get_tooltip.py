@@ -14,6 +14,10 @@ IGNORED_DIRECTORIES = {
     "venv",
     "models",
     "node_modules",
+    # Те же исключённые папки, что у check_tooltips: иначе манифест
+    # заполняется черновиками из temp/ и профилем браузера.
+    "logs",
+    "temp",
 }
 
 IGNORED_EXTENSIONS = {
@@ -42,6 +46,9 @@ def is_ignored(path: Path) -> bool:
         return True
 
     if path.suffix.lower() in IGNORED_EXTENSIONS:
+        return True
+
+    if any(part.startswith(".voice-cdp-profile-") for part in path.parts):
         return True
 
     if any(part in IGNORED_DIRECTORIES for part in path.parts):

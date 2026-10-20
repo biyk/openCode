@@ -6,10 +6,18 @@ from typing import Any, Callable, Optional
 
 from lib.core.logger import Logger
 from lib.core.output import stamp_stdio
+from lib.runtime.speak_gate import build_speak_gate
 from lib.synth import tts_cache
 from lib.synth.tts_engines import TtsEnginesMixin
 from lib.synth.tts_pipeline import TtsPipelineMixin
 from lib.synth.tts_playback import TtsPlaybackMixin
+
+# ВРЕМЕННО: озвучка только мужским Piper (Denis). При True выключены все
+# женские генераторы — gTTS (системный Google-голос ru всегда женский),
+# фолбэк SAPI (голос Irina) — и чтение mp3-кэша gTTS (иначе прежние фразы
+# играли бы женским). Модель задаётся в lib/synth/tts_engines.py.
+# Откат: поставить False (и вернуть прежнюю модель при необходимости).
+DENIS_ONLY = False
 
 
 class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
@@ -22,16 +30,18 @@ class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
     Многосложный текст разбивается на блоки и синтезируется параллельно
     (пайплайн): пока первый блок проигрывается, следующие готовятся
     в фоне. Аудио всегда проигрывается строго в порядке исходного текста.
+    Голос звучит только в наушниках — вне них молчаливый режим (§4.14).
     """
 
     _SENTENCE_RE = re.compile(r"(?<=[.!?…,;:—–-])\s+")
 
     def __init__(self, lang: str = "ru", max_workers: int = 4,
-                 gtts_timeout: float = 8.0):
+                 gtts_timeout: float = 8.0, output: Any = None):
         self._lang = lang
         self._max_workers = max_workers
         self._gtts_timeout = gtts_timeout
-        self._offline = False
+        # В режиме «только Denis» сразу офлайн: gTTS (женский) пропускается.
+        self._offline = DENIS_ONLY
         self._logger = Logger()
         self._piper_lock = threading.Lock()
         self._piper_voice: Optional[Any] = None
@@ -41,6 +51,13 @@ class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
         self._play_lock = threading.Lock()
         self._play_depth = 0
         self._voice_listener: Optional[Callable[[bool], None]] = None
+        # Шлюз озвучки (§4.14): вслух говорим, только когда вывод идёт в
+        # наушники. Секция speak_gate читается один раз здесь — так правило
+        # действует и в живом процессе, и в каждом `python -m lib.…`.
+        self._speak_gate: Optional[Any] = build_speak_gate(output=output)
+        # Слышен ли был последний блок: в молчаливом режиме эха нет, и окно
+        # эхо-затишья после фразы не нужно (§6, читает оркестратор).
+        self.audible = True
 
     def _split_sentences(self, text: str) -> list[str]:
         """Разбивает текст на блоки, сохраняя их порядок."""
@@ -57,7 +74,7 @@ class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
             print("[TTS] Пустой текст")
             return None
 
-        cached = tts_cache.cached_copy(self._lang, text)
+        cached = None if DENIS_ONLY else tts_cache.cached_copy(self._lang, text)
         if cached:
             print(f"[TTS] Кэш: {text[:50]}{'...' if len(text) > 50 else ''}")
             return cached
@@ -74,6 +91,10 @@ class TextToSpeech(TtsEnginesMixin, TtsPipelineMixin, TtsPlaybackMixin):
         audio_path = self._speak_piper(text)
         if audio_path:
             return audio_path
+
+        if DENIS_ONLY:
+            print("[TTS] Piper (Denis) не дал аудио; gTTS/SAPI выключены")
+            return None
 
         print("[TTS] Piper недоступен, пробую системный голос")
         return self._speak_sapi(text)

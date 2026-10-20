@@ -37,7 +37,7 @@ class _Out:
         self.errors.append(message)
 
 
-def _no_watchdog(config, registry):
+def _no_watchdog(config, registry, output=None):
     return None
 
 
@@ -146,7 +146,7 @@ def test_watchdog_is_started_and_stopped_with_monitor(tmp_path, monkeypatch):
             started["stopped"] += 1
 
     monkeypatch.setattr(launch, "build_watchdog",
-                        lambda config, registry: _FakeWd())
+                        lambda config, registry, output=None: _FakeWd())
     monitor = launch.start_monitor(_Matcher({"enabled": True}), output=_Out(),
                                    registry=ServiceRegistry())
     assert started == {"n": 1, "stopped": 0}

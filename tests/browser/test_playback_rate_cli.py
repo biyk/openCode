@@ -52,6 +52,15 @@ class TestMain:
         assert pr.main(["up"]) == 1
         speak.assert_called_once_with(pr.PHRASE_SILENCE)
 
+    def test_dead_browser_speaks_its_own_phrase(self, mocker):
+        """Вкладки не ответили — вслух «Браузер не отвечает», не «не играет»."""
+        mocker.patch.object(pr, "bump_rate", return_value={
+            "ok": False, "error": "вкладки не ответили (2)",
+            "phrase": pr.PHRASE_DEAD})
+        speak = mocker.patch.object(pr, "_speak")
+        assert pr.main(["up"]) == 1
+        speak.assert_called_once_with(pr.PHRASE_DEAD)
+
     def test_bad_args_no_browser(self, mocker):
         """Неверные аргументы — код 2, к браузеру не идём."""
         bump = mocker.patch.object(pr, "bump_rate")

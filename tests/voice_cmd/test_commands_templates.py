@@ -2,6 +2,7 @@
 
 
 import os
+from lib.core.tuning import COMMAND_TIMEOUT_S
 from lib.voice_cmd.commands import CommandMatcher
 
 
@@ -163,6 +164,6 @@ class TestCommandTemplates:
                 "task-add", ("убраться", "у", "кошки")) is True
             run_mock.assert_called_once_with(
                 "python -m lib.tasks create \"убраться у кошки\"",
-                shell=True, check=True)
+                shell=True, check=True, timeout=COMMAND_TIMEOUT_S)
         finally:
             os.unlink(path)

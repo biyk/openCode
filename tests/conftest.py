@@ -39,25 +39,16 @@ def pause_app_for_live_session():
     """Глушит приложение в начале live-сессии и включает в конце.
 
     Только для прогонов с живыми тестами и только на Windows; иначе —
-    no-op, чтобы юнит-прогоны не гасили рабочее приложение. Состояние
-    resurrector возвращается обязательно (даже при падении тестов).
+    no-op, чтобы юнит-прогоны не гасили рабочее приложение. Всю работу делает
+    `resurrector_control.paused_app`: состояние возвращается независимо от
+    того, упал ли прогон (или сама подготовка к нему).
     """
     if not _live_selected or platform.system() != "Windows":
         yield
         return
-    from tests.resurrector_control import (
-        get_enabled, set_enabled, wait_app_stopped,
-    )
-    original = get_enabled()
-    if original is None:
+    from tests.resurrector_control import paused_app
+    with paused_app():
         yield
-        return
-    set_enabled(False)
-    wait_app_stopped()
-    try:
-        yield
-    finally:
-        set_enabled(original)
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +62,38 @@ def reset_sleep_gate():
     set_sleeping(False)
     yield
     set_sleeping(False)
+
+
+@pytest.fixture(autouse=True)
+def headphones_for_tts(monkeypatch):
+    """Тесты «в наушниках»: шлюз озвучки (§4.14) не должен глушить моки.
+
+    `TextToSpeech` сам строит SpeakGate по конфигу устройства, и тесты с
+    настоящим TTS (`tests/synth/test_tts*.py`, живые озвучки здесь же)
+    зависели бы от того, что сейчас подключено к ПК. Шлюз зовёт проверку по
+    имени модуля (поздняя привязка в `SpeakGate._active`), поэтому подмена
+    работает и для уже собранного шлюза; тесты самого шлюза подменяют её
+    заново под свои случаи.
+    """
+    from lib.runtime import speak_gate
+    monkeypatch.setattr(speak_gate, "headset_active", lambda token: True)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_tts_cache(tmp_path, monkeypatch):
+    """Тестам недоступен живой кэш mp3 (`temp/mp3`) — там файлы ассистента.
+
+    Без подмены тесты синтеза кладут в общий кэш байты своих моков (фраза
+    "Привет" из test.mp3 в корне репо), а следующий `speak("Привет")` находит
+    эту запись, пропускает синтез и возвращает кэш вместо мока gTTS — тесты
+    движков падают уже на втором прогоне. Тесты, которые сами передвигают
+    `CACHE_DIR` (tests/synth/test_tts_cache.py, test_tts_pipeline.py), делают
+    это monkeypatch'ом позже — их подмена и остаётся действующей.
+    """
+    from lib.synth import tts_cache
+    monkeypatch.setattr(tts_cache, "CACHE_DIR", tmp_path / "mp3")
+    yield
 
 
 @pytest.fixture(scope="session")

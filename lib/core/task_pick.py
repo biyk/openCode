@@ -22,6 +22,13 @@ from lib.task_start import TaskStartHandler
 
 # Команда, под которой старт задачи считается в статистике использования.
 TASKSTART_CMD_ID = "taskstart"
+# Ключ этой команды — дописывается к ответу на «чем занимаешься?», чтобы
+# ответ ушёл в уровни как команда, а не «просто фразой» (orchestrator_ask).
+# Обязан быть одним из шаблонов `match.taskstart` в commands.json устройства.
+TASKSTART_KEY = "начал"
+# Название задачи не нашлось (ни кнопкой, ни командой, ни ответом на вопрос):
+# человек ждёт именно это, а не «команда taskstart не выполнена» (§4.3).
+TASK_NOT_FOUND_TEXT = "Такой задачи в списке нет"
 
 PickResult = Tuple[str, Optional[str]]
 
@@ -55,4 +62,5 @@ def make_task_picker(handler: Optional[Any] = None,
     return pick
 
 
-__all__ = ["make_task_picker", "TASKSTART_CMD_ID", "PickResult"]
+__all__ = ["make_task_picker", "TASKSTART_CMD_ID", "TASKSTART_KEY",
+           "TASK_NOT_FOUND_TEXT", "PickResult"]

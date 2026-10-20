@@ -69,6 +69,7 @@ def test_calendar_reminder_command_create_get_delete(google, live_announce):
     cmd = matcher.get_command("calendar-reminder", REMINDER_PHRASE)
     assert cmd, "calendar-reminder: пустая shell-команда"
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace",
                          timeout=90, cwd=str(REPO_ROOT))
     assert res.returncode == 0, (
         f"calendar-reminder код {res.returncode}: {res.stderr.strip()}")

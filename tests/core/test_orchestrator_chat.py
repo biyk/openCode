@@ -58,6 +58,19 @@ class TestGates:
         orch.process_text("пожалуйста пауза", reply=sink)
         assert sink.texts == ["Команда «playpause» не выполнена"]
 
+    def test_failed_task_command_speaks_human(self, mocker):
+        """Задача — не «команда»: id ни о чём, а названия нет в списке.
+
+        Текст закреплён буквально (не константой): смену формулировки
+        пользователь услышит.
+        """
+        orch = _make(mocker)
+        orch._matcher.find_command.return_value = ("taskstart", ["задачи"])
+        orch._matcher.execute_by_id.return_value = False
+        sink = Sink()
+        orch.process_text("пожалуйста начал задачи", reply=sink)
+        assert sink.texts == ["Такой задачи в списке нет"]
+
     def test_chat_ignores_suppress_window(self, mocker):
         """Строка чата — не эхо колонок: окно затишья её не тормозит."""
         orch = _make(mocker)
@@ -92,7 +105,7 @@ class TestGates:
         orch = _make(mocker)
         seen = {}
 
-        def find(_text):
+        def find(_text, **_kw):
             got = orch._input_lock.acquire(blocking=False)
             seen["free"] = got
             if got:

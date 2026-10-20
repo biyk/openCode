@@ -4,6 +4,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
+from lib.core.tuning import COMMAND_TIMEOUT_S
 from lib.skills.skills import SkillRegistry
 
 
@@ -108,7 +109,7 @@ class TestSkillRegistryExecution:
         assert validated is None
 
     def test_execute_run_cmd(self, tmp_path):
-        """execute() выполняет run_cmd действие."""
+        """execute() выполняет run_cmd действие с потолком длительности."""
         skill_data = {
             "name": "cmd_skill",
             "phrases": ["команда"],
@@ -120,7 +121,8 @@ class TestSkillRegistryExecution:
             mock_run.return_value = MagicMock()
             result = registry.execute("cmd_skill")
         assert result is True
-        mock_run.assert_called_once_with("echo hello", shell=True, check=True)
+        mock_run.assert_called_once_with(
+            "echo hello", shell=True, check=True, timeout=COMMAND_TIMEOUT_S)
 
     def test_execute_run_cmd_failure(self, tmp_path):
         """execute() возвращает False при ошибке run_cmd."""

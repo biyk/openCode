@@ -67,7 +67,7 @@ class TranscriptionWorker:
         self._llm = _provider_manager.get_client(history_limit=history_limit)
         if hasattr(self._llm, "_set_output"):
             self._llm._set_output(self._output)
-        self._tts = TextToSpeech()
+        self._tts = TextToSpeech(output=self._output)  # §4.14: молчание в логе
 
         intent = build_intent(self._matcher, self._llm)
         # Decision-слой Laya; intent не создаём — новый путь его не использует.

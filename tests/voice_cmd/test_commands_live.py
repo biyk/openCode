@@ -30,9 +30,8 @@ VOLUME_SETTLE_S = 0.4
 def _run_shell(cmd: str) -> subprocess.CompletedProcess:
     """Выполняет shell-команду из commands.json с cwd = репозиторий."""
     return subprocess.run(
-        cmd, shell=True, capture_output=True, text=True,
-        timeout=60, cwd=str(REPO_ROOT),
-    )
+        cmd, shell=True, capture_output=True, text=True, timeout=60,
+        encoding="utf-8", errors="replace", cwd=str(REPO_ROOT))
 
 
 def _ps1_args(*args: str) -> list[str]:
@@ -46,9 +45,8 @@ def _ps1_args(*args: str) -> list[str]:
 def _get_volume() -> float:
     """Текущий уровень громкости в % (0..100)."""
     res = subprocess.run(
-        _ps1_args(), capture_output=True, text=True,
-        timeout=60, cwd=str(REPO_ROOT),
-    )
+        _ps1_args(), capture_output=True, text=True, timeout=60,
+        encoding="utf-8", errors="replace", cwd=str(REPO_ROOT))
     if res.returncode != 0:
         raise AssertionError(f"get_volume.ps1 failed: {res.stderr.strip()}")
     return float(res.stdout.strip())
@@ -57,9 +55,8 @@ def _get_volume() -> float:
 def _set_volume(value: float) -> None:
     """Устанавливает уровень громкости в % (точный restore)."""
     res = subprocess.run(
-        _ps1_args("-Set", f"{value:.1f}"),
-        capture_output=True, text=True, timeout=60, cwd=str(REPO_ROOT),
-    )
+        _ps1_args("-Set", f"{value:.1f}"), capture_output=True, text=True,
+        timeout=60, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT))
     if res.returncode != 0:
         raise AssertionError(f"get_volume.ps1 -Set failed: {res.stderr.strip()}")
     time.sleep(VOLUME_SETTLE_S)

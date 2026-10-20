@@ -97,18 +97,22 @@ class TestTtsSpeak:
         assert result == "/tmp/p.wav"
 
     @patch("lib.synth.tts_engines.gTTS")
-    def test_speak_gtts_timeout_passed_to_constructor(self, mock_gtts, capsys):
+    def test_speak_gtts_timeout_passed_to_constructor(self, mock_gtts, tmp_path,
+                                                      capsys):
         mock_tts = MagicMock()
         mock_gtts.return_value = mock_tts
+        # Путь внутри tmp_path: с относительным "test.mp3" тест оставлял бы
+        # файл в корне репо, а живой кэш подхватывал его под имя "Привет".
+        target = str(tmp_path / "gtts.mp3")
         with patch("lib.synth.tts_engines.tempfile.NamedTemporaryFile") as mock_temp:
             mock_file = MagicMock()
-            mock_file.name = "test.mp3"
+            mock_file.name = target
             mock_temp.return_value = mock_file
 
             tts = TextToSpeech(gtts_timeout=5.0)
             result = tts.speak("Привет")
 
-            assert result == "test.mp3"
+            assert result == target
             assert mock_gtts.call_args.kwargs["timeout"] == 5.0
 
     @patch("lib.synth.tts_playback.subprocess.Popen")

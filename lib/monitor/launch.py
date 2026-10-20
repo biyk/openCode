@@ -58,7 +58,7 @@ def start_monitor(matcher: Any, output: Any,
     reg = registry or default_registry()
     writer = HeartbeatWriter(reg)
     writer.start()
-    watchdog = build_watchdog(config, reg)
+    watchdog = build_watchdog(config, reg, output=output)
     if watchdog is not None:
         watchdog.start()
     if config.get("auto_open", True):

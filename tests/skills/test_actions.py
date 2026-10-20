@@ -4,6 +4,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
+from lib.core.tuning import COMMAND_TIMEOUT_S
 from lib.skills.skills import SkillRegistry
 
 
@@ -35,7 +36,8 @@ class TestSkillRegistryActions:
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
         mock_run.assert_called_once_with(
-            ["cmd", "/c", "start", "", "https://example.com"], check=True
+            ["cmd", "/c", "start", "", "https://example.com"],
+            check=True, timeout=COMMAND_TIMEOUT_S
         )
 
     def test_action_open_url_darwin(self, tmp_path):
@@ -46,7 +48,9 @@ class TestSkillRegistryActions:
             mock_run.return_value = MagicMock()
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
-        mock_run.assert_called_once_with(["open", "https://example.com"], check=True)
+        mock_run.assert_called_once_with(
+            ["open", "https://example.com"], check=True,
+            timeout=COMMAND_TIMEOUT_S)
 
     def test_action_open_url_linux(self, tmp_path):
         """_action_open_url работает на linux."""
@@ -57,7 +61,8 @@ class TestSkillRegistryActions:
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is True
         mock_run.assert_called_once_with(
-            ["xdg-open", "https://example.com"], check=True
+            ["xdg-open", "https://example.com"], check=True,
+            timeout=COMMAND_TIMEOUT_S
         )
 
     def test_action_open_url_called_process_error(self, tmp_path):
@@ -68,6 +73,19 @@ class TestSkillRegistryActions:
             mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
             result = registry._action_open_url({"url": "https://example.com"})
         assert result is False
+
+    def test_step_timeout_is_caught_by_executor(self, tmp_path):
+        """Зависший шаг не валит процесс: потолок ловит `_execute_step`."""
+        skill_data = {
+            "name": "hang",
+            "phrases": ["зависни"],
+            "params": {},
+            "steps": [{"action": "run_cmd", "params": {"cmd": "echo test"}}],
+        }
+        registry, _ = self._make_registry(tmp_path, {"hang": skill_data})
+        with patch("lib.skills.skill_actions.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("echo test", 1)):
+            assert registry.execute("hang") is False
 
     def test_action_run_cmd_missing_cmd(self, tmp_path):
         """_action_run_cmd возвращает False если нет cmd."""

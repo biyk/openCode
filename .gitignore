@@ -29,3 +29,7 @@ command_stats.json.tmp
 # Heartbeat монитора сервисов (runtime-снимок, не в git)
 services_heartbeat.json
 services_heartbeat.json.tmp
+
+# Артефакт в корне: тесты TTS писали сюда относительным путём "test.mp3"
+# (tests/synth/test_tts.py переведён на tmp_path). Остаток ручной чистки не ждёт.
+/test.mp3

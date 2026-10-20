@@ -13,6 +13,8 @@
 from typing import Callable, Optional
 
 from lib.core.errors import swallowed
+from lib.core.task_pick import TASK_NOT_FOUND_TEXT
+from lib.voice_cmd.knowledge_learn import TASK_CMDS
 
 # Префикс подтверждения: пользователь чата должен видеть, что команда принята.
 CHAT_DONE_PREFIX = "Выполнено"
@@ -20,6 +22,17 @@ CHAT_DONE_PREFIX = "Выполнено"
 CHAT_NOT_RECOGNIZED = "Команда не распознана"
 # Управление режимом разработки остаётся голосовым (оно про микрофон и TTS).
 CHAT_NO_DEV_MODE = "Режим разработки — только голосом"
+
+
+def failure_text(cmd_id: str) -> str:
+    """Что ответить на невыполненную команду.
+
+    `id` пользователю ни о чём, а у задач причина промаха почти всегда
+    одна — такого названия в списке нет (§4.3).
+    """
+    if cmd_id in TASK_CMDS:
+        return TASK_NOT_FOUND_TEXT
+    return f"Команда «{cmd_id}» не выполнена"
 
 
 class OrchestratorChatMixin:
@@ -66,5 +79,5 @@ class OrchestratorChatMixin:
         return self._chat_reply(CHAT_NOT_RECOGNIZED)
 
 
-__all__ = ["OrchestratorChatMixin", "CHAT_DONE_PREFIX", "CHAT_NOT_RECOGNIZED",
-           "CHAT_NO_DEV_MODE"]
+__all__ = ["OrchestratorChatMixin", "failure_text", "CHAT_DONE_PREFIX",
+           "CHAT_NOT_RECOGNIZED", "CHAT_NO_DEV_MODE"]

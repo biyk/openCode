@@ -2,17 +2,22 @@
 """Пробы внешних процессов (живут НЕ в основном процессе, по факту порта).
 
 Laya (:8080 /health), браузер CDP (:9222 /json/version), доска знаний
-(:8765 /api/ping), OmniRouter (:20128 /api/health) — отдельные процессы. Их
+(:8765 /api/ping), OmniRouter (:20128 /healthz) — отдельные процессы. Их
 «живость» определяет вкладка монитора на сервере доски: читает heartbeat и
 сам пробабит порты, ровно как `is_up()` в knowledge_review и `_health()` в
 laya_decision. Не отвечает = не запущен (по требованию поднимается) —
 показываем как idle.
+
+Для шлюза проба берётся с таймаутом смотрителя (`MONITOR_OMNI_HEALTH_TIMEOUT_S`),
+а не общим (1 с): под нагрузкой он отвечает и за 7 с, и за 10 с, и в панели это
+не «не запущен», а «занят».
 """
 import urllib.request
 
 from lib.monitor.registry import IDLE, WORKING
 from lib.monitor.tuning import (MONITOR_BOARD_PORT,
                                 MONITOR_OMNI_HEALTH_PATH,
+                                MONITOR_OMNI_HEALTH_TIMEOUT_S,
                                 MONITOR_OMNI_URL,
                                 MONITOR_PROBE_CDP_PORT,
                                 MONITOR_PROBE_LAYA_URL,
@@ -47,7 +52,8 @@ def probe_board(port: int = MONITOR_BOARD_PORT) -> dict:
 
 
 def probe_omni(url: str = MONITOR_OMNI_URL) -> dict:
-    ok = http_ok(url.rstrip("/") + MONITOR_OMNI_HEALTH_PATH)
+    ok = http_ok(url.rstrip("/") + MONITOR_OMNI_HEALTH_PATH,
+                 MONITOR_OMNI_HEALTH_TIMEOUT_S)
     return {"state": WORKING if ok else IDLE,
             "detail": url if ok else "не отвечает (поднимет смотритель)"}
 

@@ -247,7 +247,10 @@
             "закончил",
             "закончен",
             "вернулся",
-            "что-то закончил"
+            "что-то закончил",
+            "струна",
+            "закончился",
+            "запад"
         ],
         "shop-add": [
             "нужно купить",
@@ -390,16 +393,29 @@
         "headset_mic": false,
         "poll_s": 2.0
     },
+    "speak_gate": {
+        "enabled": true,
+        "headphone_device": "soundcore H30i"
+    },
     "monitor": {
         "enabled": true,
         "board_port": 8765,
         "auto_open": true,
         "omni_enabled": true,
         "omni_url": "http://127.0.0.1:20128",
-        "omni_interval_s": 15,
+        "omni_interval_s": 30,
         "omni_hang_fails": 3,
-        "omni_cooldown_s": 180,
-        "omni_warmup_s": 120
+        "omni_hang_after_s": 300,
+        "omni_warmup_s": 120,
+        "omni_backoff_s": [
+            1,
+            2,
+            5,
+            15,
+            60
+        ],
+        "omni_budget_restarts": 5,
+        "omni_budget_window_s": 600
     },
     "intent": {
         "enabled": true,

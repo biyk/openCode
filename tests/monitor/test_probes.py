@@ -33,7 +33,7 @@ def test_probe_omni_hits_health_endpoint(monkeypatch):
 
     monkeypatch.setattr(probes, "http_ok", _fake)
     assert probes.probe_omni("http://127.0.0.1:20128")["state"] == WORKING
-    assert seen["url"] == "http://127.0.0.1:20128/api/health"
+    assert seen["url"] == "http://127.0.0.1:20128/healthz"
 
 
 def test_probe_omni_idle_mentions_watchdog(monkeypatch):

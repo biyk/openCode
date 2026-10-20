@@ -143,5 +143,6 @@ class TestOrchestratorProcess:
         orch._matcher.core_phrase.return_value = ""
         orch.process_text("алиса")
         orch._matcher.execute_by_id.assert_not_called()
-        orch._matcher.find_command.assert_called_once_with("алиса")
+        orch._matcher.find_command.assert_called_once_with(
+            "алиса", require_trigger=True)
         decision.detect.assert_called_once_with("алиса")

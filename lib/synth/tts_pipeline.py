@@ -1,4 +1,8 @@
-"""Конвейер озвучки: сборка блоков и параллельный синтез (миксин TTS)."""
+"""Конвейер озвучки: сборка блоков и параллельный синтез (миксин TTS).
+
+Точка входа `speak_and_play`/`speak_blocks` обязана отрабатывать и в
+молчаливом режиме (§4.14): вызывающий ждёт `on_finished` в любом случае.
+"""
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -72,6 +76,13 @@ class TtsPipelineMixin:
         blocks = [b.strip() for b in blocks if b and b.strip()]
         if not blocks:
             print("[TTS] Пустой текст")
+            if on_finished:
+                on_finished()
+            return
+        if not self._may_speak(blocks):
+            # Молчаливый режим (§4.14): вывод не в наушниках — ни сети на
+            # синтез, ни плеера. on_finished обязателен: на нём оркестратор
+            # снимает флаг озвучки, иначе ассистент «зависает говорящим».
             if on_finished:
                 on_finished()
             return

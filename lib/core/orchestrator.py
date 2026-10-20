@@ -131,9 +131,15 @@ class Orchestrator(
             chat = self._begin_request(reply)
             if not chat:
                 if time.monotonic() < self._suppress_until:
+                    # Окно эхо-затишья: строка — отголосок собственной озвучки.
+                    self._output.print_debug(f"[Echo] В затишье: {text}")
                     return
                 if self._speaking:
-                    self.maybe_abort(text)
+                    if not self.maybe_abort(text):
+                        # Не стоп-слово — реплика проглотана озвучкой. Без неё
+                        # в логе не отличить «не сказал» от «не услышал».
+                        self._output.print_debug(
+                            f"[Echo] Во время озвучки пропущена: {text}")
                     return
             if ((self._opencode_active or self._llm_pending())
                     and self.maybe_abort(text)):
@@ -148,12 +154,13 @@ class Orchestrator(
                     "[DevMode] Фраза передана в модель напрямую")
                 self._enqueue_opencode(text, raw=True)
                 return
-            # Сначала выводим распознанный текст в консоль и лог
-            self._output.print_text(text)
-            # Ответ на заданный фоном вопрос — не команда: перехватываем строку
-            # раньше уровней commands.json (см. orchestrator_ask).
+            # Ответ на заданный фоном вопрос перехватывается раньше уровней
+            # commands.json и печатается там же: с ключом команды («начал …»)
+            # строка уходит в уровни командой, а не «просто фразой» (§4.3).
             if self._take_ask_answer(text):
                 return
+            # Выводим распознанный текст в консоль и лог
+            self._output.print_text(text)
             # 1..3. commands.json → база знаний → Laya/legacy → opencode-cli.
             self._process_commands_level(text)
 

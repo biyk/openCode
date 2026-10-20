@@ -7,7 +7,7 @@ import urllib.request
 import websocket
 from typing import Callable, Optional
 
-from lib.core.tuning import CDP_POLL_S
+from lib.core.tuning import CDP_PAGE_LOAD_S, CDP_POLL_S
 
 DEFAULT_PORT = 9222
 # Только IPv4: localhost сначала пробуется как ::1 — отказ ~2 с (tests/speed).
@@ -123,13 +123,13 @@ def close_tab(tab: dict, port: int = DEFAULT_PORT) -> bool:
         return False
 
 
-def _ws_for(tab: dict) -> Optional[websocket.WebSocket]:
-    """Открывает WebSocket к вкладке (localhost в URL меняем на IPv4)."""
+def _ws_for(tab: dict, timeout: float = CDP_PAGE_LOAD_S) -> Optional[websocket.WebSocket]:
+    """WS к вкладке: localhost меняем на IPv4, `timeout` держит и коннект, и recv."""
     ws_url = tab.get("webSocketDebuggerUrl")
     if not ws_url:
         return None
     ws_url = ws_url.replace("//localhost:", f"//{CDP_HOST}:")
-    return websocket.create_connection(ws_url, timeout=30)
+    return websocket.create_connection(ws_url, timeout=timeout)
 
 
 def wait_for_tab(url_part: str, port: int = DEFAULT_PORT, timeout: float = 15.0) -> Optional[dict]:
@@ -154,10 +154,10 @@ def wait_until(ready: Callable[[], bool], timeout: float,
     return False
 
 
-def eval_js(tab: dict, script: str) -> tuple[bool, str]:
-    """Выполняет JavaScript на вкладке через Runtime.evaluate."""
+def eval_js(tab: dict, script: str, timeout: float = CDP_PAGE_LOAD_S) -> tuple[bool, str]:
+    """JS на вкладке через Runtime.evaluate; `timeout` — потолок её ответа."""
     try:
-        ws = _ws_for(tab)
+        ws = _ws_for(tab, timeout)
         if not ws:
             return False, "нет webSocketDebuggerUrl"
         payload = {"id": 1, "method": "Runtime.evaluate",
@@ -169,11 +169,10 @@ def eval_js(tab: dict, script: str) -> tuple[bool, str]:
             if data.get("id") != 1:
                 continue
             result = data.get("result", {})
+            ws.close()
             if result.get("exceptionDetails"):
-                ws.close()
                 return False, str(result["exceptionDetails"])
             value = result.get("result", {}).get("value")
-            ws.close()
             return True, value if value is not None else ""
         ws.close()
         return False, "нет ответа от Runtime.evaluate"

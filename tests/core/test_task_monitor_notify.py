@@ -22,7 +22,8 @@ class _Asker:
         self.questions = []
         self.on_expire = None
 
-    def __call__(self, question, on_answer, label, timeout_s, on_expire=None):
+    def __call__(self, question, on_answer, label, timeout_s, on_expire=None,
+                 prefix=None):
         self.questions.append((question, label))
         self.on_answer = on_answer
         self.on_expire = on_expire

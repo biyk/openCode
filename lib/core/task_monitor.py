@@ -2,8 +2,8 @@
 """Периодическая проверка real_life_tasks (раз в TASK_MONITOR_INTERVAL_S).
 
 Ни одной запущенной задачи (start_date = 0 у всех строк) — вслух вопрос
-«чем ты сейчас занимаешься?»; следующая строка — ответ: название ищется
-среди задач таблицы и найденная задача запускается (как `taskstart`).
+«чем ты сейчас занимаешься?»; следующая строка — ответ: к ней дописывается
+ключ «начал» → команда taskstart (тот же скрипт); при промахе — `_on_idle_answer`.
 Пока идёт «СОН», цикл молчит ЦЕЛИКОМ: и вопроса, и оповещения (§4.3).
 Вердикт держит `lib/core/sleep_gate.py`, а не локальное чтение календаря.
 
@@ -21,7 +21,7 @@ from lib.core.errors import swallowed
 from lib.core.overtime import OvertimeNotifier
 from lib.core.rest_watch import RestWatch
 from lib.core.sleep_gate import check_sleeping, today_events
-from lib.core.task_pick import TASKSTART_CMD_ID
+from lib.core.task_pick import TASK_NOT_FOUND_TEXT, TASKSTART_CMD_ID, TASKSTART_KEY
 from lib.core.tuning import TASK_ANSWER_TIMEOUT_S, TASK_MONITOR_INTERVAL_S
 from lib.monitor import registry
 from lib.task_start import TaskStartHandler
@@ -33,8 +33,8 @@ from lib.taskflow.task_schedule import idle_offer
 # голосом звучит только вопрос (решение пользователя), «что начать» уходит
 # кнопками в Telegram, а текстом — только когда задач-кнопок нет.
 QUESTION_IDLE = "Чем ты сейчас занимаешься?"
-# Ответ на него не похож ни на одну задачу: произносим и живём дальше.
-ANSWER_UNKNOWN = "Такой задачи в списке нет"
+# Ответ не похож ни на одну задачу: та же фраза, что на промах taskstart.
+ANSWER_UNKNOWN = TASK_NOT_FOUND_TEXT
 
 
 class TaskMonitor:
@@ -138,7 +138,8 @@ class TaskMonitor:
         _, titles = idle_offer(rows, events, now)
         # on_expire — снять реплику вопроса: висящие кнопки зовут в чат впустую
         if not self._ask(QUESTION_IDLE, self._on_idle_answer, "task_idle",
-                         self._answer_timeout_s, self._recall):
+                         self._answer_timeout_s, self._recall,
+                         prefix=TASKSTART_KEY):
             self._output.print_info("[TaskMonitor] «task_idle» отложен")
             return "deferred"
         if self._offer is not None:
@@ -171,7 +172,7 @@ class TaskMonitor:
     # ---------- Ответ на вопрос ----------
 
     def _on_idle_answer(self, text: str) -> None:
-        """Ответ на «чем занимаешься?»: найти задачу в таблице и запустить."""
+        """Ответ мимо команды taskstart: найти задачу в таблице и запустить."""
         title = self._match_title(self._core(text))
         if title is None:
             self._output.print_info(
