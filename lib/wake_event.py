@@ -124,10 +124,13 @@ class WakeEventHandler:
                                      second=0, microsecond=0)
         events = self._google.list_events_between(
             day_start, day_start + timedelta(days=1))
+        sheet = RealLifeSheet(self._google)
+        known = {str(t.get("task_uuid") or "").strip().lower()
+                 for t in sheet.read_all_tasks()}
+        known.discard("")
         moved, updated = reschedule_sleep_events(
-            self._google, events, sleep_start, self.now)
-        placed = fill_calendar(self._google, RealLifeSheet(self._google),
-                               updated, self.now)
+            self._google, events, sleep_start, self.now, known_uuids=known)
+        placed = fill_calendar(self._google, sheet, updated, self.now)
         return moved, placed
 
 

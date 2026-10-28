@@ -16,6 +16,9 @@ from lib.google.google_calendar_mutate import DONE_COLOR
 TZ = timezone(timedelta(hours=3))
 WAKE = datetime(2026, 9, 26, 8, 0, tzinfo=TZ)
 
+TU1 = "11111111-1111-1111-1111-111111111111"
+TU2 = "22222222-2222-2222-2222-222222222222"
+
 
 def iso(dt: datetime) -> str:
     return dt.isoformat()
@@ -69,17 +72,18 @@ def test_free_slots_drop_short_gap():
 
 
 def test_reschedule_moves_sleep_window_events_in_order():
-    """События окна сна едут на окна после подъёма по порядку, длительность та же."""
+    """События задач окна сна едут на окна после подъёма по порядку."""
     sleep_start = WAKE - timedelta(hours=6)
     events = [
         ev("sleep", "СОН", sleep_start, WAKE),
         ev("t1", "Зарядка", sleep_start + timedelta(hours=1),
-           sleep_start + timedelta(hours=2)),
+           sleep_start + timedelta(hours=2), description=TU1),
         ev("t2", "Учёба", sleep_start + timedelta(hours=3),
-           sleep_start + timedelta(hours=4)),
+           sleep_start + timedelta(hours=4), description=TU2),
     ]
     g = FakeGoogle()
-    moved, updated = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, updated = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={TU1, TU2})
     assert moved == 2
     assert [m[0] for m in g.moved] == ["t1", "t2"]      # порядок сохранён
     assert g.moved[0][1] == WAKE                        # старт — с подъёма
@@ -94,10 +98,11 @@ def test_reschedule_skips_sleep_and_after_wake():
     events = [
         ev("sleep", "СОН", sleep_start, WAKE),
         ev("later", "Вечер", WAKE + timedelta(hours=3),
-           WAKE + timedelta(hours=4)),
+           WAKE + timedelta(hours=4), description=TU1),
     ]
     g = FakeGoogle()
-    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, _ = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={TU1})
     assert moved == 0
     assert g.moved == []
 
@@ -111,7 +116,8 @@ def test_reschedule_skips_wake_done_event():
            sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
     ]
     g = FakeGoogle()
-    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, _ = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={WAKE_TASK_UUID})
     assert moved == 0
     assert g.moved == []
 
@@ -124,10 +130,11 @@ def test_reschedule_wake_done_event_does_not_block_others():
         ev("wake", "Пробуждение", sleep_start + timedelta(hours=1),
            sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
         ev("t1", "Зарядка", sleep_start + timedelta(hours=3),
-           sleep_start + timedelta(hours=4)),
+           sleep_start + timedelta(hours=4), description=TU1),
     ]
     g = FakeGoogle()
-    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, _ = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={WAKE_TASK_UUID, TU1})
     assert moved == 1
     assert [m[0] for m in g.moved] == ["t1"]
 
@@ -136,9 +143,9 @@ def test_reschedule_stop_when_move_fails():
     """Неудачный перенос — событие не считается перенесённым."""
     sleep_start = WAKE - timedelta(hours=6)
     events = [ev("t1", "Зарядка", sleep_start + timedelta(hours=1),
-                 sleep_start + timedelta(hours=2))]
+                 sleep_start + timedelta(hours=2), description=TU1)]
     moved, _ = reschedule_sleep_events(FakeGoogle(move_ok=False), events,
-                                       sleep_start, WAKE)
+                                       sleep_start, WAKE, known_uuids={TU1})
     assert moved == 0
 
 
@@ -148,10 +155,12 @@ def test_reschedule_skips_done_color_events():
     events = [
         ev("sleep", "СОН", sleep_start, WAKE),
         ev("done", "Уже сделано", sleep_start + timedelta(hours=1),
-           sleep_start + timedelta(hours=2), color=DONE_COLOR),
+           sleep_start + timedelta(hours=2), description=TU1,
+           color=DONE_COLOR),
     ]
     g = FakeGoogle()
-    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, _ = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={TU1})
     assert moved == 0
     assert g.moved == []
 
@@ -162,11 +171,13 @@ def test_reschedule_done_color_does_not_block_others():
     events = [
         ev("sleep", "СОН", sleep_start, WAKE),
         ev("done", "Уже сделано", sleep_start + timedelta(hours=1),
-           sleep_start + timedelta(hours=2), color=DONE_COLOR),
+           sleep_start + timedelta(hours=2), description=TU1,
+           color=DONE_COLOR),
         ev("t1", "Зарядка", sleep_start + timedelta(hours=3),
-           sleep_start + timedelta(hours=4)),
+           sleep_start + timedelta(hours=4), description=TU2),
     ]
     g = FakeGoogle()
-    moved, _ = reschedule_sleep_events(g, events, sleep_start, WAKE)
+    moved, _ = reschedule_sleep_events(
+        g, events, sleep_start, WAKE, known_uuids={TU1, TU2})
     assert moved == 1
     assert [m[0] for m in g.moved] == ["t1"]

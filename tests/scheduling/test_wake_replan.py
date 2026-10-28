@@ -76,10 +76,11 @@ def test_replan_day_shifts_sleep_then_fills(monkeypatch):
     events = [
         event("sleep", "СОН", sleep_start, NOW),
         event("z", "Зарядка", sleep_start + timedelta(hours=1),
-              sleep_start + timedelta(hours=2)),
+              sleep_start + timedelta(hours=2), description="z-1"),
     ]
-    handler, google = make_handler(events, [task("Учёба", "u-1", 45)],
-                                   monkeypatch)
+    handler, google = make_handler(
+        events, [task("Зарядка", "z-1", 60), task("Учёба", "u-1", 45)],
+        monkeypatch)
     moved, placed = handler.replan_day(dict(events[0]))
 
     assert moved == 1
@@ -90,6 +91,21 @@ def test_replan_day_shifts_sleep_then_fills(monkeypatch):
     assert placed == 1
     assert google.created[0][1] == "u-1"
     assert google.created[0][2] == NOW + timedelta(hours=1)
+
+
+def test_replan_day_does_not_move_user_event_without_uuid(monkeypatch):
+    """Ручное событие окна сна без uuid задачи остаётся на месте."""
+    sleep_start = NOW - timedelta(hours=6)
+    events = [
+        event("sleep", "СОН", sleep_start, NOW),
+        event("games", "Игры на компе", sleep_start + timedelta(hours=1),
+              sleep_start + timedelta(hours=2)),
+    ]
+    handler, google = make_handler(events, [task("Дело", "u-3", 30)],
+                                   monkeypatch)
+    moved, _ = handler.replan_day(dict(events[0]))
+    assert moved == 0
+    assert google.moved == []
 
 
 def test_replan_day_only_fills_when_no_sleep_overlap(monkeypatch):
@@ -115,15 +131,16 @@ def test_replan_day_keeps_wake_done_event(monkeypatch):
         event("wake-done", "Пробуждение", sleep_start + timedelta(hours=1),
               sleep_start + timedelta(hours=2), description=WAKE_TASK_UUID),
         event("z", "Зарядка", sleep_start + timedelta(hours=3),
-              sleep_start + timedelta(hours=4)),
+              sleep_start + timedelta(hours=4), description="z-1"),
     ]
     handler, google = make_handler(
-        events, [task("Пробуждение", WAKE_TASK_UUID, 60)], monkeypatch)
+        events, [task("Пробуждение", WAKE_TASK_UUID, 60),
+                 task("Зарядка", "z-1", 60)], monkeypatch)
     moved, placed = handler.replan_day(dict(events[0]))
 
     assert [m[0] for m in google.moved] == ["z"]   # галочка не тронута
     assert moved == 1
-    assert placed == 0                       # она уже в календаре
+    assert placed == 0                       # обе уже в календаре
     assert google.created == []
 
 
